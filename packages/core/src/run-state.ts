@@ -7,6 +7,12 @@ export const ACTIVE_RUN_STATUSES = [
   "waiting_input",
   "waiting_takeover",
 ] as const satisfies readonly RunStatus[];
+/** Run statuses where the bot is still executing (not waiting on the user). */
+export const WORKING_RUN_STATUSES = [
+  "queued",
+  "leased",
+  "running",
+] as const satisfies readonly RunStatus[];
 const TERMINAL: RunStatus[] = ["completed", "failed", "cancelled"];
 
 const allowed: Record<RunStatus, RunStatus[]> = {
@@ -32,6 +38,10 @@ export function assertTransition(from: RunStatus, to: RunStatus): void {
 
 export function isActive(status: RunStatus): boolean {
   return (ACTIVE_RUN_STATUSES as readonly RunStatus[]).includes(status);
+}
+
+export function isWorking(status: string): boolean {
+  return (WORKING_RUN_STATUSES as readonly string[]).includes(status);
 }
 
 export function isTerminal(status: RunStatus): boolean {

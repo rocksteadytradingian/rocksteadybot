@@ -1,21 +1,22 @@
 /* Beautiful UI primitives — hand-ported from beautifului.dev
    (github.com/TurboKach/ai-native-react-components, MIT © 2026 Turbo).
-   Tokens are remapped onto Rakazo's dark palette; keyframes are ported
+   Tokens follow the active `--rk-*` theme; keyframes are ported
    verbatim with a bui- prefix to avoid collisions. */
 
 :root {
-  --bui-ink: #ececee;
-  --bui-ink-2: #a6a6ad;
-  --bui-ink-3: #85858a;
-  --bui-surface: #1a1a1d;
-  --bui-hover: #232327;
-  --bui-line: #2a2a31;
-  --bui-line-strong: #34343b;
-  --bui-green: #3dbb72;
-  --bui-green-tint: #3dbb7224;
-  --bui-accent: #7785ff;
-  --bui-shadow-btn: 0 0 0 1px var(--bui-line-strong), 0 1px 2px #0000004d;
-  --bui-shadow-card: 0 0 0 1px var(--bui-line), 0 1px 2px #0003, 0 2px 6px #0003;
+  --bui-ink: var(--rk-ink);
+  --bui-ink-2: var(--rk-muted);
+  --bui-ink-3: var(--rk-muted-2);
+  --bui-surface: var(--rk-surface-2);
+  --bui-hover: var(--rk-hover);
+  --bui-line: var(--rk-hairline);
+  --bui-line-strong: var(--rk-hairline-strong);
+  --bui-green: var(--rk-success-soft);
+  --bui-green-tint: color-mix(in srgb, var(--rk-success-soft) 14%, transparent);
+  --bui-accent: var(--rk-accent);
+  --bui-shadow-btn: 0 0 0 1px var(--bui-line-strong),
+    0 1px 2px color-mix(in srgb, var(--rk-ink) 12%, transparent);
+  --bui-shadow-card: var(--rk-shadow);
 }
 
 @keyframes bui-shimmer-text {

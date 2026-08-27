@@ -121,7 +121,7 @@ describe("openai-compatible provider", () => {
   });
 
   it("rejects oversized model lists", async () => {
-    const fetchImpl = async () => new Response("x".repeat(64 * 1024 + 1));
+    const fetchImpl = async () => new Response("x".repeat(1024 * 1024 + 1));
     await expect(
       probeOpenAiCompatibleModels({ baseUrl: "http://127.0.0.1:8000/v1" }, fetchImpl),
     ).rejects.toThrow(/too large/i);
@@ -136,12 +136,25 @@ describe("openai-compatible provider", () => {
             cancelled = true;
           },
         }),
-        { headers: { "content-length": String(64 * 1024 + 1) } },
+        { headers: { "content-length": String(1024 * 1024 + 1) } },
       );
     await expect(
       probeOpenAiCompatibleModels({ baseUrl: "http://127.0.0.1:8000/v1" }, fetchImpl),
     ).rejects.toThrow(/too large/i);
     expect(cancelled).toBe(true);
+  });
+
+  it("keeps the first 500 model ids from a large catalog", async () => {
+    const data = Array.from({ length: 520 }, (_, index) => ({
+      id: index === 3 ? "x".repeat(257) : `model-${index}`,
+    }));
+    const fetchImpl = async () =>
+      new Response(JSON.stringify({ object: "list", data }), { status: 200 });
+    const ids = await probeOpenAiCompatibleModels({ baseUrl: "http://127.0.0.1:8000/v1" }, fetchImpl);
+    expect(ids).toHaveLength(500);
+    expect(ids[0]).toBe("model-0");
+    expect(ids).not.toContain("x".repeat(257));
+    expect(ids.at(-1)).toBe("model-500");
   });
 
   it("lists openai-compatible in the catalog even without RAKAZO_LOCAL_MODELS", () => {

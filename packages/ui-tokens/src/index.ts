@@ -28,3 +28,13 @@ export const botColors = [
   "#F2622A",
   "#D9508A",
 ] as const;
+
+export {
+  canonicalUiThemeId,
+  DEFAULT_UI_THEME,
+  isUiThemeId,
+  UI_THEME_ALIASES,
+  UI_THEMES,
+  uiThemeById,
+  type UiThemeId,
+} from "./themes.js";

@@ -38,6 +38,14 @@ export function ComputerModePicker({
           </Pressable>
         ))}
       </View>
+      <Text
+        accessibilityRole="text"
+        style={{ color: "#6C6C70", fontSize: 13.5, lineHeight: 20, marginTop: 8 }}
+      >
+        {value === "dedicated"
+          ? "Only this bot uses this computer."
+          : "Shared with other bots. Switch to Private for this bot’s own computer."}
+      </Text>
     </View>
   );
 }

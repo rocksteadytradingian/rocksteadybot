@@ -1,4 +1,4 @@
-import { ACTIVE_RUN_STATUSES } from "@rakazo/core";
+import { ACTIVE_RUN_STATUSES, PRODUCT_NAME } from "@rakazo/core";
 import { type CSSProperties, memo, useId } from "react";
 import { cn } from "./lib/utils.js";
 import "./styles.css";
@@ -180,7 +180,7 @@ export function Wordmark({ className }: { className?: string }) {
         <span className="h-4 w-[7px] rounded-full bg-[#F7F7F4]" />
       </div>
       <span className="font-[Aeonik,ui-sans-serif] text-[28px] tracking-tight text-[#1B1B1E]">
-        Rakazo
+        {PRODUCT_NAME}
       </span>
     </div>
   );

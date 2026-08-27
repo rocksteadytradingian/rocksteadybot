@@ -43,6 +43,7 @@ import { createDb, createThreadEvents, type PrismaClient, requireMembership } fr
 import { MarkdownMemoryStore } from "@rakazo/memory";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
+import { loadUserComposioApiKey } from "./composio-project-key.js";
 import { type AppEnv, loadEnv } from "./env.js";
 import { createRouter } from "./router.js";
 import { mountVoiceHttpRoutes } from "./voice.js";
@@ -134,11 +135,15 @@ export async function createApp(
     pipedreamOverride ??
     (isPipedreamEnabled(pipedreamConfig) ? new PipedreamConnector(pipedreamConfig) : undefined);
   const installed = new InstalledConnectorProvider(prisma, secrets, remoteConnectors);
-  const stack = createConnectorStack(isComposioEnabled(env.composioApiKey), composioOverride, [
-    installed,
-    ...(pipedream ? [pipedream] : []),
-    mcp,
-  ]);
+  const stack = createConnectorStack(
+    isComposioEnabled(env.composioApiKey),
+    composioOverride,
+    [installed, ...(pipedream ? [pipedream] : []), mcp],
+    {
+      envApiKey: env.composioApiKey,
+      resolveUserApiKey: (userId) => loadUserComposioApiKey(prisma, secrets, userId),
+    },
+  );
   const connector = stack.destination;
   await connector.start();
   void stack.composio?.warmDirectory().catch(() => undefined);
@@ -248,6 +253,7 @@ export async function createApp(
       webOrigin: env.webOrigin,
       screenProxySecret: env.authSecret,
       sandboxProvider: env.sandboxProvider,
+      composioApiKey: env.composioApiKey,
     },
   });
   const rpc = new RPCHandler(router);
@@ -272,11 +278,19 @@ export async function createApp(
   app.use("/rpc/*", async (c, next) => {
     const session = await auth.api.getSession({ headers: sessionHeaders(c.req.raw) });
     const actor = session?.user
-      ? await requireMembership(prisma, session.user.id).catch(() => null)
+      ? await requireMembership(
+          prisma,
+          session.user.id,
+          session.session.activeOrganizationId,
+        ).catch(() => null)
       : null;
     const { matched, response } = await rpc.handle(c.req.raw, {
       prefix: "/rpc",
-      context: { actor, signal: c.req.raw.signal },
+      context: {
+        actor,
+        signal: c.req.raw.signal,
+        sessionId: session?.session.id ?? null,
+      },
     });
     if (matched) return c.newResponse(response.body, response);
     await next();
@@ -284,14 +298,16 @@ export async function createApp(
   mountVoiceHttpRoutes(app, { prisma, secrets }, async (c) => {
     const session = await auth.api.getSession({ headers: sessionHeaders(c.req.raw) });
     if (!session?.user) return null;
-    return requireMembership(prisma, session.user.id).catch(() => null);
+    return requireMembership(prisma, session.user.id, session.session.activeOrganizationId).catch(
+      () => null,
+    );
   });
   app.get("/health", (c) =>
     c.json({
       ok: true,
       runtime: env.agentRuntime,
       sandbox: env.sandboxProvider,
-      composio: Boolean(stack.composio),
+      composio: Boolean(composioOverride) || isComposioEnabled(env.composioApiKey),
       pipedream: Boolean(pipedream),
       jobs: jobKind,
       realtime: realtime.describe().id,

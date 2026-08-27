@@ -1,16 +1,39 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-theme="claude">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="description" content="Your team of always-on agents." />
-    <meta name="theme-color" content="#050506" />
-    <meta name="apple-mobile-web-app-title" content="Rakazo" />
+    <meta name="theme-color" content="#F4EFE6" />
+    <meta name="apple-mobile-web-app-title" content="RocksteadyBot" />
     <link rel="icon" href="/favicon.ico" sizes="any" />
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
     <link rel="manifest" href="/site.webmanifest" />
-    <title>Rakazo</title>
+    <title>RocksteadyBot</title>
+    <script>
+      try {
+        var theme = localStorage.getItem("rakazo.uiTheme");
+        var aliases = {
+          light: "claude",
+          midnight: "grok",
+          slate: "chatgpt",
+          sand: "claude",
+          moss: "gemini",
+        };
+        if (aliases[theme]) theme = aliases[theme];
+        if (
+          theme === "grok" ||
+          theme === "chatgpt" ||
+          theme === "claude" ||
+          theme === "gemini" ||
+          theme === "perplexity" ||
+          theme === "copilot"
+        ) {
+          document.documentElement.setAttribute("data-theme", theme);
+        }
+      } catch (e) {}
+    </script>
   </head>
   <body>
     <div id="root"></div>

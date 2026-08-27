@@ -164,9 +164,22 @@ describe("mobile computer screen", () => {
     expect(src).toContain("Take control");
     expect(src).toContain("Release");
     expect(src).toContain("Close computer");
+    expect(src).toContain("Enlarge computer");
     expect(src).toContain("currentApiBase()");
     expect(src).toContain("SafeAreaProvider");
     expect(src).toContain("readScreenUrl");
     expect(src).toContain("SCREEN_URL_OPEN_ATTEMPTS");
+  });
+
+  it("explains Team sharing and how to give a bot its own computer", () => {
+    const src = readFileSync(
+      path.join(
+        path.dirname(fileURLToPath(import.meta.url)),
+        "../components/computer-mode-picker.tsx",
+      ),
+      "utf8",
+    );
+    expect(src).toContain("Shared with other bots. Switch to Private for this bot’s own computer.");
+    expect(src).toContain("Only this bot uses this computer.");
   });
 });

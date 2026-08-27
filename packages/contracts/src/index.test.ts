@@ -10,6 +10,7 @@ import {
   MessageBlock,
   ModelOAuthBeginSchema,
   normalizeCreateBotProfile,
+  PendingApprovalSchema,
   ProductEventType,
   RunActivityRowSchema,
   RunSchema,
@@ -151,6 +152,22 @@ describe("contracts", () => {
         trigger: run.trigger,
         promptSnippet: "Review the report",
         updatedAt: "2026-08-26T00:00:01.000Z",
+      }).success,
+    ).toBe(true);
+    expect(
+      PendingApprovalSchema.safeParse({
+        id: "effect-1",
+        runId: run.id,
+        messageId: "message-1",
+        threadId: run.threadId,
+        botId: run.botId,
+        botName: "Researcher",
+        groupId: null,
+        groupName: null,
+        summary: 'writing "Q1" to reports',
+        toolName: "destination.write",
+        highRisk: true,
+        requestedAt: "2026-08-28T02:35:02.000Z",
       }).success,
     ).toBe(true);
   });

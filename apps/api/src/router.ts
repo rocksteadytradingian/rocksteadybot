@@ -86,21 +86,34 @@ import {
   createGroupRepos,
   createRepos,
   createThreadMessageInTransaction,
+  createWorkspace,
+  deleteWorkspace,
   findDefaultModelCredential,
   findDefaultVoiceCredential,
   findWorkspaceMemoryConfig,
   IsolationError,
+  listWorkspaces,
   lockOwnedGroup,
   newestModelCredentialOrder,
   newestVoiceCredentialOrder,
   Prisma,
   type PrismaClient,
   parseComputerMode,
+  renameWorkspace,
+  requireMembership,
+  setActiveWorkspace,
   type ThreadEvents,
   touchGroupUpdatedAt,
+  WorkspaceError,
 } from "@rakazo/db";
 import { createAgentSkillsService } from "./agent-skills.js";
+import { listPendingApprovals } from "./approvals.js";
 import { createOwnedArtifact, getOwnedArtifact, getWorkspaceArtifact } from "./artifacts.js";
+import {
+  clearComposioProjectKey,
+  persistComposioProjectKey,
+  readComposioProjectKeyStatus,
+} from "./composio-project-key.js";
 import {
   executionBlocksUserTakeover,
   resolveBusyBotName,
@@ -307,11 +320,16 @@ export interface RouterDeps {
     webOrigin: string;
     screenProxySecret: string;
     sandboxProvider: string;
+    composioApiKey?: string;
   };
 }
 
 export function createRouter(deps: RouterDeps) {
-  const os = implement(appContract).$context<{ actor: Actor | null; signal?: AbortSignal }>();
+  const os = implement(appContract).$context<{
+    actor: Actor | null;
+    signal?: AbortSignal;
+    sessionId?: string | null;
+  }>();
   const repos = createRepos(deps.prisma);
   const mcpOAuth = deps.mcpOAuth ?? new McpOAuthBroker(deps.prisma, deps.secrets);
   const groupRepos = createGroupRepos(deps.prisma);
@@ -352,6 +370,53 @@ export function createRouter(deps: RouterDeps) {
         : [null, []];
       return { me, bots, botSections, archivedBots, thread, routines };
     }),
+    workspaces: {
+      list: authed.workspaces.list.handler(async ({ context }) =>
+        listWorkspaces(deps.prisma, context.actor.userId),
+      ),
+      create: authed.workspaces.create.handler(async ({ context, input }) => {
+        const workspace = await createWorkspace(deps.prisma, {
+          userId: context.actor.userId,
+          name: input.name,
+          sourceWorkspaceId: context.actor.workspaceId,
+        }).catch(rethrowWorkspaceError);
+        await setActiveWorkspace(deps.prisma, {
+          userId: context.actor.userId,
+          workspaceId: workspace.id,
+          sessionId: context.sessionId,
+        });
+        return meDto(
+          deps,
+          await requireMembership(deps.prisma, context.actor.userId, workspace.id),
+        );
+      }),
+      switch: authed.workspaces.switch.handler(async ({ context, input }) => {
+        await setActiveWorkspace(deps.prisma, {
+          userId: context.actor.userId,
+          workspaceId: input.workspaceId,
+          sessionId: context.sessionId,
+        });
+        return meDto(
+          deps,
+          await requireMembership(deps.prisma, context.actor.userId, input.workspaceId),
+        );
+      }),
+      update: authed.workspaces.update.handler(async ({ context, input }) =>
+        renameWorkspace(deps.prisma, {
+          userId: context.actor.userId,
+          workspaceId: input.workspaceId,
+          name: input.name,
+        }).catch(rethrowWorkspaceError),
+      ),
+      remove: authed.workspaces.remove.handler(async ({ context, input }) => {
+        const next = await deleteWorkspace(deps.prisma, {
+          userId: context.actor.userId,
+          workspaceId: input.workspaceId,
+          currentWorkspaceId: context.actor.workspaceId,
+        }).catch(rethrowWorkspaceError);
+        return meDto(deps, await requireMembership(deps.prisma, context.actor.userId, next.id));
+      }),
+    },
     deployment: {
       get: authed.deployment.get.handler(async ({ context }) => {
         if (!context.actor.isDeploymentOwner) throw new ORPCError("FORBIDDEN");
@@ -2590,6 +2655,29 @@ export function createRouter(deps: RouterDeps) {
         });
         return { ok: true as const };
       }),
+      projectKey: authed.connections.projectKey.handler(async ({ context }) =>
+        readComposioProjectKeyStatus(
+          { prisma: deps.prisma, secrets: deps.secrets, envApiKey: deps.env.composioApiKey },
+          context.actor.userId,
+        ),
+      ),
+      setProjectKey: authed.connections.setProjectKey.handler(async ({ context, input }) => {
+        const status = await persistComposioProjectKey(
+          { prisma: deps.prisma, secrets: deps.secrets, envApiKey: deps.env.composioApiKey },
+          context.actor,
+          input.apiKey,
+        );
+        deps.composio?.invalidateUser?.(context.actor.userId);
+        return status;
+      }),
+      clearProjectKey: authed.connections.clearProjectKey.handler(async ({ context }) => {
+        const status = await clearComposioProjectKey(
+          { prisma: deps.prisma, secrets: deps.secrets, envApiKey: deps.env.composioApiKey },
+          context.actor.userId,
+        );
+        deps.composio?.invalidateUser?.(context.actor.userId);
+        return status;
+      }),
     },
     approvalRules: {
       list: authed.approvalRules.list.handler(async ({ context }) => {
@@ -2646,6 +2734,11 @@ export function createRouter(deps: RouterDeps) {
         });
         return { ok: true as const };
       }),
+    },
+    approvals: {
+      list: authed.approvals.list.handler(async ({ context }) =>
+        listPendingApprovals(deps.prisma, context.actor),
+      ),
     },
     artifacts: {
       list: authed.artifacts.list.handler(async ({ context, input }) => {
@@ -2892,10 +2985,11 @@ export function createRouter(deps: RouterDeps) {
 }
 
 async function meDto(deps: RouterDeps, actor: Actor): Promise<Me> {
-  const [user, cred, settings] = await Promise.all([
+  const [user, cred, settings, workspaces] = await Promise.all([
     deps.prisma.user.findUniqueOrThrow({ where: { id: actor.userId } }),
     findDefaultModelCredential(deps.prisma, actor),
     deps.prisma.deploymentSettings.findUnique({ where: { id: "default" } }),
+    listWorkspaces(deps.prisma, actor.userId),
   ]);
   const hasDeployment = Boolean(
     settings?.deploymentModelCredentialCipher || deps.env.deploymentModelKey,
@@ -2905,6 +2999,9 @@ async function meDto(deps: RouterDeps, actor: Actor): Promise<Me> {
     email: user.email,
     name: user.name,
     workspaceId: actor.workspaceId,
+    workspaceName:
+      workspaces.find((workspace) => workspace.id === actor.workspaceId)?.name ?? "Personal",
+    workspaces,
     isDeploymentOwner: actor.isDeploymentOwner,
     needsModel: !cred && !hasDeployment,
     defaultProvider: cred?.provider ?? settings?.defaultModelProvider ?? deps.env.defaultProvider,
@@ -2912,6 +3009,20 @@ async function meDto(deps: RouterDeps, actor: Actor): Promise<Me> {
     computerHost: computerHostFor(settings?.computerHost, deps.env.sandboxProvider),
     canChooseHostComputer: actor.isDeploymentOwner && deps.env.sandboxProvider === "docker",
   };
+}
+
+function rethrowWorkspaceError(error: unknown): never {
+  if (error instanceof IsolationError) throw error;
+  if (error instanceof WorkspaceError) {
+    if (error.code === "last_workspace") {
+      throw new ORPCError("BAD_REQUEST", { message: error.message });
+    }
+    if (error.code === "forbidden") {
+      throw new ORPCError("FORBIDDEN", { message: error.message });
+    }
+    throw new IsolationError();
+  }
+  throw error;
 }
 
 async function computerStatus(

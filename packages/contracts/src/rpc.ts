@@ -12,6 +12,7 @@ import {
   BotSchema,
   BotSectionSchema,
   CapabilityInstallSchema,
+  ComposioProjectKeyStatusSchema,
   ComputerModeSchema,
   ComputerReleaseReasonSchema,
   ComputerStatusSchema,
@@ -52,10 +53,11 @@ import {
   VoiceInfoSchema,
   VoiceStatusSchema,
   WorkspaceMemoryConfigSchema,
+  WorkspaceSchema,
 } from "./domain.js";
 import { ProductEventSchema } from "./events.js";
 import { Id } from "./ids.js";
-import { RunsListOutputSchema } from "./runs.js";
+import { PendingApprovalSchema, RunsListOutputSchema } from "./runs.js";
 import { SearchQueryOutputSchema } from "./search.js";
 
 const botId = z.object({ botId: Id });
@@ -113,6 +115,15 @@ export const appContract = {
   health: oc.output(z.object({ ok: z.literal(true), version: z.string() })),
   me: oc.output(MeSchema),
   bootstrap: oc.input(z.object({ botId: Id.optional() })).output(AppBootstrapSchema),
+  workspaces: {
+    list: oc.output(z.array(WorkspaceSchema)),
+    create: oc.input(z.object({ name: z.string().trim().min(1).max(80) })).output(MeSchema),
+    switch: oc.input(z.object({ workspaceId: Id })).output(MeSchema),
+    update: oc
+      .input(z.object({ workspaceId: Id, name: z.string().trim().min(1).max(80) }))
+      .output(WorkspaceSchema),
+    remove: oc.input(z.object({ workspaceId: Id })).output(MeSchema),
+  },
   deployment: {
     get: oc.output(DeploymentSettingsSchema),
     update: oc
@@ -485,6 +496,11 @@ export const appContract = {
       .input(z.object({ connectionId: Id, code: z.string().optional() }))
       .output(ConnectionSchema),
     revoke: oc.input(z.object({ connectionId: Id })).output(z.object({ ok: z.literal(true) })),
+    projectKey: oc.output(ComposioProjectKeyStatusSchema),
+    setProjectKey: oc
+      .input(z.object({ apiKey: z.string().min(8).max(512) }))
+      .output(ComposioProjectKeyStatusSchema),
+    clearProjectKey: oc.output(ComposioProjectKeyStatusSchema),
   },
   approvalRules: {
     list: oc.output(z.array(ActionApprovalRuleSchema)),
@@ -498,6 +514,9 @@ export const appContract = {
       )
       .output(ActionApprovalRuleSchema),
     remove: oc.input(z.object({ id: Id })).output(z.object({ ok: z.literal(true) })),
+  },
+  approvals: {
+    list: oc.output(z.array(PendingApprovalSchema)),
   },
   artifacts: {
     list: oc.input(botId).output(z.array(ArtifactSchema)),

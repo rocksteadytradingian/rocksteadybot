@@ -6,10 +6,12 @@ import { I18nBootstrap } from "./components/I18nBootstrap";
 import { applyUiDirection } from "./lib/apply-ui-direction";
 import { markAfterPaint, markOnce } from "./lib/performance";
 import { resolveUiLocale } from "./lib/ui-locale";
+import { applyUiTheme, resolveUiTheme } from "./lib/ui-theme";
 import "./styles.css";
 
 markOnce("rk:renderer:module-evaluated");
 applyUiDirection(resolveUiLocale());
+applyUiTheme(resolveUiTheme());
 
 function PerformanceProbe() {
   useLayoutEffect(() => {

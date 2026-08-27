@@ -23,6 +23,9 @@ test("Team Computer gives bots a home folder plus shared space while Private sta
 
   await openComputerPanel(page);
   await expect(page.getByText("Team Computer", { exact: true }).last()).toBeVisible();
+  await expect(
+    page.getByText("Shared with other bots. Switch to Private for this bot’s own computer."),
+  ).toBeVisible();
   await captureScreenshot(page, testInfo, "41-team-computer");
 
   const writerId = await createBot(page, "Writer", "team");
@@ -51,6 +54,7 @@ test("Team Computer gives bots a home folder plus shared space while Private sta
   const privateId = await createBot(page, "Private Writer", "dedicated");
   await openComputerPanel(page);
   await expect(page.getByText("Private Writer’s computer", { exact: true }).last()).toBeVisible();
+  await expect(page.getByText("Only this bot uses this computer.")).toBeVisible();
   await captureScreenshot(page, testInfo, "43-private-computer");
   await expect(readFileResponse(page, privateId, "notes/result.txt")).resolves.toMatchObject({
     ok: false,

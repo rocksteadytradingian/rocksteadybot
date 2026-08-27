@@ -29,12 +29,12 @@ export default function Layout() {
               contentStyle: { backgroundColor: "#000" },
             }}
           >
-            <Stack.Screen name="index" options={{ headerShown: false, title: "Rakazo" }} />
+            <Stack.Screen name="index" options={{ headerShown: false, title: "RocksteadyBot" }} />
             <Stack.Screen name="sign-in" options={{ headerShown: false }} />
             <Stack.Screen name="account" options={{ title: "Account" }} />
             <Stack.Screen name="models" options={{ title: "Models" }} />
             <Stack.Screen name="voice" options={{ title: "Voice" }} />
-            <Stack.Screen name="integrations" options={{ title: "Integrations" }} />
+            <Stack.Screen name="integrations" options={{ title: "Plugins" }} />
             <Stack.Screen
               name="new"
               options={{
@@ -58,6 +58,7 @@ export default function Layout() {
             <Stack.Screen name="thread" options={{ title: "Thread" }} />
             <Stack.Screen name="routine" options={{ title: "Routine" }} />
             <Stack.Screen name="computer" options={{ title: "Computer" }} />
+            <Stack.Screen name="approvals" options={{ title: "Approvals" }} />
           </Stack>
         </ThemeProvider>
       ) : (
