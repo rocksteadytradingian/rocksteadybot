@@ -117,7 +117,8 @@ container logs, default no-new-privileges, and the kernel NAT path instead of Do
    `Caddyfile.cloudflare.example` to an operator-controlled path outside the public checkout. Set
    `CADDYFILE_PATH` to that absolute path. The example drops application requests that do not come
    from Cloudflare's [published IP ranges](https://www.cloudflare.com/ips/); reconcile those ranges
-   whenever Cloudflare publishes a change. A Cloudflare Tunnel can replace the public web listeners.
+   whenever Cloudflare publishes a change. To skip public web listeners entirely, use a
+   [Cloudflare Tunnel](#cloudflare-tunnel) instead.
 2. Clone the repository on the VM and create a root `.env` with production-only values. At minimum set
    `POSTGRES_PASSWORD`, `BETTER_AUTH_SECRET`, `ENCRYPTION_KEY`, `E2B_API_KEY`, `OPENROUTER_API_KEY`,
    `RAKAZO_HOST`, and the three public origins. Set `RAKAZO_DEPLOY_DIR` when the checkout is not at
@@ -146,6 +147,8 @@ RAKAZO_DEPLOY_DIR=/srv/rakazo
 RAKAZO_IMAGE_TAG=local
 # Optional: required only with `--profile updater`.
 # RAKAZO_UPDATER_TOKEN=replace-with-32-plus-character-updater-token
+# Named Cloudflare Tunnel (optional). See "Cloudflare Tunnel" in docs/self-host.md.
+# CLOUDFLARE_TUNNEL_TOKEN=
 ```
 
 4. Build the images from your checkout and start the stack, then verify its public health endpoint:
@@ -177,10 +180,57 @@ See [Published images and tags](#published-images-and-tags) for the tag contract
 The root `.env` is excluded from both Git and the Docker build context. The database, application data,
 and Caddy certificates live in named Docker volumes.
 
-The production Compose file pins Postgres and Caddy to multi-architecture manifest digests, and the
-published application/updater builds pin their base-image digests. Refresh those pins deliberately
-when taking upstream security updates; changing only the visible major tag does not change the
-content while a digest is present.
+The production Compose file pins Postgres, Caddy, and cloudflared to multi-architecture manifest
+digests, and the published application/updater builds pin their base-image digests. Refresh those
+pins deliberately when taking upstream security updates; changing only the visible major tag does
+not change the content while a digest is present.
+
+## Cloudflare Tunnel
+
+A named Cloudflare Tunnel publishes HTTPS without opening :80/:443 on the VM. That is the
+supported way to open the product on a phone that is not on the same private network. Create a
+remotely managed tunnel in [Cloudflare Zero Trust](https://one.dash.cloudflare.com/) → Networks →
+Tunnels, add a public hostname for `RAKAZO_HOST`, and set its service URL to `http://caddy:80`
+(Compose service name, not `localhost`). Put the tunnel token in `.env` as
+`CLOUDFLARE_TUNNEL_TOKEN`. Set the three public origins to that hostname:
+
+```env
+RAKAZO_HOST=app.example.com
+BETTER_AUTH_URL=https://app.example.com
+WEB_ORIGIN=https://app.example.com
+API_URL=https://app.example.com
+CLOUDFLARE_TUNNEL_TOKEN= # tunnel token from Zero Trust; never commit this
+```
+
+Then start the production stack with the overlay that unpublishes Caddy and uses the HTTP-only
+origin Caddyfile:
+
+```bash
+docker compose --env-file .env \
+  -f infra/compose/docker-compose.prod.yml \
+  -f infra/compose/docker-compose.tunnel.yml \
+  up -d --wait --pull never
+```
+
+Keep both Compose files in the unit or script that starts the stack. The updater sidecar still
+recreates only `api`, `worker`, and `web` from `docker-compose.prod.yml`; it does not stop
+`cloudflared`.
+
+The same connector is a `--profile tunnel` service in `docker-compose.prod.yml` if you want Caddy's
+host listeners to stay published while you migrate. In that case set `CADDYFILE_PATH` to
+`./Caddyfile.tunnel` so Caddy does not try to issue a public certificate for a hostname the tunnel
+already terminates.
+
+Local Compose (`infra/compose/docker-compose.yml`) has the same named-tunnel profile, with the Zero
+Trust service URL `http://web:5173`. For a throwaway preview without a domain, `--profile
+quick-tunnel` prints a `https://*.trycloudflare.com` URL in `docker compose logs cloudflared-quick`.
+Set the three public origins to that URL and recreate `api` and `web` before signing in; the URL
+changes every start. Prefer a named tunnel for anything you will actually log into.
+
+On the phone, open that HTTPS origin in the browser or tap **Use a custom server** in the iOS /
+Android app and enter the same URL as `WEB_ORIGIN`. The tunnel is the public edge: keep
+`SIGNUPS_ENABLED` / `SIGNUP_ALLOWLIST` tight, and do not point it at the Docker supervisor or
+Postgres.
 
 For the single-VM production layout, install `infra/compose/backup-prod.sh` as
 `/usr/local/sbin/rakazo-backup` and enable the supplied `rakazo-backup.timer`. It creates a verified
@@ -379,4 +429,4 @@ To run a hosted product (same codebase):
 
 Expo / desktop installers are clients of that origin (`EXPO_PUBLIC_API_URL`, `RAKAZO_WEB_URL`). They are not a Cloud control plane.
 
-The iOS and Android app can also point at a self-hosted origin at runtime. On the sign-in screen, tap **Use a custom server** and enter the same HTTPS origin as `WEB_ORIGIN` (for example `https://app.example.com`). Store builds still default to `EXPO_PUBLIC_API_URL`; the in-app setting is an override for people running their own API. Changing the server signs the device out of any previous session.
+The iOS and Android app can also point at a self-hosted origin at runtime. On the sign-in screen, tap **Use a custom server** and enter the same HTTPS origin as `WEB_ORIGIN` (for example `https://app.example.com`). A [Cloudflare Tunnel](#cloudflare-tunnel) is the usual way to give that origin a public HTTPS name without opening ports on the host. Store builds still default to `EXPO_PUBLIC_API_URL`; the in-app setting is an override for people running their own API. Changing the server signs the device out of any previous session.

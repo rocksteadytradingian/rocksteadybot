@@ -1,0 +1,24 @@
+# Optional overlay: Cloudflare Tunnel replaces Caddy's public :80/:443 listeners.
+# Requires CLOUDFLARE_TUNNEL_TOKEN. In Zero Trust, point the public hostname at
+# http://caddy:80 (the Compose service name, not localhost).
+#
+#   docker compose --env-file .env \
+#     -f infra/compose/docker-compose.prod.yml \
+#     -f infra/compose/docker-compose.tunnel.yml \
+#     up -d
+#
+# Cookies and CORS follow BETTER_AUTH_URL / WEB_ORIGIN / API_URL, which must be
+# the HTTPS hostname you attached to the tunnel. The updater still recreates only
+# api/worker/web from docker-compose.prod.yml; keep this overlay in the unit or
+# script that starts the stack.
+
+services:
+  caddy:
+    ports: !reset []
+    volumes: !override
+      - ${CADDYFILE_PATH:-./Caddyfile.tunnel}:/etc/caddy/Caddyfile:ro
+      - caddydata:/data
+      - caddyconfig:/config
+
+  cloudflared:
+    profiles: !reset []

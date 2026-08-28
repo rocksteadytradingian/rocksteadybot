@@ -1,3 +1,5 @@
+# Orange-cloud DNS proxy in front of a public Caddy. A Cloudflare Tunnel that
+# replaces host listeners is docker-compose.tunnel.yml, not this file.
 {
 	order abort first
 }

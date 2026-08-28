@@ -228,6 +228,35 @@ services:
       web:
         condition: service_started
 
+  # Opt-in Cloudflare Tunnel connector. It only makes outbound connections, so it
+  # publishes nothing and stays on `edge` with Caddy. Token interpolation is
+  # optional so deployments that do not enable this profile need no token.
+  # Point the Zero Trust public hostname at http://caddy:80 and start with
+  # `--profile tunnel`, or use docker-compose.tunnel.yml to drop Caddy's host
+  # listeners and always start this service.
+  cloudflared:
+    profiles: [tunnel]
+    image: cloudflare/cloudflared:2026.8.2@sha256:0aa26e284f05e6c77ae375b8c9c11d9eb6a448fb7bcd8d40f31cb6176189eb38
+    restart: unless-stopped
+    command: ["tunnel", "run"]
+    user: "65532:65532"
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    pids_limit: 64
+    mem_limit: 128m
+    environment:
+      TUNNEL_TOKEN: ${CLOUDFLARE_TUNNEL_TOKEN:-}
+    networks:
+      - edge
+    tmpfs:
+      - /tmp
+    depends_on:
+      caddy:
+        condition: service_started
+
 volumes:
   pgdata:
   appdata:

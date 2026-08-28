@@ -1,0 +1,26 @@
+{
+	# Origin TLS is Cloudflare's job. This file is for a privately reachable Caddy
+	# that cloudflared dials over the Compose network. Do not publish host ports 80
+	# or 443 when using it; see docker-compose.tunnel.yml.
+	auto_https off
+}
+
+:80 {
+	encode zstd gzip
+
+	handle /health {
+		reverse_proxy api:3100
+	}
+
+	handle /api/* {
+		reverse_proxy api:3100
+	}
+
+	handle /rpc/* {
+		reverse_proxy api:3100
+	}
+
+	handle {
+		reverse_proxy web:5173
+	}
+}

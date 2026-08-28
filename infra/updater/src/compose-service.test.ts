@@ -72,6 +72,8 @@ describe("the updater compose service", () => {
 
   it("is not one of the services an update recreates", () => {
     expect(RECREATED_SERVICES).not.toContain("updater");
+    expect(RECREATED_SERVICES).not.toContain("caddy");
+    expect(RECREATED_SERVICES).not.toContain("cloudflared");
     for (const service of RECREATED_SERVICES) {
       expect(Object.keys(compose.services)).toContain(service);
     }
@@ -89,6 +91,9 @@ describe("the updater compose service", () => {
     expect(compose.services.api?.image).toContain("ghcr.io/elie222/rakazo/app");
     expect(compose.services.postgres?.image).toMatch(/^postgres:16@sha256:[0-9a-f]{64}$/);
     expect(compose.services.caddy?.image).toMatch(/^caddy:2@sha256:[0-9a-f]{64}$/);
+    expect(compose.services.cloudflared?.image).toMatch(
+      /^cloudflare\/cloudflared:2026\.8\.2@sha256:[0-9a-f]{64}$/,
+    );
   });
 
   it("injects the actual Compose project name into the updater container", () => {
@@ -105,5 +110,64 @@ describe("the updater compose service", () => {
   it("does not let the api container reach the Docker socket to update itself", () => {
     expect(compose.services.api?.volumes ?? []).not.toContain("/var/run/docker.sock");
     expect(compose.services.api?.environment?.RAKAZO_UPDATER_URL).toBe("http://updater:7092");
+  });
+});
+
+const composeDir = path.dirname(composeFile);
+const cloudflared = compose.services.cloudflared as ComposeService;
+const overlay = readFileSync(path.join(composeDir, "docker-compose.tunnel.yml"), "utf8");
+const caddyProd = readFileSync(path.join(composeDir, "Caddyfile.prod"), "utf8");
+const caddyTunnel = readFileSync(path.join(composeDir, "Caddyfile.tunnel"), "utf8");
+const localCompose = readFileSync(path.join(composeDir, "docker-compose.yml"), "utf8");
+
+describe("the cloudflared compose service", () => {
+  it("is opt-in and publishes nothing on the host", () => {
+    expect(cloudflared).toBeDefined();
+    expect(cloudflared.profiles).toEqual(["tunnel"]);
+    expect(cloudflared.ports).toBeUndefined();
+    expect(cloudflared.command).toEqual(["tunnel", "run"]);
+    expect(cloudflared.user).toBe("65532:65532");
+  });
+
+  it("only reaches Caddy on the edge network", () => {
+    expect(cloudflared.networks).toEqual(["edge"]);
+    expect(cloudflared.networks ?? []).not.toContain("control");
+    expect(cloudflared.networks ?? []).not.toContain("data");
+    expect(compose.services.caddy?.networks).toContain("edge");
+  });
+
+  it("does not load application secrets or the Docker socket", () => {
+    expect(cloudflared.env_file).toBeUndefined();
+    expect(cloudflared.volumes ?? []).toEqual([]);
+    // biome-ignore lint/suspicious/noTemplateCurlyInString: this is the literal Compose expression
+    expect(cloudflared.environment?.TUNNEL_TOKEN).toBe("${CLOUDFLARE_TUNNEL_TOKEN:-}");
+  });
+});
+
+describe("the Cloudflare Tunnel overlay", () => {
+  it("drops Caddy's public listeners and uses the HTTP origin Caddyfile", () => {
+    expect(overlay).toContain("ports: !reset []");
+    expect(overlay).toContain("profiles: !reset []");
+    expect(overlay).toContain("Caddyfile.tunnel");
+    expect(overlay).toContain("volumes: !override");
+  });
+
+  it("keeps Caddy's HTTP origin private and aligned with the TLS Caddyfile", () => {
+    expect(caddyTunnel).toContain("auto_https off");
+    expect(caddyTunnel).toContain(":80");
+    expect(caddyTunnel).not.toMatch(/:443/);
+    for (const route of ["/health", "/api/*", "/rpc/*"]) {
+      expect(caddyTunnel).toContain(route);
+      expect(caddyProd).toContain(route);
+    }
+    expect(caddyTunnel).toContain("reverse_proxy api:3100");
+    expect(caddyTunnel).toContain("reverse_proxy web:5173");
+  });
+
+  it("pins the same cloudflared image on the local Compose file", () => {
+    expect(cloudflared.image).toBeDefined();
+    expect(localCompose).toContain(`image: ${cloudflared.image}`);
+    expect(localCompose).toContain("profiles: [quick-tunnel]");
+    expect(localCompose).toContain("http://web:5173");
   });
 });
