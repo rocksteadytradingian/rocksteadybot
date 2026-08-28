@@ -104,10 +104,50 @@ services:
       API_PROXY_TARGET: http://api:3100
       BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:-}
       RAKAZO_HOST: ${RAKAZO_HOST:-localhost}
+      RAKAZO_ALLOWED_HOSTS: ${RAKAZO_ALLOWED_HOSTS:-}
     ports:
       - "5173:5173"
     depends_on:
       - api
+
+  # Named Cloudflare Tunnel. In Zero Trust, point the public hostname at
+  # http://web:5173. Set BETTER_AUTH_URL, WEB_ORIGIN, and API_URL to that HTTPS
+  # origin before starting.
+  cloudflared:
+    profiles: [tunnel]
+    image: cloudflare/cloudflared:2026.8.2@sha256:0aa26e284f05e6c77ae375b8c9c11d9eb6a448fb7bcd8d40f31cb6176189eb38
+    restart: unless-stopped
+    command: ["tunnel", "run"]
+    user: "65532:65532"
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    environment:
+      TUNNEL_TOKEN: ${CLOUDFLARE_TUNNEL_TOKEN:-}
+    tmpfs:
+      - /tmp
+    depends_on:
+      - web
+
+  # Ephemeral trycloudflare.com URL. Read it from `docker compose logs cloudflared-quick`,
+  # then set the three public origins to that HTTPS URL and recreate api and web.
+  cloudflared-quick:
+    profiles: [quick-tunnel]
+    image: cloudflare/cloudflared:2026.8.2@sha256:0aa26e284f05e6c77ae375b8c9c11d9eb6a448fb7bcd8d40f31cb6176189eb38
+    restart: unless-stopped
+    command: ["tunnel", "--url", "http://web:5173"]
+    user: "65532:65532"
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    tmpfs:
+      - /tmp
+    depends_on:
+      - web
 
 volumes:
   pgdata:

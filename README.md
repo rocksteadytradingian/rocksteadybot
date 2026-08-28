@@ -98,6 +98,7 @@ the shell somewhere else without changing the saved instance, or `RAKAZO_FORCE_S
 setup again.
 
 Mobile build and release instructions live in [docs/mobile-release.md](./docs/mobile-release.md).
+To reach a local or private deployment from a phone, use a [Cloudflare Tunnel](./docs/self-host.md#cloudflare-tunnel).
 
 ## Web UI language
 

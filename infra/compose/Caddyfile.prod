@@ -1,3 +1,5 @@
+# Public HTTPS origin. For a Cloudflare Tunnel that replaces host listeners, use
+# Caddyfile.tunnel with docker-compose.tunnel.yml instead of this file.
 {$RAKAZO_HOST:app.example.com} {
 	encode zstd gzip
 
