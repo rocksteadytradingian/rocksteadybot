@@ -1,6 +1,6 @@
 import type { AgentRunRequest, AgentRuntime, JobPublisher } from "@rakazo/adapter-kit";
 import { historyCompactJob } from "@rakazo/adapter-kit";
-import { PRODUCT_NAME, type MessageBlock } from "@rakazo/contracts";
+import { type MessageBlock, PRODUCT_NAME } from "@rakazo/contracts";
 import { blocksToAgentHistoryText } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
 import { resolveDeploymentModel } from "./deployment-model.js";

@@ -1053,6 +1053,7 @@ app.whenReady().then(async () => {
   });
 
   if (target.kind === "setup") {
+    showSetupWindow();
     if (localStackAutoConnectOnFirstRun(process.env)) {
       const reachability = await probeServer(DEFAULT_LOCAL_WEB_URL);
       if (reachability.ok) {
@@ -1072,8 +1073,6 @@ app.whenReady().then(async () => {
       } else {
         showSetupWindow(reachability.error ?? null);
       }
-    } else {
-      showSetupWindow();
     }
   } else if (target.source === "saved") {
     const reachability = await probeServer(target.url);

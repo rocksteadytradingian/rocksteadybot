@@ -12,27 +12,31 @@
     <link rel="manifest" href="/site.webmanifest" />
     <title>RocksteadyBot</title>
     <script>
-      try {
-        var theme = localStorage.getItem("rakazo.uiTheme");
-        var aliases = {
-          light: "claude",
-          midnight: "grok",
-          slate: "chatgpt",
-          sand: "claude",
-          moss: "gemini",
-        };
-        if (aliases[theme]) theme = aliases[theme];
-        if (
-          theme === "grok" ||
-          theme === "chatgpt" ||
-          theme === "claude" ||
-          theme === "gemini" ||
-          theme === "perplexity" ||
-          theme === "copilot"
-        ) {
-          document.documentElement.setAttribute("data-theme", theme);
+      (() => {
+        try {
+          const aliases = {
+            light: "claude",
+            midnight: "grok",
+            slate: "chatgpt",
+            sand: "claude",
+            moss: "gemini",
+          };
+          let theme = localStorage.getItem("rakazo.uiTheme");
+          if (theme && aliases[theme]) theme = aliases[theme];
+          if (
+            theme === "grok" ||
+            theme === "chatgpt" ||
+            theme === "claude" ||
+            theme === "gemini" ||
+            theme === "perplexity" ||
+            theme === "copilot"
+          ) {
+            document.documentElement.setAttribute("data-theme", theme);
+          }
+        } catch {
+          /* private mode / blocked storage */
         }
-      } catch (e) {}
+      })();
     </script>
   </head>
   <body>
@@ -45,14 +49,14 @@
       <a href="/forgot-password" style="color: inherit">Forgot password?</a>
     </p>
     <script>
-      (function () {
-        var el = document.getElementById("rk-forgot-password");
+      (() => {
+        const el = document.getElementById("rk-forgot-password");
         if (!el) return;
-        function sync() {
-          var onSignIn = /\/sign-in\/?$/.test(location.pathname);
-          var hasLink = Boolean(document.querySelector('#root a[href="/forgot-password"]'));
+        const sync = () => {
+          const onSignIn = /\/sign-in\/?$/.test(location.pathname);
+          const hasLink = Boolean(document.querySelector('#root a[href="/forgot-password"]'));
           el.hidden = !onSignIn || hasLink;
-        }
+        };
         setInterval(sync, 400);
         if (document.readyState === "loading") {
           document.addEventListener("DOMContentLoaded", sync);

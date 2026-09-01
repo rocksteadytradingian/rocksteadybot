@@ -774,7 +774,11 @@ function PluginSection({
   return (
     <section className="mb-7" data-testid={testId}>
       <div className="mb-2 flex items-center justify-between gap-3">
-        {title ? <h2 className="text-[13px] font-medium text-[var(--rk-muted)]">{title}</h2> : <span />}
+        {title ? (
+          <h2 className="text-[13px] font-medium text-[var(--rk-muted)]">{title}</h2>
+        ) : (
+          <span />
+        )}
         {showViewAll ? (
           <button
             type="button"

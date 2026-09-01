@@ -685,8 +685,8 @@ export function ModelSettingsOverlay({ onClose }: { onClose: () => void }) {
                 {selected.auth === "oauth" && !subscriptionSignIn ? (
                   <p className="mt-5 text-sm leading-[1.5] text-[var(--rk-muted)]">
                     <Trans>
-                      This subscription sign-in is not available in RocksteadyBot yet. Use a deployment
-                      credential or choose another provider.
+                      This subscription sign-in is not available in RocksteadyBot yet. Use a
+                      deployment credential or choose another provider.
                     </Trans>
                   </p>
                 ) : null}

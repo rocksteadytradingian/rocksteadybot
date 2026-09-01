@@ -65,8 +65,17 @@ export type LocalStackResult =
   | { ok: true; skipped?: "disabled" | "not-local" | "already-up"; repoRoot?: string }
   | { ok: false; error: string };
 
+function envFlagOn(value: string | undefined): boolean {
+  if (value === undefined) return false;
+  const normalized = value.trim().toLowerCase();
+  return normalized !== "" && normalized !== "0" && normalized !== "false" && normalized !== "off";
+}
+
 export function localStackAutoStartEnabled(env: NodeJS.Dict<string>): boolean {
-  if (env.RAKAZO_DISABLE_LOCAL_STACK === "1") return false;
+  if (envFlagOn(env.RAKAZO_DISABLE_LOCAL_STACK)) return false;
+  // CI must never block the Electron window on Docker Compose.
+  if (envFlagOn(env.CI)) return false;
+  if (env.RAKAZO_PERFORMANCE_USER_DATA?.trim()) return false;
   const webUrl = env.RAKAZO_WEB_URL?.trim();
   return webUrl === undefined || webUrl === "";
 }
@@ -504,7 +513,10 @@ export async function refreshWebFromCheckout(
 
   for (const copy of WEB_CHECKOUT_COPIES) {
     if (!checkoutCopyExists(repoRoot, copy.hostPath, (file) => host.exists(file))) continue;
-    await runCompose(composeCpArgs(envFileExists, copy.hostPath, copy.destination), COPY_TIMEOUT_MS);
+    await runCompose(
+      composeCpArgs(envFileExists, copy.hostPath, copy.destination),
+      COPY_TIMEOUT_MS,
+    );
   }
   for (const copy of API_CHECKOUT_COPIES) {
     if (!checkoutCopyExists(repoRoot, copy.hostPath, (file) => host.exists(file))) continue;

@@ -3680,11 +3680,7 @@ const Transcript = memo(function Transcript({
             message.blocks[0]?.kind === "progress" &&
             message.blocks[0].text,
         ) ? (
-          <ActiveBotGlyph
-            bots={workingBots}
-            label={workingLabel}
-            startedAt={workingStartedAt}
-          />
+          <ActiveBotGlyph bots={workingBots} label={workingLabel} startedAt={workingStartedAt} />
         ) : null}
       </div>
       <button

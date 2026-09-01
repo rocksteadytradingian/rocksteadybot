@@ -1,9 +1,9 @@
+import { spawnSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { spawnSync } from "node:child_process";
 import {
   composeBuildWebArgs,
   composeCpArgs,
@@ -99,6 +99,9 @@ describe("env gates", () => {
   it("stays out of the way of test harnesses and forced setup", () => {
     expect(localStackAutoStartEnabled({})).toBe(true);
     expect(localStackAutoStartEnabled({ RAKAZO_DISABLE_LOCAL_STACK: "1" })).toBe(false);
+    expect(localStackAutoStartEnabled({ RAKAZO_DISABLE_LOCAL_STACK: "true" })).toBe(false);
+    expect(localStackAutoStartEnabled({ CI: "true" })).toBe(false);
+    expect(localStackAutoStartEnabled({ RAKAZO_PERFORMANCE_USER_DATA: "/tmp/e2e" })).toBe(false);
     expect(localStackAutoStartEnabled({ RAKAZO_WEB_URL: "http://127.0.0.1:9" })).toBe(false);
     expect(localStackAutoConnectOnFirstRun({ RAKAZO_FORCE_SETUP: "1" })).toBe(false);
     expect(localStackAutoConnectOnFirstRun({})).toBe(true);
@@ -359,7 +362,9 @@ describe("ensureLocalStack", () => {
       ensureLocalStack({ targetUrl: "http://127.0.0.1:5173", searchFrom: [repo], host }),
     ).resolves.toEqual({ ok: true, repoRoot: repo });
     expect(
-      host.commands.some((command) => command.args.includes("build") && command.args.includes("web")),
+      host.commands.some(
+        (command) => command.args.includes("build") && command.args.includes("web"),
+      ),
     ).toBe(true);
   });
 

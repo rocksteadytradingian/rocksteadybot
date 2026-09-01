@@ -10,20 +10,28 @@ export function UiThemePicker({
 }) {
   const { t } = useLingui();
   return (
-    <div role="radiogroup" aria-label={t`Themes`} data-testid="ui-theme-picker">
+    <fieldset
+      className="m-0 min-w-0 border-0 p-0"
+      aria-label={t`Themes`}
+      data-testid="ui-theme-picker"
+    >
       {UI_THEMES.map((option) => {
         const selected = option.id === value;
         return (
-          <button
+          <label
             key={option.id}
-            type="button"
-            role="radio"
-            aria-checked={selected}
-            aria-label={option.label}
-            title={option.label}
-            onClick={() => onChange(option.id)}
-            className="flex w-full items-center gap-3 rounded-[11px] px-3 py-2.5 hover:bg-[var(--rk-hover)]"
+            className="flex w-full cursor-pointer items-center gap-3 rounded-[11px] px-3 py-2.5 hover:bg-[var(--rk-hover)]"
           >
+            <input
+              type="radio"
+              name="ui-theme"
+              value={option.id}
+              checked={selected}
+              aria-label={option.label}
+              title={option.label}
+              onChange={() => onChange(option.id)}
+              className="sr-only"
+            />
             <span
               className={`relative h-6 w-6 shrink-0 overflow-hidden rounded-full border ${
                 selected
@@ -46,9 +54,9 @@ export function UiThemePicker({
                 ✓
               </span>
             ) : null}
-          </button>
+          </label>
         );
       })}
-    </div>
+    </fieldset>
   );
 }

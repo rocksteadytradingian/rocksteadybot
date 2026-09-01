@@ -35,6 +35,6 @@ export {
   isUiThemeId,
   UI_THEME_ALIASES,
   UI_THEMES,
-  uiThemeById,
   type UiThemeId,
+  uiThemeById,
 } from "./themes.js";

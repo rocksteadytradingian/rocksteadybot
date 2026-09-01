@@ -150,7 +150,10 @@ describe("openai-compatible provider", () => {
     }));
     const fetchImpl = async () =>
       new Response(JSON.stringify({ object: "list", data }), { status: 200 });
-    const ids = await probeOpenAiCompatibleModels({ baseUrl: "http://127.0.0.1:8000/v1" }, fetchImpl);
+    const ids = await probeOpenAiCompatibleModels(
+      { baseUrl: "http://127.0.0.1:8000/v1" },
+      fetchImpl,
+    );
     expect(ids).toHaveLength(500);
     expect(ids[0]).toBe("model-0");
     expect(ids).not.toContain("x".repeat(257));
