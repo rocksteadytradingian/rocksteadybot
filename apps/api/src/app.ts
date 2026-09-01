@@ -315,6 +315,9 @@ export async function createApp(
     return auth.handler(c.req.raw);
   });
   app.use("/rpc/*", async (c, next) => {
+    if (c.req.method === "GET" && new URL(c.req.url).pathname === "/rpc/health") {
+      return c.json({ json: { ok: true, version: "0.1.0" } });
+    }
     const session = await auth.api.getSession({ headers: sessionHeaders(c.req.raw) });
     const actor = session?.user
       ? await requireMembership(

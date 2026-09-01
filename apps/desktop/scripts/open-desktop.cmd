@@ -83,6 +83,8 @@ echo Copying the current sign-in page into Docker...
 set /a _wait=0
 :wait_health
 set "CODE="
+for /f %%C in ('curl.exe -s -o NUL -w "%%{http_code}" "http://127.0.0.1:5173/rpc/health"') do set "CODE=%%C"
+if "!CODE!"=="200" goto healthy
 for /f %%C in ('curl.exe -s -o NUL -w "%%{http_code}" -X POST "http://127.0.0.1:5173/rpc/health" -H "content-type: application/json" -d "{\"json\":{}}"') do set "CODE=%%C"
 if "!CODE!"=="200" goto healthy
 timeout /t 2 /nobreak >nul

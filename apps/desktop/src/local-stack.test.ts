@@ -575,6 +575,11 @@ describe("launcher files", () => {
     expect(cmd).toContain("RAKAZO_PERFORMANCE_CLEAR_CACHE=1");
     expect(cmd).toContain("apps/web/vite.config.ts");
     expect(cmd).toContain("/rpc/health");
+    expect(cmd).toContain('"http://127.0.0.1:5173/rpc/health"');
+    expect(cmd).toContain("-X POST");
+    const apiApp = await readFile(path.join(root, "apps/api/src/app.ts"), "utf8");
+    expect(apiApp).toContain('c.req.method === "GET"');
+    expect(apiApp).toContain('pathname === "/rpc/health"');
     expect(cmd).not.toContain("refresh-web-from-checkout.ps1");
     const viteConfig = await readFile(path.join(root, "apps/web/vite.config.ts"), "utf8");
     expect(viteConfig).toContain("resolveApiProxyTarget");
