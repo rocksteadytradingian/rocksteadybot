@@ -3,8 +3,11 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
+import { spawnSync } from "node:child_process";
 import {
+  composeCpArgs,
   composeForceRecreateWebArgs,
+  composeRestartArgs,
   composeUpArgs,
   desktopShortcutDetails,
   desktopShortcutPath,
@@ -21,6 +24,8 @@ import {
   localStackAutoStartEnabled,
   looksLikeRepoRoot,
   resolveDockerBin,
+  shouldRefreshWebFromCheckout,
+  WEB_CHECKOUT_COPIES,
   whichOnPath,
 } from "./local-stack.js";
 import { isManagedLocalWebUrl } from "./setup-config.js";
@@ -188,6 +193,27 @@ describe("compose and shortcut", () => {
       "web",
       "api",
     ]);
+    expect(composeCpArgs(true, "apps/web/src/.", "web:/app/apps/web/src/")).toEqual([
+      "compose",
+      "--env-file",
+      ".env",
+      "-f",
+      "infra/compose/docker-compose.yml",
+      "-f",
+      "infra/compose/docker-compose.desktop.yml",
+      "cp",
+      "apps/web/src/.",
+      "web:/app/apps/web/src/",
+    ]);
+    expect(composeRestartArgs(false, "web")).toEqual([
+      "compose",
+      "-f",
+      "infra/compose/docker-compose.yml",
+      "-f",
+      "infra/compose/docker-compose.desktop.yml",
+      "restart",
+      "web",
+    ]);
   });
 
   it("points the Windows shortcut at the launcher script", () => {
@@ -276,6 +302,44 @@ describe("ensureLocalStack", () => {
         (command) => command.args.includes("--force-recreate") && command.args.includes("web"),
       ),
     ).toBe(true);
+    expect(host.commands.some((command) => command.args.includes("cp"))).toBe(false);
+  });
+
+  it("copies the checkout's web source into Docker and rebuilds preview", async () => {
+    const webSrc = path.join(repo, "apps", "web", "src");
+    const indexHtml = path.join(repo, "apps", "web", "index.html");
+    const inject = path.join(
+      repo,
+      "apps",
+      "desktop",
+      "scripts",
+      "inject-forgot-password-fallback.mjs",
+    );
+    expect(shouldRefreshWebFromCheckout(repo, (file) => file === webSrc)).toBe(true);
+    const host = fakeHost({
+      files: [...repoFiles(), webSrc, indexHtml, inject],
+      fetchJson: async () => ({
+        status: 200,
+        json: { json: { ok: true, version: "0.1.0" } },
+      }),
+    });
+    await expect(
+      ensureLocalStack({ targetUrl: "http://127.0.0.1:5173", searchFrom: [repo], host }),
+    ).resolves.toEqual({ ok: true, repoRoot: repo });
+    expect(host.commands.some((command) => command.args.includes("cp"))).toBe(true);
+    expect(
+      host.commands.some((command) =>
+        command.args.some(
+          (arg) => String(arg).includes("@rakazo/web") && String(arg).includes("build"),
+        ),
+      ),
+    ).toBe(true);
+    expect(
+      host.commands.some(
+        (command) => command.args.includes("restart") && command.args.includes("web"),
+      ),
+    ).toBe(true);
+    expect(WEB_CHECKOUT_COPIES[0]?.hostPath).toBe("apps/web/src/.");
   });
 
   it("stops a leftover API from this checkout, then starts Compose", async () => {
@@ -427,8 +491,9 @@ describe("launcher files", () => {
     );
     expect(compose).toContain("127.0.0.1:3100:3100");
     expect(compose).toContain("127.0.0.1:5173:5173");
-    expect(compose).toContain("../../apps/web/src:/app/apps/web/src:ro");
-    expect(compose).toContain("/tmp/rakazo-vite");
+    expect(compose).not.toContain("../../apps/web/src:/app/apps/web/src:ro");
+    expect(compose).not.toContain("/tmp/rakazo-vite");
+    expect(compose).toContain('preview", "--host"');
     expect(desktop).toContain("ports: !override []");
     expect(desktop).toContain("127.0.0.1:5173:5173");
   });
@@ -441,11 +506,38 @@ describe("launcher files", () => {
     expect(cmd).toContain("install-desktop-shortcut.ps1");
     expect(cmd).toContain("free-own-ports.ps1");
     expect(cmd).toContain("--force-recreate");
+    expect(cmd).toContain("refresh-web-from-checkout.ps1");
+    expect(cmd).toContain("RAKAZO_DISABLE_LOCAL_STACK=1");
     const freePorts = await readFile(
       path.join(root, "apps/desktop/scripts/free-own-ports.ps1"),
       "utf8",
     );
     expect(freePorts).toContain("Test-OwnStackProcess");
     expect(freePorts).toContain("taskkill");
+    const refresh = await readFile(
+      path.join(root, "apps/desktop/scripts/refresh-web-from-checkout.ps1"),
+      "utf8",
+    );
+    expect(refresh).toContain("apps/web/src");
+    expect(refresh).toContain("inject-forgot-password-fallback.mjs");
+    expect(refresh).toContain("pnpm --filter @rakazo/web build");
+  });
+
+  it("injects a Forgot password fallback into baked preview HTML", async () => {
+    const dir = await mkdtemp(path.join(tmpdir(), "rk-inject-"));
+    const htmlPath = path.join(dir, "index.html");
+    await writeFile(htmlPath, '<html><body><div id="root"></div></body></html>');
+    const script = path.join(root, "apps/desktop/scripts/inject-forgot-password-fallback.mjs");
+    const result = spawnSync(process.execPath, [script, htmlPath], { encoding: "utf8" });
+    expect(result.status).toBe(0);
+    const html = await readFile(htmlPath, "utf8");
+    expect(html).toContain('href="/forgot-password"');
+    expect(html).toContain("rk-forgot-password");
+    const again = spawnSync(process.execPath, [script, htmlPath], { encoding: "utf8" });
+    expect(again.status).toBe(0);
+    expect((await readFile(htmlPath, "utf8")).split("rk-forgot-password").length).toBe(
+      html.split("rk-forgot-password").length,
+    );
+    await rm(dir, { recursive: true, force: true });
   });
 });

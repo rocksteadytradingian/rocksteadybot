@@ -1,6 +1,7 @@
 # Desktop launches this stack so a leftover host process on :3100 cannot block
 # Compose. The shell talks to the web origin on loopback :5173; the API stays on
-# the Compose network. Web source mounts live in docker-compose.yml.
+# the Compose network. The shortcut copies checkout sources into the running
+# containers instead of bind-mounting them.
 services:
   api:
     ports: !override []

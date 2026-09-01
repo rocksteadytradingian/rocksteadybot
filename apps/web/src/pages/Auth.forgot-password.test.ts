@@ -9,4 +9,11 @@ describe("sign-in Forgot password control", () => {
     expect(source).toContain("Forgot password?");
     expect(source).toMatch(/Forgot password\?[\s\S]*Don’t have an account\?/);
   });
+
+  it("keeps a document fallback if the preview JS is still stale", async () => {
+    const html = await readFile(path.join(import.meta.dirname, "../../index.html"), "utf8");
+    expect(html).toContain('id="rk-forgot-password"');
+    expect(html).toContain('href="/forgot-password"');
+    expect(html).toContain("Forgot password?");
+  });
 });

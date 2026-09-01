@@ -67,11 +67,6 @@ services:
       - "127.0.0.1:3100:3100"
     volumes:
       - ../../data:/data
-      - ../../apps/api/src:/app/apps/api/src:ro
-      - ../../packages/adapters/src:/app/packages/adapters/src:ro
-      - ../../packages/auth/src:/app/packages/auth/src:ro
-      - ../../packages/contracts/src:/app/packages/contracts/src:ro
-      - ../../packages/core/src:/app/packages/core/src:ro
     depends_on:
       postgres:
         condition: service_healthy
@@ -104,33 +99,11 @@ services:
     build:
       context: ../..
       dockerfile: infra/compose/Dockerfile
-    # Serve the checkout's Auth.tsx, not the preview JS baked into the image.
-    command:
-      [
-        "pnpm",
-        "--filter",
-        "@rakazo/web",
-        "exec",
-        "vite",
-        "--host",
-        "0.0.0.0",
-        "--port",
-        "5173",
-        "--strictPort",
-        "--cacheDir",
-        "/tmp/rakazo-vite",
-      ]
+    command: ["pnpm", "--filter", "@rakazo/web", "preview", "--host", "0.0.0.0", "--port", "5173"]
     environment:
-      NODE_ENV: development
       API_PROXY_TARGET: http://api:3100
-      VITE_DEV_HOST: "0.0.0.0"
-      CHOKIDAR_USEPOLLING: "true"
       BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:-}
       RAKAZO_HOST: ${RAKAZO_HOST:-localhost}
-    volumes:
-      - ../../apps/web/src:/app/apps/web/src:ro
-      - ../../apps/web/index.html:/app/apps/web/index.html:ro
-      - ../../apps/web/vite.config.ts:/app/apps/web/vite.config.ts:ro
     ports:
       - "127.0.0.1:5173:5173"
     depends_on:

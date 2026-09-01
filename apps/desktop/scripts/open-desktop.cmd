@@ -48,6 +48,12 @@ if errorlevel 1 (
 )
 "%DOCKER%" compose !COMPOSE_ENV! -f "%COMPOSE_FILE%" -f "%DESKTOP_COMPOSE%" up -d --force-recreate --no-deps web api
 
+echo Updating the sign-in page from this checkout...
+powershell -NoProfile -ExecutionPolicy Bypass -File "%SCRIPT_DIR%refresh-web-from-checkout.ps1" -RepoRoot "%ROOT%" -Docker "%DOCKER%"
+if errorlevel 1 (
+  echo Could not rebuild the sign-in page from this checkout. Opening whatever Docker already has.
+)
+
 set /a _wait=0
 :wait_health
 set "CODE="
@@ -55,7 +61,7 @@ for /f %%C in ('curl.exe -s -o NUL -w "%%{http_code}" "http://127.0.0.1:5173/"')
 if "!CODE!"=="200" goto healthy
 timeout /t 2 /nobreak >nul
 set /a _wait+=1
-if !_wait! LSS 60 goto wait_health
+if !_wait! LSS 90 goto wait_health
 echo The local stack did not become ready. Check Docker Desktop, then try again.
 exit /b 1
 
@@ -70,6 +76,11 @@ if defined ELECTRON if not exist "%ROOT%\apps\desktop\dist\main.js" (
   echo Building the desktop app...
   npx --yes pnpm@9.15.0 --config.engine-strict=false --filter @rakazo/desktop build >nul 2>&1
 )
+
+rem The cmd already started Compose. A stale Electron dist must not recreate
+rem the web container back onto the image's old sign-in page.
+set "RAKAZO_WEB_URL=http://127.0.0.1:5173"
+set "RAKAZO_DISABLE_LOCAL_STACK=1"
 
 if defined ELECTRON if exist "%ROOT%\apps\desktop\dist\main.js" (
   start "" /D "%ROOT%\apps\desktop" "!ELECTRON!" .
