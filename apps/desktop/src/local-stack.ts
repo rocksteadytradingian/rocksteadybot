@@ -2,8 +2,10 @@ import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
 import { homedir as osHomedir } from "node:os";
 import path from "node:path";
-import { PRODUCT_NAME } from "@rakazo/contracts";
 import { isManagedLocalWebUrl, isRakazoHealth, normalizeServerUrl } from "./setup-config.js";
+
+/** Electron cannot load `@rakazo/contracts` TypeScript at runtime. Keep in sync with brand.ts. */
+const PRODUCT_NAME = "RocksteadyBot";
 
 export const COMPOSE_FILE = path.join("infra", "compose", "docker-compose.yml");
 export const COMPOSE_DESKTOP_FILE = path.join("infra", "compose", "docker-compose.desktop.yml");
