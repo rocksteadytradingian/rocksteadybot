@@ -24,6 +24,7 @@ import {
 } from "./renderer-assets.js";
 import {
   DEFAULT_LOCAL_WEB_URL,
+  isManagedLocalWebUrl,
   isRakazoHealth,
   normalizeServerUrl,
   parseSetupInput,
@@ -750,6 +751,9 @@ async function openAppOnce(targetUrl: string) {
     const documentError = await probeDocument(targetUrl);
     if (documentError !== null) {
       throw new Error(documentError);
+    }
+    if (isManagedLocalWebUrl(targetUrl)) {
+      await target.value.clearCache();
     }
     await installBundledRenderer(targetUrl, target.value, target.partition);
     const created = createWindow(targetUrl, target.partition);

@@ -169,7 +169,10 @@ export function AuthPage({ mode }: { mode: AuthMode }) {
         )}
         {mode === "in" ? (
           <p className="mt-3 w-full text-end text-[15px]">
-            <Link to="/forgot-password" className="font-medium text-[var(--rk-ink)]">
+            <Link
+              to="/forgot-password"
+              className="font-medium text-[var(--rk-ink)] underline underline-offset-2"
+            >
               <Trans>Forgot password?</Trans>
             </Link>
           </p>

@@ -1,9 +1,35 @@
 # Desktop launches this stack so a leftover host process on :3100 cannot block
 # Compose. The shell talks to the web origin on loopback :5173; the API stays on
 # the Compose network.
+#
+# Bind-mount current source so a git pull shows up without rebuilding the image.
+# Vite preview in the image is a snapshot from `docker compose build` and would
+# keep serving a sign-in screen that predates Forgot password.
 services:
   api:
     ports: !override []
+    volumes:
+      - ../../apps/api/src:/app/apps/api/src:ro
+      - ../../packages/adapters/src:/app/packages/adapters/src:ro
+      - ../../packages/auth/src:/app/packages/auth/src:ro
+      - ../../packages/contracts/src:/app/packages/contracts/src:ro
+      - ../../packages/core/src:/app/packages/core/src:ro
   web:
     ports: !override
       - "127.0.0.1:5173:5173"
+    environment:
+      NODE_ENV: development
+      API_PROXY_TARGET: http://api:3100
+      VITE_DEV_HOST: "0.0.0.0"
+      CHOKIDAR_USEPOLLING: "true"
+    volumes:
+      - ../../apps/web/src:/app/apps/web/src:ro
+    command:
+      - pnpm
+      - --filter
+      - "@rakazo/web"
+      - dev
+      - --host
+      - "0.0.0.0"
+      - --port
+      - "5173"

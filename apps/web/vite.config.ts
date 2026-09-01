@@ -153,9 +153,10 @@ export default defineConfig(({ mode }) => {
       },
     ],
     server: {
-      host: "127.0.0.1",
+      host: process.env.VITE_DEV_HOST ?? "127.0.0.1",
       port: webPort,
       strictPort: true,
+      ...(process.env.VITE_DEV_HOST ? { allowedHosts: true as const } : {}),
       proxy: {
         "/api": { target: api, changeOrigin: true },
         "/rpc": { target: api, changeOrigin: true },

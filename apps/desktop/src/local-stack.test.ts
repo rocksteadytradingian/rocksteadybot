@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import {
+  composeForceRecreateWebArgs,
   composeUpArgs,
   desktopShortcutDetails,
   desktopShortcutPath,
@@ -172,6 +173,20 @@ describe("compose and shortcut", () => {
       "--remove-orphans",
     ]);
     expect(composeUpArgs(false)[1]).toBe("-f");
+    expect(composeForceRecreateWebArgs(true)).toEqual([
+      "compose",
+      "--env-file",
+      ".env",
+      "-f",
+      "infra/compose/docker-compose.yml",
+      "-f",
+      "infra/compose/docker-compose.desktop.yml",
+      "up",
+      "-d",
+      "--force-recreate",
+      "--no-deps",
+      "web",
+    ]);
   });
 
   it("points the Windows shortcut at the launcher script", () => {
@@ -230,9 +245,9 @@ describe("ensureLocalStack", () => {
     ).resolves.toEqual({ ok: true, skipped: "not-local" });
   });
 
-  it("skips Compose when the local web origin is already healthy", async () => {
+  it("skips Compose when the origin is already healthy and Docker is missing", async () => {
     const host = fakeHost({
-      files: repoFiles(),
+      files: [compose, workspace, envFile, launcher],
       fetchJson: async () => ({
         status: 200,
         json: { json: { ok: true, version: "0.1.0" } },
@@ -242,6 +257,24 @@ describe("ensureLocalStack", () => {
       ensureLocalStack({ targetUrl: "http://127.0.0.1:5173", searchFrom: [repo], host }),
     ).resolves.toMatchObject({ ok: true, skipped: "already-up", repoRoot: repo });
     expect(host.commands.some((command) => command.args[0] === "compose")).toBe(false);
+  });
+
+  it("recreates the web container so a stale Compose image cannot hide Forgot password", async () => {
+    const host = fakeHost({
+      files: repoFiles(),
+      fetchJson: async () => ({
+        status: 200,
+        json: { json: { ok: true, version: "0.1.0" } },
+      }),
+    });
+    await expect(
+      ensureLocalStack({ targetUrl: "http://127.0.0.1:5173", searchFrom: [repo], host }),
+    ).resolves.toEqual({ ok: true, repoRoot: repo });
+    expect(
+      host.commands.some(
+        (command) => command.args.includes("--force-recreate") && command.args.includes("web"),
+      ),
+    ).toBe(true);
   });
 
   it("stops a leftover API from this checkout, then starts Compose", async () => {
@@ -370,7 +403,7 @@ describe("ensureLocalStack", () => {
     await expect(
       ensureLocalStack({ targetUrl: "http://127.0.0.1:5173", searchFrom: [repo], host }),
     ).resolves.toEqual({ ok: true, repoRoot: repo });
-    expect(attempts).toBe(2);
+    expect(attempts).toBe(3);
   });
 });
 
@@ -395,6 +428,8 @@ describe("launcher files", () => {
     expect(compose).toContain("127.0.0.1:5173:5173");
     expect(desktop).toContain("ports: !override []");
     expect(desktop).toContain("127.0.0.1:5173:5173");
+    expect(desktop).toContain("../../apps/web/src:/app/apps/web/src:ro");
+    expect(desktop).toContain("dev");
   });
 
   it("points the Windows launcher at Compose then Electron", async () => {
@@ -404,7 +439,7 @@ describe("launcher files", () => {
     expect(cmd).toContain("http://127.0.0.1:5173");
     expect(cmd).toContain("install-desktop-shortcut.ps1");
     expect(cmd).toContain("free-own-ports.ps1");
-    expect(cmd).toContain("--remove-orphans");
+    expect(cmd).toContain("--force-recreate");
     const freePorts = await readFile(
       path.join(root, "apps/desktop/scripts/free-own-ports.ps1"),
       "utf8",

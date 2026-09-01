@@ -175,6 +175,23 @@ export function composeUpArgs(envFileExists: boolean): string[] {
   return args;
 }
 
+export function composeForceRecreateWebArgs(envFileExists: boolean): string[] {
+  const args = ["compose"];
+  if (envFileExists) args.push("--env-file", ".env");
+  args.push(
+    "-f",
+    COMPOSE_FILE,
+    "-f",
+    COMPOSE_DESKTOP_FILE,
+    "up",
+    "-d",
+    "--force-recreate",
+    "--no-deps",
+    "web",
+  );
+  return args;
+}
+
 export function desktopShortcutPath(homedir: string): string {
   return path.join(homedir, "Desktop", DESKTOP_SHORTCUT_NAME);
 }
@@ -259,23 +276,22 @@ export async function ensureLocalStack(input: {
   const target = normalizeServerUrl(input.targetUrl) ?? input.targetUrl;
   if (!isManagedLocalWebUrl(target)) return { ok: true, skipped: "not-local" };
 
-  if (await webIsHealthy(host, target)) {
-    const repoRoot = findRepoRoot(input.searchFrom, (file) => host.exists(file));
-    if (repoRoot !== null) installShortcut(host, repoRoot);
-    return { ok: true, skipped: "already-up", repoRoot: repoRoot ?? undefined };
-  }
-
   const repoRoot = findRepoRoot(input.searchFrom, (file) => host.exists(file));
-  if (repoRoot === null) {
-    return {
-      ok: false,
-      error:
-        "Could not find the RocksteadyBot checkout (infra/compose/docker-compose.yml). Open the app from that folder once, or set RAKAZO_REPO_ROOT.",
-    };
-  }
-
   const docker = resolveDockerBin(host.platform, host.pathEnv, (file) => host.exists(file));
-  if (docker === null) {
+  const alreadyUp = await webIsHealthy(host, target);
+
+  if (repoRoot === null || docker === null) {
+    if (alreadyUp) {
+      if (repoRoot !== null) installShortcut(host, repoRoot);
+      return { ok: true, skipped: "already-up", repoRoot: repoRoot ?? undefined };
+    }
+    if (repoRoot === null) {
+      return {
+        ok: false,
+        error:
+          "Could not find the RocksteadyBot checkout (infra/compose/docker-compose.yml). Open the app from that folder once, or set RAKAZO_REPO_ROOT.",
+      };
+    }
     return {
       ok: false,
       error: "Docker is not installed. Install Docker Desktop, then open this app again.",
@@ -288,7 +304,8 @@ export async function ensureLocalStack(input: {
   await stopOwnListeners(host, LOCAL_API_PORT);
   await stopOwnListeners(host, LOCAL_WEB_PORT);
 
-  const compose = await host.run(docker, composeUpArgs(host.exists(path.join(repoRoot, ".env"))), {
+  const envFile = host.exists(path.join(repoRoot, ".env"));
+  const compose = await host.run(docker, composeUpArgs(envFile), {
     cwd: repoRoot,
     timeoutMs: COMPOSE_TIMEOUT_MS,
   });
@@ -297,11 +314,10 @@ export async function ensureLocalStack(input: {
     if (isPortConflictOutput(output)) {
       await stopOwnListeners(host, LOCAL_API_PORT);
       await stopOwnListeners(host, LOCAL_WEB_PORT);
-      const retry = await host.run(
-        docker,
-        composeUpArgs(host.exists(path.join(repoRoot, ".env"))),
-        { cwd: repoRoot, timeoutMs: COMPOSE_TIMEOUT_MS },
-      );
+      const retry = await host.run(docker, composeUpArgs(envFile), {
+        cwd: repoRoot,
+        timeoutMs: COMPOSE_TIMEOUT_MS,
+      });
       if (retry.code !== 0) {
         return {
           ok: false,
@@ -315,6 +331,11 @@ export async function ensureLocalStack(input: {
       };
     }
   }
+
+  await host.run(docker, composeForceRecreateWebArgs(envFile), {
+    cwd: repoRoot,
+    timeoutMs: COMPOSE_TIMEOUT_MS,
+  });
 
   const ready = await waitForWebHealth(host, target);
   if (!ready) {
