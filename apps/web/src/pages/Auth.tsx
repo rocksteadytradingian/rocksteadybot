@@ -39,7 +39,7 @@ export function AuthPage({ mode }: { mode: AuthMode }) {
     );
 
   function showAuthError(error: { message?: string | null } | null | undefined) {
-    setError(authErrorMessage(error, t`Could not continue`, t`Can't reach the server`));
+    setError(authErrorMessage(error, t`Could not continue`, t`Can't reach the server.`));
   }
 
   async function submit(e: React.FormEvent) {
@@ -59,7 +59,7 @@ export function AuthPage({ mode }: { mode: AuthMode }) {
           setError(
             /isn't enabled|not configured|RESET_PASSWORD_DISABLED/i.test(result.error.message ?? "")
               ? t`Password reset is not configured`
-              : authErrorMessage(result.error, t`Could not continue`, t`Can't reach the server`),
+              : authErrorMessage(result.error, t`Could not continue`, t`Can't reach the server.`),
           );
           return;
         }
