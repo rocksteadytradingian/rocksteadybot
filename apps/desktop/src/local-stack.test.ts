@@ -186,6 +186,7 @@ describe("compose and shortcut", () => {
       "--force-recreate",
       "--no-deps",
       "web",
+      "api",
     ]);
   });
 
@@ -426,10 +427,10 @@ describe("launcher files", () => {
     );
     expect(compose).toContain("127.0.0.1:3100:3100");
     expect(compose).toContain("127.0.0.1:5173:5173");
+    expect(compose).toContain("../../apps/web/src:/app/apps/web/src:ro");
+    expect(compose).toContain("/tmp/rakazo-vite");
     expect(desktop).toContain("ports: !override []");
     expect(desktop).toContain("127.0.0.1:5173:5173");
-    expect(desktop).toContain("../../apps/web/src:/app/apps/web/src:ro");
-    expect(desktop).toContain("dev");
   });
 
   it("points the Windows launcher at Compose then Electron", async () => {

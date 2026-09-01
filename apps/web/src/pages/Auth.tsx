@@ -168,14 +168,12 @@ export function AuthPage({ mode }: { mode: AuthMode }) {
           </label>
         )}
         {mode === "in" ? (
-          <p className="mt-3 w-full text-end text-[15px]">
-            <Link
-              to="/forgot-password"
-              className="font-medium text-[var(--rk-ink)] underline underline-offset-2"
-            >
-              <Trans>Forgot password?</Trans>
-            </Link>
-          </p>
+          <Link
+            to="/forgot-password"
+            className="mt-4 text-[17px] font-medium text-[var(--rk-ink)] underline underline-offset-4"
+          >
+            Forgot password?
+          </Link>
         ) : null}
         {error ? <p className="mt-3 w-full text-sm text-[#C94244]">{error}</p> : null}
         {notice ? <p className="mt-3 w-full text-sm text-[var(--rk-muted)]">{notice}</p> : null}
@@ -199,6 +197,10 @@ export function AuthPage({ mode }: { mode: AuthMode }) {
         <p className="mt-[30px] text-[16px] text-[var(--rk-muted-2)]">
           {mode === "in" ? (
             <>
+              <Link to="/forgot-password" className="font-medium text-[var(--rk-ink)] underline">
+                Forgot password?
+              </Link>
+              <span aria-hidden="true"> · </span>
               <Trans>Don’t have an account?</Trans>{" "}
               <Link to="/sign-up" className="font-medium text-[var(--rk-ink)]">
                 <Trans>Sign up</Trans>

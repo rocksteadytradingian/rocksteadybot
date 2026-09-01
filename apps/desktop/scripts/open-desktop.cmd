@@ -46,7 +46,7 @@ if errorlevel 1 (
     exit /b 1
   )
 )
-"%DOCKER%" compose !COMPOSE_ENV! -f "%COMPOSE_FILE%" -f "%DESKTOP_COMPOSE%" up -d --force-recreate --no-deps web
+"%DOCKER%" compose !COMPOSE_ENV! -f "%COMPOSE_FILE%" -f "%DESKTOP_COMPOSE%" up -d --force-recreate --no-deps web api
 
 set /a _wait=0
 :wait_health

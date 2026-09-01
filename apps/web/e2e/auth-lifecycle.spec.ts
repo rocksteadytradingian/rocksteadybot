@@ -52,7 +52,7 @@ test("logout protects bot deep links and sign-in restores the session", async ({
   await expect(page).toHaveURL(/\/sign-in$/);
   await captureScreenshot(page, testInfo, "39-invalid-credentials");
 
-  await page.getByRole("link", { name: "Forgot password?" }).click();
+  await page.getByRole("link", { name: "Forgot password?" }).first().click();
   await expect(page.getByRole("heading", { name: "Reset your password" })).toBeVisible();
   await page.getByPlaceholder("Your email address").fill(email);
   await page.getByRole("button", { name: "Send reset link" }).click();

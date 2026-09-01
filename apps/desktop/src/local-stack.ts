@@ -188,6 +188,7 @@ export function composeForceRecreateWebArgs(envFileExists: boolean): string[] {
     "--force-recreate",
     "--no-deps",
     "web",
+    "api",
   );
   return args;
 }
