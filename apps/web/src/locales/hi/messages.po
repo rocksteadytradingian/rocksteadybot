@@ -2827,3 +2827,90 @@ msgstr "आपका नाम"
 #: src/pages/Welcome.tsx:24
 msgid "Your team of always-on agents<0/>that you can give real work to."
 msgstr "हमेशा चालू रहने वाले एजेंटों की आपकी टीम<0/>जिन्हें आप असली काम सौंप सकते हैं।"
+
+#: src/pages/AccountSettingsOverlay.tsx:133
+msgid "Avatars"
+msgstr ""
+
+#: src/pages/ModelSettingsOverlay.tsx:310
+msgid "Choose which connected model Rakazo uses."
+msgstr "चुनें कि Rakazo किस कनेक्टेड मॉडल का उपयोग करे।"
+
+#: src/pages/PluginsOverlay.tsx:241
+msgid "Close integrations"
+msgstr "इंटीग्रेशन बंद करें"
+
+#: src/pages/PluginsOverlay.tsx:68
+msgid "Could not load integrations"
+msgstr "इंटीग्रेशन लोड नहीं हो सके"
+
+#: src/pages/AccountSettingsOverlay.tsx:80
+msgid "Couldn't update avatars"
+msgstr ""
+
+#: src/pages/Auth.tsx:15
+msgid "Create your Rakazo"
+msgstr "अपना Rakazo बनाएं"
+
+#: src/pages/PluginsOverlay.tsx:237
+#: src/pages/Shell.tsx:1995
+msgid "Integrations"
+msgstr "इंटीग्रेशन"
+
+#: src/pages/Shell.tsx:3213
+msgid "Jump to latest"
+msgstr "नवीनतम संदेश पर जाएँ"
+
+#: src/pages/PluginsOverlay.tsx:263
+msgid "Loading integrations…"
+msgstr "इंटीग्रेशन लोड हो रहे हैं…"
+
+#: src/pages/PluginsOverlay.tsx:344
+msgid "No apps match your search."
+msgstr "आपकी खोज से कोई ऐप मेल नहीं खाता।"
+
+#: src/pages/PluginsOverlay.tsx:339
+msgid "No managed app catalog is configured on this deployment."
+msgstr "इस डिप्लॉयमेंट पर कोई प्रबंधित ऐप कैटलॉग कॉन्फ़िगर नहीं है।"
+
+#: src/pages/AccountSettingsOverlay.tsx:157
+msgid "Organic"
+msgstr ""
+
+#: src/pages/ModelSettingsOverlay.tsx:416
+#: src/pages/Onboarding.tsx:280
+msgid "Paste the OpenAI-compatible address from your server. Rakazo adds /v1 if needed."
+msgstr "अपने सर्वर से OpenAI-संगत पता पेस्ट करें। ज़रूरत होने पर Rakazo /v1 जोड़ देता है।"
+
+#: src/pages/PluginsOverlay.tsx:511
+msgid "Rakazo verifies the source before saving it. Credentials are encrypted and are never returned to clients or exposed to the model."
+msgstr "Rakazo सहेजने से पहले स्रोत की पुष्टि करता है। क्रेडेंशियल एन्क्रिप्टेड होते हैं और कभी क्लाइंट को नहीं लौटाए जाते, न ही मॉडल को दिखाए जाते हैं।"
+
+#: src/pages/McpOAuthCallback.tsx:65
+msgid "Return to Rakazo"
+msgstr "Rakazo पर लौटें"
+
+#: src/pages/AccountSettingsOverlay.tsx:157
+msgid "Robot"
+msgstr ""
+
+#: src/pages/PluginsOverlay.tsx:253
+#: src/pages/PluginsOverlay.tsx:254
+msgid "Search apps"
+msgstr "ऐप खोजें"
+
+#: src/pages/Auth.tsx:15
+msgid "Sign in to Rakazo"
+msgstr "Rakazo में साइन इन करें"
+
+#: src/pages/ModelSettingsOverlay.tsx:687
+msgid "This subscription sign-in is not available in Rakazo yet. Use a deployment credential or choose another provider."
+msgstr "यह सब्सक्रिप्शन साइन-इन अभी Rakazo में उपलब्ध नहीं है। किसी डिप्लॉयमेंट क्रेडेंशियल का उपयोग करें या दूसरा प्रोवाइडर चुनें।"
+
+#: src/pages/Shell.tsx:3105
+msgid "{workingBotName} is working"
+msgstr "{workingBotName} काम कर रहा है"
+
+#: src/pages/Shell.tsx:3106
+msgid "Bots are working"
+msgstr "बॉट काम कर रहे हैं"

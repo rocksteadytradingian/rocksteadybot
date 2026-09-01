@@ -351,6 +351,15 @@ export function createRouter(deps: RouterDeps) {
   return os.router({
     health: os.health.handler(async () => ({ ok: true as const, version: "0.1.0" })),
     me: authed.me.handler(async ({ context }): Promise<Me> => meDto(deps, context.actor)),
+    preferences: {
+      update: authed.preferences.update.handler(async ({ context, input }): Promise<Me> => {
+        await deps.prisma.user.update({
+          where: { id: context.actor.userId },
+          data: { avatarStyle: input.avatarStyle },
+        });
+        return meDto(deps, context.actor);
+      }),
+    },
     bootstrap: authed.bootstrap.handler(async ({ context, input }) => {
       const actor = context.actor;
       const [me, bots, botSections, archivedBots] = await Promise.all([
@@ -2600,6 +2609,17 @@ export function createRouter(deps: RouterDeps) {
         }
         let row = existing;
         if (existing.status !== "connected") {
+          if (input.code) {
+            const state = existing.providerRef ?? existing.provider;
+            try {
+              await connector.complete(
+                { state, code: input.code },
+                connectionContext(context.actor, "connections.complete", context.signal),
+              );
+            } catch (error) {
+              throw new ORPCError("BAD_REQUEST", { message: sanitizeComposioError(error) });
+            }
+          }
           const ready = await connector.connectionReady(
             connectionContext(context.actor, "connections.complete", context.signal),
             existing.provider,
@@ -3008,6 +3028,7 @@ async function meDto(deps: RouterDeps, actor: Actor): Promise<Me> {
     defaultModel: cred?.defaultModel ?? settings?.defaultModelId ?? deps.env.defaultModel,
     computerHost: computerHostFor(settings?.computerHost, deps.env.sandboxProvider),
     canChooseHostComputer: actor.isDeploymentOwner && deps.env.sandboxProvider === "docker",
+    avatarStyle: user.avatarStyle === "organic" ? "organic" : "robot",
   };
 }
 

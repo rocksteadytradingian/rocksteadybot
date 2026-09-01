@@ -190,6 +190,7 @@ export type MobileMe = Pick<
   | "defaultProvider"
   | "defaultModel"
   | "needsModel"
+  | "avatarStyle"
 >;
 
 export type MobileModel = ModelCatalogEntry;

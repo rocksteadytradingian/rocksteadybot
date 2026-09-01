@@ -2827,3 +2827,90 @@ msgstr "O seu nome"
 #: src/pages/Welcome.tsx:24
 msgid "Your team of always-on agents<0/>that you can give real work to."
 msgstr "Sua equipe de agentes sempre ativos<0/>, a quem você pode dar trabalho de verdade."
+
+#: src/pages/AccountSettingsOverlay.tsx:133
+msgid "Avatars"
+msgstr ""
+
+#: src/pages/ModelSettingsOverlay.tsx:310
+msgid "Choose which connected model Rakazo uses."
+msgstr "Escolha qual modelo conectado a Rakazo usa."
+
+#: src/pages/PluginsOverlay.tsx:241
+msgid "Close integrations"
+msgstr "Fechar integrações"
+
+#: src/pages/PluginsOverlay.tsx:68
+msgid "Could not load integrations"
+msgstr "Não foi possível carregar as integrações"
+
+#: src/pages/AccountSettingsOverlay.tsx:80
+msgid "Couldn't update avatars"
+msgstr ""
+
+#: src/pages/Auth.tsx:15
+msgid "Create your Rakazo"
+msgstr "Crie o seu Rakazo"
+
+#: src/pages/PluginsOverlay.tsx:237
+#: src/pages/Shell.tsx:1995
+msgid "Integrations"
+msgstr "Integrações"
+
+#: src/pages/Shell.tsx:3213
+msgid "Jump to latest"
+msgstr "Ir para a mensagem mais recente"
+
+#: src/pages/PluginsOverlay.tsx:263
+msgid "Loading integrations…"
+msgstr "Carregando integrações…"
+
+#: src/pages/PluginsOverlay.tsx:344
+msgid "No apps match your search."
+msgstr "Nenhum aplicativo corresponde à sua pesquisa."
+
+#: src/pages/PluginsOverlay.tsx:339
+msgid "No managed app catalog is configured on this deployment."
+msgstr "Nenhum catálogo de aplicativos gerenciados está configurado nesta implantação."
+
+#: src/pages/AccountSettingsOverlay.tsx:157
+msgid "Organic"
+msgstr ""
+
+#: src/pages/ModelSettingsOverlay.tsx:416
+#: src/pages/Onboarding.tsx:280
+msgid "Paste the OpenAI-compatible address from your server. Rakazo adds /v1 if needed."
+msgstr "Cole o endereço compatível com OpenAI do seu servidor. Rakazo adiciona /v1 se necessário."
+
+#: src/pages/PluginsOverlay.tsx:511
+msgid "Rakazo verifies the source before saving it. Credentials are encrypted and are never returned to clients or exposed to the model."
+msgstr "Rakazo verifica a fonte antes de salvá-la. As credenciais são criptografadas e nunca são devolvidas aos clientes ou expostas ao modelo."
+
+#: src/pages/McpOAuthCallback.tsx:65
+msgid "Return to Rakazo"
+msgstr "Retorno a Rakazo"
+
+#: src/pages/AccountSettingsOverlay.tsx:157
+msgid "Robot"
+msgstr ""
+
+#: src/pages/PluginsOverlay.tsx:253
+#: src/pages/PluginsOverlay.tsx:254
+msgid "Search apps"
+msgstr "Pesquisar apps"
+
+#: src/pages/Auth.tsx:15
+msgid "Sign in to Rakazo"
+msgstr "Entrar no Rakazo"
+
+#: src/pages/ModelSettingsOverlay.tsx:687
+msgid "This subscription sign-in is not available in Rakazo yet. Use a deployment credential or choose another provider."
+msgstr "Este login de assinatura ainda não está disponível no Rakazo. Use uma credencial de implantação ou escolha outro provedor."
+
+#: src/pages/Shell.tsx:3105
+msgid "{workingBotName} is working"
+msgstr "{workingBotName} está trabalhando"
+
+#: src/pages/Shell.tsx:3106
+msgid "Bots are working"
+msgstr "Bots estão trabalhando"

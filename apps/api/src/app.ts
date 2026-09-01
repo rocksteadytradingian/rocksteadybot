@@ -14,6 +14,7 @@ import {
   createJobReconciler,
   createRunExecutor,
   createRunSandbox,
+  createRunSecretWriter,
   type DestinationEmulator,
   destroyBot,
   EncryptedSecretStore,
@@ -95,7 +96,10 @@ export async function createApp(
           publisher: created.pool,
         })
       : new InMemoryRealtimeFanout());
-  const events = createThreadEvents(prisma, realtime);
+  const secrets = new EncryptedSecretStore(env.encryptionKey);
+  const events = createThreadEvents(prisma, realtime, {
+    runSecretWriter: createRunSecretWriter(secrets),
+  });
   await prisma.deploymentSettings.upsert({
     where: { id: "default" },
     create: { id: "default" },
@@ -117,7 +121,6 @@ export async function createApp(
     dataDir: env.dataDir,
     prisma,
   });
-  const secrets = new EncryptedSecretStore(env.encryptionKey);
   const mcpOAuth = new McpOAuthBroker(prisma, secrets, remoteConnectors);
   const memoryProviders = new WorkspaceMemoryProviderResolver(prisma, secrets);
   const oauthLogins = new PiOAuthLogins();
@@ -205,6 +208,7 @@ export async function createApp(
     home,
     artifacts,
     connector: stack.connector,
+    connectors: stack.connector,
     listConnectedPluginSlugs: stack.composio?.listConnectedSlugs.bind(stack.composio),
     secrets: [env.deploymentModelKey ?? "", env.composioApiKey ?? ""].filter(Boolean),
     secretStore: secrets,

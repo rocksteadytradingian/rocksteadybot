@@ -2859,3 +2859,90 @@ msgstr "Your name"
 #: src/pages/Welcome.tsx:24
 msgid "Your team of always-on agents<0/>that you can give real work to."
 msgstr "Your team of always-on agents<0/>that you can give real work to."
+
+#: src/pages/AccountSettingsOverlay.tsx:133
+msgid "Avatars"
+msgstr "Avatars"
+
+#: src/pages/ModelSettingsOverlay.tsx:310
+msgid "Choose which connected model Rakazo uses."
+msgstr "Choose which connected model Rakazo uses."
+
+#: src/pages/PluginsOverlay.tsx:241
+msgid "Close integrations"
+msgstr "Close integrations"
+
+#: src/pages/PluginsOverlay.tsx:68
+msgid "Could not load integrations"
+msgstr "Could not load integrations"
+
+#: src/pages/AccountSettingsOverlay.tsx:80
+msgid "Couldn't update avatars"
+msgstr "Couldn't update avatars"
+
+#: src/pages/Auth.tsx:15
+msgid "Create your Rakazo"
+msgstr "Create your Rakazo"
+
+#: src/pages/PluginsOverlay.tsx:237
+#: src/pages/Shell.tsx:1995
+msgid "Integrations"
+msgstr "Integrations"
+
+#: src/pages/Shell.tsx:3213
+msgid "Jump to latest"
+msgstr "Jump to latest"
+
+#: src/pages/PluginsOverlay.tsx:263
+msgid "Loading integrations…"
+msgstr "Loading integrations…"
+
+#: src/pages/PluginsOverlay.tsx:344
+msgid "No apps match your search."
+msgstr "No apps match your search."
+
+#: src/pages/PluginsOverlay.tsx:339
+msgid "No managed app catalog is configured on this deployment."
+msgstr "No managed app catalog is configured on this deployment."
+
+#: src/pages/AccountSettingsOverlay.tsx:157
+msgid "Organic"
+msgstr "Organic"
+
+#: src/pages/ModelSettingsOverlay.tsx:416
+#: src/pages/Onboarding.tsx:280
+msgid "Paste the OpenAI-compatible address from your server. Rakazo adds /v1 if needed."
+msgstr "Paste the OpenAI-compatible address from your server. Rakazo adds /v1 if needed."
+
+#: src/pages/PluginsOverlay.tsx:511
+msgid "Rakazo verifies the source before saving it. Credentials are encrypted and are never returned to clients or exposed to the model."
+msgstr "Rakazo verifies the source before saving it. Credentials are encrypted and are never returned to clients or exposed to the model."
+
+#: src/pages/McpOAuthCallback.tsx:65
+msgid "Return to Rakazo"
+msgstr "Return to Rakazo"
+
+#: src/pages/AccountSettingsOverlay.tsx:157
+msgid "Robot"
+msgstr "Robot"
+
+#: src/pages/PluginsOverlay.tsx:253
+#: src/pages/PluginsOverlay.tsx:254
+msgid "Search apps"
+msgstr "Search apps"
+
+#: src/pages/Auth.tsx:15
+msgid "Sign in to Rakazo"
+msgstr "Sign in to Rakazo"
+
+#: src/pages/ModelSettingsOverlay.tsx:687
+msgid "This subscription sign-in is not available in Rakazo yet. Use a deployment credential or choose another provider."
+msgstr "This subscription sign-in is not available in Rakazo yet. Use a deployment credential or choose another provider."
+
+#: src/pages/Shell.tsx:3105
+msgid "{workingBotName} is working"
+msgstr "{workingBotName} is working"
+
+#: src/pages/Shell.tsx:3106
+msgid "Bots are working"
+msgstr "Bots are working"

@@ -61,8 +61,15 @@ import {
   speechFromBlocks,
   truncateSlashDescription,
 } from "@rakazo/core";
-import { BotAvatar, Button, GroupAvatar } from "@rakazo/ui-web";
 import {
+  AvatarStyleProvider,
+  BotAvatar,
+  Button,
+  GroupAvatar,
+  type GroupAvatarMember,
+} from "@rakazo/ui-web";
+import {
+  ArrowDown,
   ArrowUp,
   Bell,
   Box,
@@ -108,11 +115,10 @@ import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { ArtifactFileCard } from "../components/ArtifactFileCard";
 import { AskCard } from "../components/AskCard";
 import {
-  BuiButton,
-  BuiCard,
-  LoadingState,
-  SuccessPop,
-} from "../components/beautiful-ui/primitives";
+  ActiveBotGlyph,
+  CollaborationMarker,
+} from "../components/beautiful-ui/CollaborationMarker";
+import { BuiButton, BuiCard, SuccessPop } from "../components/beautiful-ui/primitives";
 import { ComputerMaintenanceActions } from "../components/ComputerMaintenanceActions";
 import { SkillDraftCard } from "../components/teach/SkillDraftCard";
 import { TeachCaptureOverlay } from "../components/teach/TeachCaptureOverlay";
@@ -147,6 +153,7 @@ import {
   reduceThreadSnapshot,
   userHoldsComputerControl,
 } from "../lib/thread-events";
+import { transcriptIsNearEnd } from "../lib/transcript-scroll";
 import { speaker } from "../lib/tts";
 import { resolveUiTheme, setUiTheme, uiThemeById } from "../lib/ui-theme";
 import { ActivityList } from "./ActivityList";
@@ -526,9 +533,7 @@ export function ShellPage() {
 
   async function refreshGroupThread(id: string) {
     const scrollElement = messageScroll.current;
-    const stickToEnd =
-      !scrollElement ||
-      scrollElement.scrollHeight - scrollElement.scrollTop - scrollElement.clientHeight < 80;
+    const stickToEnd = !scrollElement || transcriptIsNearEnd(scrollElement);
     markOnce("rk:renderer:thread-request-start");
     const request = ++groupRefreshEpoch.current;
     const snap = await rpc.threads.get({ groupId: id });
@@ -545,7 +550,11 @@ export function ShellPage() {
     setRoutines([]);
     setRoutinesBotId(null);
     // Keep the search-jump viewport; expandedHistoryThread merge still accepts live messages.
-    if (stickToEnd && expandedHistoryThread.current !== snap.threadId) {
+    if (
+      stickToEnd &&
+      (!scrollElement || transcriptIsNearEnd(scrollElement)) &&
+      expandedHistoryThread.current !== snap.threadId
+    ) {
       window.requestAnimationFrame(() => {
         const element = messageScroll.current;
         if (element) element.scrollTop = element.scrollHeight;
@@ -556,9 +565,7 @@ export function ShellPage() {
 
   async function refreshThread(id: string) {
     const scrollElement = messageScroll.current;
-    const stickToEnd =
-      !scrollElement ||
-      scrollElement.scrollHeight - scrollElement.scrollTop - scrollElement.clientHeight < 80;
+    const stickToEnd = !scrollElement || transcriptIsNearEnd(scrollElement);
     markOnce("rk:renderer:thread-request-start");
     const epoch = historyEpoch.current;
     const request = ++threadRefreshEpoch.current;
@@ -582,7 +589,11 @@ export function ShellPage() {
     commitSnapshot(reconciled.snapshot);
     commitComputer(reconciled.computer);
     cacheComputerFor(id, { computer: reconciled.computer });
-    if (stickToEnd && expandedHistoryThread.current !== snap.threadId) {
+    if (
+      stickToEnd &&
+      (!scrollElement || transcriptIsNearEnd(scrollElement)) &&
+      expandedHistoryThread.current !== snap.threadId
+    ) {
       window.requestAnimationFrame(() => {
         const element = messageScroll.current;
         if (element) element.scrollTop = element.scrollHeight;
@@ -1149,21 +1160,6 @@ export function ShellPage() {
     memberNames: (activeSnapshot?.members ?? activeGroup?.members)?.map((member) => member.name),
   });
   const transcriptRunning = workingRuns.length > 0 || computerBusyForThread;
-  const workingAvatar = transcriptRunning
-    ? {
-        color:
-          (workingRuns[0]
-            ? (activeSnapshot?.members ?? activeGroup?.members)?.find(
-                (member) => member.botId === workingRuns[0]?.botId,
-              )?.color
-            : (activeSnapshot?.members ?? activeGroup?.members)?.find(
-                (member) => member.name === computer?.busyBotName,
-              )?.color) ??
-          active?.color ??
-          "#8B5CF6",
-        status: workingRuns[0]?.status ?? "running",
-      }
-    : null;
   const liveStatusByBotId = new Map<string, string>();
   for (const bot of bots) {
     const status = liveStatusForBot({
@@ -1219,6 +1215,37 @@ export function ShellPage() {
     [active?.id, groupId, inGroup, pendingApprovals],
   );
   const transcriptMembers = activeSnapshot?.members ?? activeGroup?.members;
+  const resolveTranscriptBot = useCallback(
+    (botId: string) => {
+      const bot = bots.find((candidate) => candidate.id === botId);
+      if (bot) return bot;
+      return transcriptMembers?.find((member) => member.botId === botId);
+    },
+    [bots, transcriptMembers],
+  );
+  const workingBots: GroupAvatarMember[] = workingRuns.map((run) => {
+    const bot = resolveTranscriptBot(run.botId);
+    return {
+      botId: run.botId,
+      color: bot?.color ?? "var(--rk-muted)",
+      name: bot?.name,
+      status: run.status,
+    };
+  });
+  if (workingBots.length === 0 && computerBusyForThread && computer?.busyBotName) {
+    const busyMember = (activeSnapshot?.members ?? activeGroup?.members)?.find(
+      (member) => member.name === computer.busyBotName,
+    );
+    const busyBot = busyMember ?? bots.find((bot) => bot.name === computer.busyBotName);
+    if (busyBot) {
+      workingBots.push({
+        botId: "botId" in busyBot ? busyBot.botId : busyBot.id,
+        color: busyBot.color,
+        name: busyBot.name,
+        status: "running",
+      });
+    }
+  }
   const resolveTranscriptMemberName = useCallback(
     (botId: string | undefined) => memberName(transcriptMembers, botId),
     [transcriptMembers],
@@ -1915,7 +1942,7 @@ export function ShellPage() {
   const showSidePanel =
     panel === "create" || panel === "create-group" || Boolean(panel && (active || activeGroup));
 
-  return (
+  const shell = (
     <div
       data-testid="shell-root"
       data-ready={shellReady}
@@ -2089,6 +2116,7 @@ export function ShellPage() {
                     >
                       <BotAvatar
                         color={bot.color}
+                        identity={bot.id}
                         size={38}
                         status={liveStatusByBotId.get(bot.id) ?? bot.status}
                       />
@@ -2204,7 +2232,12 @@ export function ShellPage() {
               {archivedOpen
                 ? archivedBots.map((bot) => (
                     <div key={bot.id} className="flex items-center gap-2 rounded-lg px-2.5 py-2">
-                      <BotAvatar color={bot.color} size={28} status={bot.status} />
+                      <BotAvatar
+                        color={bot.color}
+                        identity={bot.id}
+                        size={28}
+                        status={bot.status}
+                      />
                       <span
                         className="min-w-0 flex-1 truncate text-[14px] text-[var(--rk-muted)]"
                         dir="auto"
@@ -2423,6 +2456,7 @@ export function ShellPage() {
               ) : active ? (
                 <BotAvatar
                   color={active.color}
+                  identity={active.id}
                   size={26}
                   status={liveStatusByBotId.get(active.id) ?? active.status}
                 />
@@ -2479,6 +2513,7 @@ export function ShellPage() {
           </div>
         </div>
         <Transcript
+          key={activeSnapshot?.threadId}
           scrollRef={messageScroll}
           artifactTarget={transcriptArtifactTarget}
           messages={activeSnapshot?.messages ?? []}
@@ -2486,7 +2521,7 @@ export function ShellPage() {
           loadingOlder={loadingOlder}
           answerableAskMessageId={answerableAskMessageId}
           running={transcriptRunning}
-          workingAvatar={workingAvatar}
+          workingBots={workingBots}
           workingStartedAt={workingStartedAtMs}
           onLoadOlder={loadOlder}
           onOpenBot={openBot}
@@ -2498,6 +2533,7 @@ export function ShellPage() {
             setPeerMessagesOpen(true);
           }}
           memberName={resolveTranscriptMemberName}
+          peerBot={resolveTranscriptBot}
           onRefresh={refreshActiveThread}
           onBotChanged={refreshBots}
           onAddRoutine={addSkillRoutine}
@@ -3210,6 +3246,11 @@ export function ShellPage() {
             email={session.data?.user.email}
             usage={usage}
             focusUsage={accountSettingsFocusUsage}
+            avatarStyle={bootstrapMe?.avatarStyle ?? "robot"}
+            onAvatarStyleChange={async (avatarStyle) => {
+              const nextMe = await rpc.preferences.update({ avatarStyle });
+              setBootstrapMe(nextMe);
+            }}
             onClose={() => {
               setAccountSettingsOpen(false);
               setAccountSettingsFocusUsage(false);
@@ -3286,6 +3327,7 @@ export function ShellPage() {
             <div className="flex min-w-0 flex-1 items-center gap-3">
               <BotAvatar
                 color={active.color}
+                identity={active.id}
                 size={28}
                 status={liveStatusByBotId.get(active.id) ?? active.status}
               />
@@ -3418,6 +3460,10 @@ export function ShellPage() {
       ) : null}
     </div>
   );
+
+  return (
+    <AvatarStyleProvider value={bootstrapMe?.avatarStyle ?? "robot"}>{shell}</AvatarStyleProvider>
+  );
 }
 
 const Transcript = memo(function Transcript({
@@ -3428,7 +3474,7 @@ const Transcript = memo(function Transcript({
   loadingOlder,
   answerableAskMessageId,
   running,
-  workingAvatar,
+  workingBots,
   workingStartedAt,
   onLoadOlder,
   onOpenBot,
@@ -3437,6 +3483,7 @@ const Transcript = memo(function Transcript({
   onJumpToMessage,
   onOpenPeerMessages,
   memberName,
+  peerBot,
   onRefresh,
   onBotChanged,
   onAddRoutine,
@@ -3451,7 +3498,7 @@ const Transcript = memo(function Transcript({
   loadingOlder: boolean;
   answerableAskMessageId: string | null;
   running: boolean;
-  workingAvatar?: { color: string; status: string } | null;
+  workingBots: GroupAvatarMember[];
   workingStartedAt?: number;
   onLoadOlder: () => void | Promise<void>;
   onOpenBot: (botId: string) => void;
@@ -3460,6 +3507,7 @@ const Transcript = memo(function Transcript({
   onJumpToMessage: (messageId: string) => void;
   onOpenPeerMessages: (peerBotId: string) => void;
   memberName?: (botId: string | undefined) => string | undefined;
+  peerBot: (botId: string) => { color: string; status?: string } | undefined;
   onRefresh: () => Promise<void>;
   onBotChanged: () => Promise<void>;
   onAddRoutine: (name: string, prompt: string) => void;
@@ -3468,71 +3516,190 @@ const Transcript = memo(function Transcript({
   onSpeak: (message: ThreadMessage) => void;
 }) {
   const { t } = useLingui();
+  const [atEnd, setAtEnd] = useState(true);
+  const following = useRef(true);
+  const autoScrolling = useRef(false);
+  const lastScrollTop = useRef(0);
+  const autoScrollTimer = useRef<number | undefined>(undefined);
+  const jumpButtonRef = useRef<HTMLButtonElement>(null);
   const messageById = useMemo(
     () => new Map(messages.map((message) => [message.id, message])),
     [messages],
   );
+  const workingBotName = workingBots.length === 1 ? workingBots[0]?.name : undefined;
+  const workingLabel =
+    workingBotName != null && workingBotName !== ""
+      ? t`${workingBotName} is working`
+      : t`Bots are working`;
+  const snapToEnd = useCallback(() => {
+    const element = scrollRef.current;
+    if (!element) return;
+    following.current = true;
+    autoScrolling.current = false;
+    setAtEnd(true);
+    element.scrollTo({ top: element.scrollHeight, behavior: "auto" });
+  }, [scrollRef]);
+
+  const jumpToLatest = useCallback(() => {
+    const element = scrollRef.current;
+    if (!element) return;
+    const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    following.current = true;
+    autoScrolling.current = !reducedMotion;
+    setAtEnd(true);
+    element.scrollTo({
+      top: element.scrollHeight,
+      behavior: reducedMotion ? "auto" : "smooth",
+    });
+    window.clearTimeout(autoScrollTimer.current);
+    // Fallback only: onScroll clears autoScrolling once near-end is reached.
+    autoScrollTimer.current = window.setTimeout(
+      () => {
+        autoScrolling.current = false;
+      },
+      reducedMotion ? 0 : 2_000,
+    );
+  }, [scrollRef]);
+
+  useLayoutEffect(() => {
+    if (following.current) snapToEnd();
+  }, [messages, running, snapToEnd]);
+
+  useLayoutEffect(() => {
+    const button = jumpButtonRef.current;
+    if (atEnd && button && document.activeElement === button) {
+      button.blur();
+    }
+  }, [atEnd]);
+
+  const loadOlder = useCallback(() => {
+    const wasFollowing = following.current;
+    // Prepend must not race the messages-driven snap-to-end follow path.
+    following.current = false;
+    autoScrolling.current = false;
+    const pending = onLoadOlder();
+    if (!pending) return;
+    return Promise.resolve(pending).catch((error) => {
+      const element = scrollRef.current;
+      if (wasFollowing && element && transcriptIsNearEnd(element)) {
+        following.current = true;
+        setAtEnd(true);
+      }
+      throw error;
+    });
+  }, [onLoadOlder, scrollRef]);
+
+  useEffect(
+    () => () => {
+      window.clearTimeout(autoScrollTimer.current);
+    },
+    [],
+  );
+
   return (
-    <div
-      ref={scrollRef}
-      data-testid="transcript"
-      className="rk-scroll flex flex-1 flex-col gap-2 overflow-y-auto px-4 py-5 md:px-7 md:py-6"
-    >
-      {olderCursor != null ? (
-        <button
-          type="button"
-          disabled={loadingOlder}
-          onClick={() => void onLoadOlder()}
-          className="self-center rounded-lg px-3 py-1.5 text-[13px] text-[var(--rk-muted)] hover:bg-[var(--rk-surface-2)] hover:text-[var(--rk-body)] disabled:opacity-50"
-        >
-          {loadingOlder ? t`Loading…` : t`Load earlier messages`}
-        </button>
-      ) : null}
-      {messages.map((message) => (
-        <div
-          key={message.id}
-          data-message-id={message.id}
-          className="group/message relative pt-9 hover:z-20"
-        >
-          <MessageHoverActions message={message} onReply={onReply} />
-          <MessageView
-            artifactTarget={artifactTarget}
-            message={message}
-            canAnswer={message.id === answerableAskMessageId}
-            onOpenBot={onOpenBot}
-            onOpenPeerMessages={onOpenPeerMessages}
-            onAnswer={onAnswer}
-            speakerName={message.role === "bot" ? memberName?.(message.botId) : undefined}
-            memberName={memberName}
-            replyPreview={
-              message.replyToMessageId ? messageById.get(message.replyToMessageId) : undefined
+    <div className="relative flex min-h-0 flex-1">
+      <div
+        ref={scrollRef}
+        data-testid="transcript"
+        onPointerDown={() => {
+          autoScrolling.current = false;
+          following.current = false;
+        }}
+        onTouchStart={() => {
+          autoScrolling.current = false;
+          following.current = false;
+        }}
+        onWheel={(event) => {
+          if (event.deltaY < 0) {
+            autoScrolling.current = false;
+            following.current = false;
+          }
+        }}
+        onScroll={(event) => {
+          const scrolledDown = event.currentTarget.scrollTop >= lastScrollTop.current;
+          lastScrollTop.current = event.currentTarget.scrollTop;
+          const nearEnd = transcriptIsNearEnd(event.currentTarget);
+          setAtEnd(nearEnd);
+          if (nearEnd) {
+            if (scrolledDown) following.current = true;
+            if (autoScrolling.current) {
+              autoScrolling.current = false;
+              window.clearTimeout(autoScrollTimer.current);
             }
-            replyToMessageId={message.replyToMessageId}
-            onJumpToMessage={onJumpToMessage}
-            onRefresh={onRefresh}
-            onBotChanged={onBotChanged}
-            onAddRoutine={onAddRoutine}
-            voiceReady={voiceReady}
-            speaking={speakingMessageId === message.id}
-            onSpeak={() => onSpeak(message)}
-          />
-        </div>
-      ))}
-      {running ? (
-        <div
-          className="flex items-end justify-start gap-2.5 pt-1"
-          data-testid="working-indicator"
-          role="status"
-          aria-live="polite"
-        >
-          {workingAvatar ? (
-            <BotAvatar color={workingAvatar.color} size={32} status={workingAvatar.status} />
-          ) : null}
-          <div className="flex max-w-[74%] items-center rounded-[20px] bg-[var(--rk-surface-2)] px-[18px] py-3 text-[15.5px] leading-[1.5]">
-            <LoadingState label="working" startedAt={workingStartedAt} />
+          } else if (!autoScrolling.current) {
+            following.current = false;
+          }
+        }}
+        className="rk-scroll flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto px-4 py-5 md:px-7 md:py-6"
+      >
+        {olderCursor != null ? (
+          <button
+            type="button"
+            disabled={loadingOlder}
+            onClick={() => void loadOlder()}
+            className="self-center rounded-lg px-3 py-1.5 text-[13px] text-[var(--rk-muted)] hover:bg-[var(--rk-surface-2)] hover:text-[var(--rk-body)] disabled:opacity-50"
+          >
+            {loadingOlder ? t`Loading…` : t`Load earlier messages`}
+          </button>
+        ) : null}
+        {messages.map((message) => (
+          <div
+            key={message.id}
+            data-message-id={message.id}
+            className="group/message relative pt-9 hover:z-20"
+          >
+            <MessageHoverActions message={message} onReply={onReply} />
+            <MessageView
+              artifactTarget={artifactTarget}
+              message={message}
+              canAnswer={message.id === answerableAskMessageId}
+              onOpenBot={onOpenBot}
+              onOpenPeerMessages={onOpenPeerMessages}
+              onAnswer={onAnswer}
+              speakerName={message.role === "bot" ? memberName?.(message.botId) : undefined}
+              memberName={memberName}
+              peerBot={peerBot}
+              replyPreview={
+                message.replyToMessageId ? messageById.get(message.replyToMessageId) : undefined
+              }
+              replyToMessageId={message.replyToMessageId}
+              onJumpToMessage={onJumpToMessage}
+              onRefresh={onRefresh}
+              onBotChanged={onBotChanged}
+              onAddRoutine={onAddRoutine}
+              voiceReady={voiceReady}
+              speaking={speakingMessageId === message.id}
+              onSpeak={() => onSpeak(message)}
+            />
           </div>
-        </div>
-      ) : null}
+        ))}
+        {running &&
+        !messages.some(
+          (message) =>
+            message.id.startsWith("progress:") &&
+            message.blocks[0]?.kind === "progress" &&
+            message.blocks[0].text,
+        ) ? (
+          <ActiveBotGlyph
+            bots={workingBots}
+            label={workingLabel}
+            startedAt={workingStartedAt}
+          />
+        ) : null}
+      </div>
+      <button
+        ref={jumpButtonRef}
+        type="button"
+        aria-label={t`Jump to latest`}
+        aria-hidden={atEnd}
+        tabIndex={atEnd ? -1 : 0}
+        onClick={jumpToLatest}
+        className={`absolute bottom-4 left-1/2 z-20 grid h-9 w-9 -translate-x-1/2 place-items-center rounded-full border border-[var(--rk-hairline-strong)] bg-[var(--rk-surface-2)]/95 text-[var(--rk-body)] shadow-[0_8px_24px_rgba(0,0,0,.45)] backdrop-blur transition-[opacity,transform,background-color] duration-200 ease-[cubic-bezier(.22,1,.36,1)] hover:bg-[var(--rk-hover)] motion-reduce:transition-none ${
+          atEnd ? "pointer-events-none translate-y-2 opacity-0" : "translate-y-0 opacity-100"
+        }`}
+      >
+        <ArrowDown size={17} strokeWidth={1.8} />
+      </button>
     </div>
   );
 });
@@ -4058,7 +4225,7 @@ function MentionOptionIcon({ mention }: { mention: ComposerMention }) {
       </span>
     );
   }
-  return <BotAvatar color={mention.color ?? "var(--rk-muted)"} size={16} />;
+  return <BotAvatar color={mention.color ?? "var(--rk-muted)"} identity={mention.id} size={16} />;
 }
 
 function MentionChipIcon({ mention }: { mention: ComposerMention }) {
@@ -4075,7 +4242,7 @@ function MentionChipIcon({ mention }: { mention: ComposerMention }) {
       </span>
     );
   }
-  return <BotAvatar color={mention.color ?? "var(--rk-muted)"} size={16} />;
+  return <BotAvatar color={mention.color ?? "var(--rk-muted)"} identity={mention.id} size={16} />;
 }
 
 function previewMessageText(message: ThreadMessage): string {
@@ -4244,6 +4411,7 @@ const MessageView = memo(function MessageView({
   onOpenPeerMessages,
   speakerName,
   memberName,
+  peerBot,
   replyPreview,
   replyToMessageId,
   onJumpToMessage,
@@ -4262,6 +4430,7 @@ const MessageView = memo(function MessageView({
   onOpenPeerMessages: (peerBotId: string) => void;
   speakerName?: string;
   memberName?: (botId: string | undefined) => string | undefined;
+  peerBot: (botId: string) => { color: string; status?: string } | undefined;
   replyPreview?: ThreadMessage;
   replyToMessageId?: string;
   onJumpToMessage?: (messageId: string) => void;
@@ -4372,16 +4541,14 @@ const MessageView = memo(function MessageView({
           const peerBotId = sent ? block.toBotId : block.fromBotId;
           const label = sent ? t`Messaged ${peer}` : t`Message from ${peer}`;
           return (
-            <button
+            <CollaborationMarker
               key={i}
-              type="button"
-              aria-label={label}
+              ariaLabel={label}
+              color={peerBot(peerBotId)?.color ?? "#85858A"}
+              identity={peerBotId}
+              label={label}
               onClick={() => onOpenPeerMessages(peerBotId)}
-              className="flex items-center justify-center gap-2 self-center rounded-full border border-[var(--rk-hairline-strong)] px-3 py-1 text-[13px] text-[var(--rk-muted)] hover:bg-[var(--rk-hover)]"
-            >
-              <span aria-hidden>↔</span>
-              <span>{label}</span>
-            </button>
+            />
           );
         }
         if (block.kind === "meta") {
@@ -4917,7 +5084,7 @@ function BotSettings({
   return (
     <div data-testid="bot-settings">
       <div className="flex justify-center">
-        <BotAvatar color={bot.color} size={64} status={bot.status} />
+        <BotAvatar color={bot.color} identity={bot.id} size={64} status={bot.status} />
       </div>
       <label className="mt-6 block text-[14px] text-[var(--rk-muted)]">
         <Trans>Name</Trans>
