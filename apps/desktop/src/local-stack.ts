@@ -203,6 +203,25 @@ export function composeRestartArgs(envFileExists: boolean, service: string): str
   return [...composeFileFlags(envFileExists), "restart", service];
 }
 
+export function composeImageGrepArgs(envFileExists: boolean): string[] {
+  return [
+    ...composeFileFlags(envFileExists),
+    "run",
+    "--rm",
+    "--no-deps",
+    "--no-build",
+    "--entrypoint",
+    "grep",
+    "web",
+    "Forgot password?",
+    "/app/apps/web/dist/index.html",
+  ];
+}
+
+export function composeBuildWebArgs(envFileExists: boolean): string[] {
+  return [...composeFileFlags(envFileExists), "build", "web"];
+}
+
 export const WEB_CHECKOUT_COPIES: Array<{ hostPath: string; destination: string }> = [
   { hostPath: "apps/web/src/.", destination: "web:/app/apps/web/src/" },
   { hostPath: "apps/web/index.html", destination: "web:/app/apps/web/index.html" },
@@ -304,6 +323,7 @@ const FETCH_TIMEOUT_MS = 4_000;
 const COMPOSE_TIMEOUT_MS = 180_000;
 const COPY_TIMEOUT_MS = 60_000;
 const WEB_BUILD_TIMEOUT_MS = 360_000;
+const IMAGE_BUILD_TIMEOUT_MS = 600_000;
 const DOCKER_INFO_TIMEOUT_MS = 20_000;
 const DOCKER_DESKTOP_WAIT_MS = 90_000;
 const HEALTH_WAIT_MS = 180_000;
@@ -376,10 +396,7 @@ export async function ensureLocalStack(input: {
     }
   }
 
-  await host.run(docker, composeForceRecreateWebArgs(envFile), {
-    cwd: repoRoot,
-    timeoutMs: COMPOSE_TIMEOUT_MS,
-  });
+  await rebuildWebImageIfStale(host, docker, repoRoot, envFile);
   await refreshWebFromCheckout(host, docker, repoRoot, envFile);
 
   const ready = await waitForWebHealth(host, target);
@@ -449,6 +466,29 @@ async function webIsHealthy(host: LocalStackHost, origin: string): Promise<boole
   });
   if ("error" in response) return false;
   return response.status < 300 && isRakazoHealth(response.json);
+}
+
+async function rebuildWebImageIfStale(
+  host: LocalStackHost,
+  docker: string,
+  repoRoot: string,
+  envFileExists: boolean,
+): Promise<void> {
+  if (!shouldRefreshWebFromCheckout(repoRoot, (file) => host.exists(file))) return;
+  const grep = await host.run(docker, composeImageGrepArgs(envFileExists), {
+    cwd: repoRoot,
+    timeoutMs: COPY_TIMEOUT_MS,
+  });
+  if (grep.code === 0) return;
+  const built = await host.run(docker, composeBuildWebArgs(envFileExists), {
+    cwd: repoRoot,
+    timeoutMs: IMAGE_BUILD_TIMEOUT_MS,
+  });
+  if (built.code !== 0) return;
+  await host.run(docker, composeUpArgs(envFileExists), {
+    cwd: repoRoot,
+    timeoutMs: COMPOSE_TIMEOUT_MS,
+  });
 }
 
 export async function refreshWebFromCheckout(
