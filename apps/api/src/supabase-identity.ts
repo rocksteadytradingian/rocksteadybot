@@ -2,7 +2,6 @@ import {
   adminCreateUser,
   adminDeleteUser,
   adminSetPasswordByEmail,
-  findSupabaseUserByEmail,
   readSupabaseProfile,
   type SupabaseAuthConfig,
   type SupabaseIdentity,
@@ -236,16 +235,15 @@ async function resolveSignInIdentity(
   if (signedIn) return readSupabaseProfile(deps.config, signedIn);
   const local = await verifyLocalCredential(deps.prisma, email, password);
   if (!local) return undefined;
-  if (await findSupabaseUserByEmail(deps.config, email)) return undefined;
   const user = await deps.prisma.user.findUnique({
     where: { id: local.userId },
     select: { name: true, image: true, email: true },
   });
-  return adminCreateUser(deps.config, {
-    email,
-    password,
-    name: user?.name || email.split("@")[0] || "User",
-    image: user?.image ?? undefined,
+  const identity = await adminSetPasswordByEmail(deps.config, email, password);
+  return readSupabaseProfile(deps.config, {
+    ...identity,
+    name: user?.name || identity.name,
+    image: user?.image ?? identity.image,
   });
 }
 
