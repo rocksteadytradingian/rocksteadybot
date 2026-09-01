@@ -843,6 +843,10 @@ msgstr "Stimmanbieter konnte nicht verbunden werden"
 msgid "Could not continue"
 msgstr "Fortfahren fehlgeschlagen"
 
+#: src/pages/Auth.tsx:42
+msgid "Invalid email or password"
+msgstr "Ungültige E-Mail oder Passwort"
+
 #: src/pages/Shell.tsx:4675
 msgid "Could not create bot"
 msgstr "Bot konnte nicht erstellt werden"

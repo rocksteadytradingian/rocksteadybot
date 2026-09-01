@@ -41,6 +41,17 @@ describe("authErrorMessage", () => {
     ).toBe("Failed");
   });
 
+  it("maps Better Auth invalid credentials to catalog copy", () => {
+    expect(
+      authErrorMessage(
+        { code: "INVALID_EMAIL_OR_PASSWORD" },
+        "Could not continue",
+        "Can't reach the server.",
+        "Invalid email or password",
+      ),
+    ).toBe("Invalid email or password");
+  });
+
   it("uses the fallback when the client has no message", () => {
     expect(authErrorMessage({}, "Could not continue", "Can't reach the server.")).toBe(
       "Could not continue",

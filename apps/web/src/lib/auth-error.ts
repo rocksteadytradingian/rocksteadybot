@@ -16,14 +16,31 @@ function isUnreachable(message: string) {
   );
 }
 
+function isInvalidCredentials(
+  error: { message?: string | null; code?: string | null } | null | undefined,
+) {
+  return /invalid email or password|INVALID_EMAIL_OR_PASSWORD/i.test(
+    `${error?.code ?? ""} ${error?.message ?? ""}`,
+  );
+}
+
 export function authErrorMessage(
-  error: { message?: string | null } | null | undefined,
+  error: { message?: string | null; code?: string | null } | null | undefined,
   fallback: string,
   unreachable: string,
+  invalidCredentials = "Invalid email or password",
 ): string {
   const message = error?.message?.trim() ?? "";
   if (isUnreachable(message)) {
     return readableCopy(unreachable) ?? readableCopy(fallback) ?? "Can't reach the server.";
   }
-  return readableCopy(message) ?? readableCopy(fallback) ?? "Could not continue";
+  if (isInvalidCredentials(error)) {
+    return readableCopy(invalidCredentials) ?? "Invalid email or password";
+  }
+  return (
+    readableCopy(message) ??
+    readableCopy(error?.code ?? undefined) ??
+    readableCopy(fallback) ??
+    "Could not continue"
+  );
 }

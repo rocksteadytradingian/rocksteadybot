@@ -14,6 +14,7 @@ describe("sign-in Forgot password control", () => {
     const source = await readFile(path.join(import.meta.dirname, "Auth.tsx"), "utf8");
     expect(source).toContain("Can't reach the server.");
     expect(source).not.toMatch(/Can't reach the server`/);
+    expect(source).toContain("Invalid email or password");
   });
 
   it("keeps a document fallback if the preview JS is still stale", async () => {

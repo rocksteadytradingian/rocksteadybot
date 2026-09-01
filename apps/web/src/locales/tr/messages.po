@@ -843,6 +843,10 @@ msgstr "Bu ses sağlayıcısı bağlanamadı"
 msgid "Could not continue"
 msgstr "Devam edilemedi"
 
+#: src/pages/Auth.tsx:42
+msgid "Invalid email or password"
+msgstr "E-posta veya parola geçersiz"
+
 #: src/pages/Shell.tsx:4675
 msgid "Could not create bot"
 msgstr "Bot oluşturulamadı"

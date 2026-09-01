@@ -843,6 +843,10 @@ msgstr "यह आवाज़ प्रोवाइडर कनेक्ट �
 msgid "Could not continue"
 msgstr "जारी नहीं रखा जा सका"
 
+#: src/pages/Auth.tsx:42
+msgid "Invalid email or password"
+msgstr "ईमेल या पासवर्ड गलत है"
+
 #: src/pages/Shell.tsx:4675
 msgid "Could not create bot"
 msgstr "बॉट नहीं बनाया जा सका"

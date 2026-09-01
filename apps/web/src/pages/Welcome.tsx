@@ -27,13 +27,22 @@ export function WelcomePage() {
             that you can give real work to.
           </Trans>
         </p>
-        <button
-          type="button"
-          onClick={() => navigate("/sign-in")}
-          className="app-no-drag rounded-full bg-[var(--rk-solid)] px-[34px] py-[15px] text-[19px] text-[var(--rk-solid-ink)] transition hover:scale-[1.04]"
-        >
-          <Trans>Sign in&nbsp;&nbsp;→</Trans>
-        </button>
+        <div className="flex flex-col items-center gap-4">
+          <button
+            type="button"
+            onClick={() => navigate("/sign-in")}
+            className="app-no-drag rounded-full bg-[var(--rk-solid)] px-[34px] py-[15px] text-[19px] text-[var(--rk-solid-ink)] transition hover:scale-[1.04]"
+          >
+            <Trans>Sign in&nbsp;&nbsp;→</Trans>
+          </button>
+          <button
+            type="button"
+            onClick={() => navigate("/sign-up")}
+            className="app-no-drag text-[17px] font-medium text-[var(--rk-ink)] underline underline-offset-4"
+          >
+            <Trans>Sign up</Trans>
+          </button>
+        </div>
       </div>
     </div>
   );

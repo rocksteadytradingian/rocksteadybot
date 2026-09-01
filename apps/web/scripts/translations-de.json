@@ -185,6 +185,7 @@
   "Could not connect this provider": "Anbieter konnte nicht verbunden werden",
   "Could not connect this voice provider": "Stimmanbieter konnte nicht verbunden werden",
   "Could not continue": "Fortfahren fehlgeschlagen",
+  "Invalid email or password": "Ungültige E-Mail oder Passwort",
   "Could not create bot": "Bot konnte nicht erstellt werden",
   "Could not create group": "Gruppe konnte nicht erstellt werden",
   "Could not create section": "Abschnitt konnte nicht erstellt werden",

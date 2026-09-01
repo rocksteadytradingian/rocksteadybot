@@ -847,6 +847,10 @@ msgstr "Could not connect this voice provider"
 msgid "Could not continue"
 msgstr "Could not continue"
 
+#: src/pages/Auth.tsx:42
+msgid "Invalid email or password"
+msgstr "Invalid email or password"
+
 #: src/pages/Shell.tsx:4675
 msgid "Could not create bot"
 msgstr "Could not create bot"

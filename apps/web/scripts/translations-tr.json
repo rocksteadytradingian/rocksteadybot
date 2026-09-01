@@ -181,6 +181,7 @@
   "Could not connect this provider": "Bu sağlayıcı bağlanamadı",
   "Could not connect this voice provider": "Bu ses sağlayıcısı bağlanamadı",
   "Could not continue": "Devam edilemedi",
+  "Invalid email or password": "E-posta veya parola geçersiz",
   "Could not create bot": "Bot oluşturulamadı",
   "Could not create group": "Grup oluşturulamadı",
   "Could not create section": "Bölüm oluşturulamadı",

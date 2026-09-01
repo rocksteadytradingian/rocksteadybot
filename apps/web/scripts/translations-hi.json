@@ -179,6 +179,7 @@
   "Could not connect this provider": "यह प्रोवाइडर कनेक्ट नहीं हो सका",
   "Could not connect this voice provider": "यह आवाज़ प्रोवाइडर कनेक्ट नहीं हो सका",
   "Could not continue": "जारी नहीं रखा जा सका",
+  "Invalid email or password": "ईमेल या पासवर्ड गलत है",
   "Could not create bot": "बॉट नहीं बनाया जा सका",
   "Could not create group": "समूह नहीं बनाया जा सका",
   "Could not create section": "सेक्शन नहीं बनाया जा सका",

@@ -843,6 +843,10 @@ msgstr "Não foi possível conectar este provedor de voz"
 msgid "Could not continue"
 msgstr "Não foi possível continuar"
 
+#: src/pages/Auth.tsx:42
+msgid "Invalid email or password"
+msgstr "E-mail ou senha inválidos"
+
 #: src/pages/Shell.tsx:4675
 msgid "Could not create bot"
 msgstr "Não foi possível criar o bot"

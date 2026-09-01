@@ -185,6 +185,7 @@
   "Could not connect this provider": "AI 서비스에 연결하지 못했습니다.",
   "Could not connect this voice provider": "음성 서비스에 연결하지 못했습니다.",
   "Could not continue": "계속 진행하지 못했습니다.",
+  "Invalid email or password": "이메일 또는 비밀번호가 올바르지 않습니다",
   "Could not create bot": "Bot을 만들지 못했습니다.",
   "Could not create group": "그룹을 만들지 못했습니다.",
   "Could not create section": "섹션을 만들지 못했습니다.",
