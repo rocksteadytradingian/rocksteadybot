@@ -52,6 +52,14 @@ test("logout protects bot deep links and sign-in restores the session", async ({
   await expect(page).toHaveURL(/\/sign-in$/);
   await captureScreenshot(page, testInfo, "39-invalid-credentials");
 
+  await page.getByRole("link", { name: "Forgot password?" }).click();
+  await expect(page.getByRole("heading", { name: "Reset your password" })).toBeVisible();
+  await page.getByPlaceholder("Your email address").fill(email);
+  await page.getByRole("button", { name: "Send reset link" }).click();
+  await expect(page.getByText("Password reset is not configured")).toBeVisible();
+  await page.getByRole("link", { name: "Sign in" }).click();
+  await expect(page.getByRole("heading", { name: "Sign in to RocksteadyBot" })).toBeVisible();
+
   await page.getByPlaceholder("Password").fill(password);
   await page.getByRole("button", { name: "Continue with email" }).click();
   await page.waitForURL((url) => url.pathname === protectedBotPath, {

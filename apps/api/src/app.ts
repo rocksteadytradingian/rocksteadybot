@@ -38,7 +38,7 @@ import {
   ScriptedAgentRuntime,
   WorkspaceMemoryProviderResolver,
 } from "@rakazo/adapters";
-import { blockedAuthPaths, createAuth } from "@rakazo/auth";
+import { blockedAuthPaths, createAuth, type SendResetPassword } from "@rakazo/auth";
 import { createDb, createThreadEvents, type PrismaClient, requireMembership } from "@rakazo/db";
 import { MarkdownMemoryStore } from "@rakazo/memory";
 import { Hono } from "hono";
@@ -67,6 +67,7 @@ export async function createApp(
     composio?: ComposioProvider;
     pipedream?: ManagedConnectorProvider;
     remoteConnectors?: RemoteConnectorDependencies;
+    sendResetPassword?: SendResetPassword;
   } = {},
 ): Promise<AppHandles> {
   const {
@@ -75,6 +76,7 @@ export async function createApp(
     composio: composioOverride,
     pipedream: pipedreamOverride,
     remoteConnectors,
+    sendResetPassword,
     ...envOverrides
   } = overrides;
   const env = { ...loadEnv(process.env), ...envOverrides };
@@ -157,6 +159,7 @@ export async function createApp(
     webOrigin: env.webOrigin,
     signupsEnabled: env.signupsEnabled,
     signupAllowlist: env.signupAllowlist,
+    sendResetPassword,
     extraOrigins: [
       "rakazo://",
       "exp://",

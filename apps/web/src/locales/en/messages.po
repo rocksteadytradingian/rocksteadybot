@@ -569,6 +569,10 @@ msgstr "Choose a model to get started."
 msgid "Choose which connected model RocksteadyBot uses."
 msgstr "Choose which connected model RocksteadyBot uses."
 
+#: src/pages/Auth.tsx:28
+msgid "Choose a new password"
+msgstr "Choose a new password"
+
 #: src/pages/Shell.tsx:5246
 msgid "Clear"
 msgstr "Clear"
@@ -1376,6 +1380,10 @@ msgstr "Free"
 msgid "Fullscreen"
 msgstr "Fullscreen"
 
+#: src/pages/Auth.tsx:146
+msgid "Forgot password?"
+msgstr "Forgot password?"
+
 #: src/pages/Shell.tsx:2385
 #: src/pages/Shell.tsx:2533
 msgid "Group"
@@ -1445,6 +1453,10 @@ msgstr "I’m done"
 #: src/pages/VoiceSettingsOverlay.tsx:107
 msgid "If you heard that, voice is ready."
 msgstr "If you heard that, voice is ready."
+
+#: src/pages/Auth.tsx:51
+msgid "If that account exists, a reset link was sent."
+msgstr "If that account exists, a reset link was sent."
 
 #: src/pages/PluginsOverlay.tsx:622
 msgid "Import OpenAPI JSON"
@@ -1985,6 +1997,10 @@ msgstr "Park"
 msgid "Password"
 msgstr "Password"
 
+#: src/pages/Auth.tsx:46
+msgid "Password reset is not configured"
+msgstr "Password reset is not configured"
+
 #: src/pages/ComposioProjectKeySettings.tsx:59
 msgid "Paste a Platform project key (ak_…), not a For You consumer key"
 msgstr "Paste a Platform project key (ak_…), not a For You consumer key"
@@ -2179,6 +2195,10 @@ msgstr "Research"
 msgid "Reset"
 msgstr "Reset"
 
+#: src/pages/Auth.tsx:26
+msgid "Reset your password"
+msgstr "Reset your password"
+
 #: src/components/ComputerMaintenanceActions.tsx:68
 msgid "Reset computer"
 msgstr "Reset computer"
@@ -2251,6 +2271,10 @@ msgstr "Sales"
 #: src/pages/Shell.tsx:5037
 msgid "Save"
 msgstr "Save"
+
+#: src/pages/Auth.tsx:166
+msgid "Save password"
+msgstr "Save password"
 
 #: src/components/teach/SkillDraftCard.tsx:162
 msgid "Saved"
@@ -2337,6 +2361,10 @@ msgstr "Send answer"
 #: src/components/AskCard.tsx:141
 msgid "Send it"
 msgstr "Send it"
+
+#: src/pages/Auth.tsx:164
+msgid "Send reset link"
+msgstr "Send reset link"
 
 #: src/components/AskCard.tsx:90
 #: src/components/AskCard.tsx:118
@@ -2610,6 +2638,10 @@ msgstr "This Mac runs shell commands with your account, including files in your 
 #: src/pages/Shell.tsx:5218
 msgid "This permanently removes every message and stops current work. The bot, computer, memory, and routines are kept."
 msgstr "This permanently removes every message and stops current work. The bot, computer, memory, and routines are kept."
+
+#: src/pages/Auth.tsx:57
+msgid "This reset link is missing or invalid"
+msgstr "This reset link is missing or invalid"
 
 #: src/pages/Onboarding.tsx:477
 msgid "This provider cannot paste a key here. Skip if this deployment already has credentials."

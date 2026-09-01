@@ -67,6 +67,14 @@ export function App() {
             element={user ? <Navigate to="/onboarding" replace /> : <AuthPage mode="up" />}
           />
           <Route
+            path="/forgot-password"
+            element={user ? <Navigate to="/app" replace /> : <AuthPage mode="forgot" />}
+          />
+          <Route
+            path="/reset-password"
+            element={user ? <Navigate to="/app" replace /> : <AuthPage mode="reset" />}
+          />
+          <Route
             path="/onboarding"
             element={user ? <OnboardingPage /> : <Navigate to="/sign-in" replace />}
           />

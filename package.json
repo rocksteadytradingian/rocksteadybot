@@ -16,6 +16,7 @@
     "format": "biome check --write .",
     "db:generate": "pnpm --filter @rakazo/db generate",
     "db:migrate": "pnpm --filter @rakazo/db migrate",
+    "auth:set-password": "tsx packages/auth/src/cli/set-password.ts",
     "sandbox:build": "docker build -t rakazo/computer:local infra/sandboxes/computer",
     "test": "vitest run",
     "test:integration": "tsx packages/testkit/src/cli/harness.ts --integration",

@@ -100,6 +100,25 @@ export async function signIn(email: string, password: string) {
   await saveSessionToken(token);
 }
 
+export async function requestPasswordReset(email: string) {
+  const res = await fetch(`${currentApiBase()}/api/auth/request-password-reset`, {
+    method: "POST",
+    headers: { "content-type": "application/json", origin: "rakazo://" },
+    body: JSON.stringify({
+      email,
+      redirectTo: `${currentApiBase()}/reset-password`,
+    }),
+  });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    const message = responseErrorMessage(body, "Could not request a reset");
+    if (/isn't enabled|not configured|RESET_PASSWORD_DISABLED/i.test(message)) {
+      throw new Error("Password reset is not configured");
+    }
+    throw new Error(message);
+  }
+}
+
 export async function signOut() {
   const headers = await authHeaders();
   await fetch(`${currentApiBase()}/api/auth/sign-out`, {

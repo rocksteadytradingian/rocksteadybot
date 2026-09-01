@@ -5,6 +5,17 @@ import { prismaAdapter } from "better-auth/adapters/prisma";
 import { APIError } from "better-auth/api";
 import { bearer, organization } from "better-auth/plugins";
 
+export {
+  normalizeAccountEmail,
+  parseSetPasswordArgs,
+  setCredentialPassword,
+} from "./set-password.js";
+
+export type SendResetPassword = (
+  data: { user: { id: string; email: string; name: string }; url: string; token: string },
+  request?: Request,
+) => Promise<void>;
+
 export interface AuthEnv {
   secret: string;
   baseURL: string;
@@ -12,6 +23,7 @@ export interface AuthEnv {
   signupsEnabled: string | undefined;
   signupAllowlist: string | undefined;
   extraOrigins?: string[];
+  sendResetPassword?: SendResetPassword;
   beforeDeleteUser?: (userId: string) => Promise<void>;
 }
 
@@ -25,6 +37,8 @@ export function createAuth(prisma: PrismaClient, env: AuthEnv) {
     emailAndPassword: {
       enabled: true,
       disableSignUp: !signupsOpen(env.signupsEnabled),
+      revokeSessionsOnPasswordReset: true,
+      ...(env.sendResetPassword ? { sendResetPassword: env.sendResetPassword } : {}),
     },
     user: {
       deleteUser: {

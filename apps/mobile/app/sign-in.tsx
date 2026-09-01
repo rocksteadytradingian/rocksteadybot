@@ -122,6 +122,16 @@ export default function SignIn() {
             {pending ? "Working…" : "Continue with email"}
           </Text>
         </Pressable>
+        <Pressable
+          accessibilityRole="link"
+          accessibilityLabel="Forgot password"
+          onPress={() => router.push("/forgot-password")}
+          style={{ marginTop: 16, alignItems: "center" }}
+        >
+          <Text style={{ color: "#1B1B1E", fontSize: 16, fontWeight: "500" }}>
+            Forgot password?
+          </Text>
+        </Pressable>
       </View>
       <Pressable
         accessibilityRole="button"
