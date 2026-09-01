@@ -1,10 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-  applyUiTheme,
-  persistUiTheme,
-  resolveUiTheme,
-  UI_THEME_STORAGE_KEY,
-} from "./ui-theme";
+import { applyUiTheme, persistUiTheme, resolveUiTheme, UI_THEME_STORAGE_KEY } from "./ui-theme";
 
 describe("resolveUiTheme", () => {
   it("uses the saved theme when it is valid", () => {

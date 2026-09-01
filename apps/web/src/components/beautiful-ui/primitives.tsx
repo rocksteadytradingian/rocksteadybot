@@ -90,7 +90,7 @@ export function SuccessPop({ label }: { label: string }) {
   return (
     <span className="flex items-center gap-2">
       <span
-        className="flex h-6 w-6 items-center justify-center rounded-full text-white"
+        className="flex h-6 w-6 items-center justify-center rounded-full text-[var(--rk-page)]"
         style={{
           background: "var(--bui-green)",
           animation: "bui-pop-in 300ms cubic-bezier(0.23,1,0.32,1) both",
@@ -161,7 +161,7 @@ export function BuiButton({
       className="rounded-full px-4 py-2 text-[13.5px] font-medium transition-colors duration-150 disabled:opacity-60"
       style={
         tone === "accent"
-          ? { background: "var(--bui-accent)", color: "#090a12" }
+          ? { background: "var(--bui-accent)", color: "var(--rk-accent-ink)" }
           : {
               background: "var(--bui-hover)",
               color: "var(--bui-ink)",

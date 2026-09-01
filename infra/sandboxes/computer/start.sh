@@ -32,6 +32,15 @@ if command -v dbus-launch >/dev/null 2>&1; then
   eval "$(dbus-launch --sh-syntax)"
 fi
 
+if command -v autocutsel >/dev/null 2>&1; then
+  # Detach from the container TTY. Without setsid, autocutsel -fork stays in the
+  # foreground process group and PID 1 waits forever — the desktop never reaches VNC.
+  setsid autocutsel -display :1 -selection CLIPBOARD -fork \
+    >/tmp/rakazo/autocutsel-clipboard.log 2>&1 </dev/null &
+  setsid autocutsel -display :1 -selection PRIMARY -fork \
+    >/tmp/rakazo/autocutsel-primary.log 2>&1 </dev/null &
+fi
+
 xsetroot -solid "#111113" >/dev/null 2>&1 || true
 mkdir -p /tmp/fluxbox-home/.fluxbox
 cp /etc/rakazo/fluxbox/init /tmp/fluxbox-home/.fluxbox/init
@@ -44,6 +53,23 @@ exec fluxbox -rc /tmp/fluxbox-home/.fluxbox/init
 EOF
 chmod +x /tmp/fluxbox-home/.fluxbox/startup
 HOME=/tmp/fluxbox-home /tmp/fluxbox-home/.fluxbox/startup >/tmp/rakazo/fluxbox.log 2>&1 &
+
+x11vnc -display :1 -forever -shared -viewonly -nopw -listen 127.0.0.1 -rfbport 5900 -xkb -ncache 0 >/tmp/rakazo/x11vnc.log 2>&1 &
+
+NOVNC_ROOT=/usr/share/novnc
+if [[ ! -d "$NOVNC_ROOT" ]]; then
+  echo "noVNC is missing from the computer image" >&2
+  exit 1
+fi
+if [[ ! -f "$NOVNC_ROOT/embed.html" ]]; then
+  echo "noVNC embed.html is missing from the computer image" >&2
+  exit 1
+fi
+if [[ ! -f "$NOVNC_ROOT/host-clipboard.js" ]]; then
+  echo "noVNC host-clipboard.js is missing from the computer image" >&2
+  exit 1
+fi
+websockify --heartbeat=30 --web="$NOVNC_ROOT" 0.0.0.0:6080 127.0.0.1:5900 >/tmp/rakazo/novnc.log 2>&1 &
 
 HOME="$AGENT_HOME" rakazo-browser >/tmp/rakazo/browser.log 2>&1 &
 browser_up=0
@@ -63,19 +89,6 @@ if [[ "$browser_up" -ne 1 ]]; then
   cat /tmp/rakazo/browser.log >&2 || true
   xterm -geometry 100x28+48+48 -bg "#111113" -fg "#E8E8EA" -cr "#E8E8EA" -title "Terminal" >/tmp/rakazo/xterm.log 2>&1 &
 fi
-
-x11vnc -display :1 -forever -shared -viewonly -nopw -listen 127.0.0.1 -rfbport 5900 -xkb -ncache 0 >/tmp/rakazo/x11vnc.log 2>&1 &
-
-NOVNC_ROOT=/usr/share/novnc
-if [[ ! -d "$NOVNC_ROOT" ]]; then
-  echo "noVNC is missing from the computer image" >&2
-  exit 1
-fi
-if [[ ! -f "$NOVNC_ROOT/embed.html" ]]; then
-  echo "noVNC embed.html is missing from the computer image" >&2
-  exit 1
-fi
-websockify --heartbeat=30 --web="$NOVNC_ROOT" 0.0.0.0:6080 127.0.0.1:5900 >/tmp/rakazo/novnc.log 2>&1 &
 
 while kill -0 "$XVFB_PID" 2>/dev/null; do
   sleep 2

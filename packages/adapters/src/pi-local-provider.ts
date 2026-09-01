@@ -5,6 +5,9 @@ import {
   type Provider,
 } from "@earendil-works/pi-ai";
 import { openAICompletionsApi } from "@earendil-works/pi-ai/api/openai-completions.lazy";
+import { LOCAL_PROVIDER_ID } from "@rakazo/contracts";
+
+export { LOCAL_PROVIDER_ID };
 
 /**
  * Local OpenAI-compatible model server (Ollama, LM Studio, llama.cpp, MLX).
@@ -16,7 +19,6 @@ import { openAICompletionsApi } from "@earendil-works/pi-ai/api/openai-completio
  * Models treats a provider with no resolvable auth as unconfigured and hides
  * its models.
  */
-export const LOCAL_PROVIDER_ID = "local";
 
 const DEFAULT_BASE_URL = "http://127.0.0.1:11434/v1";
 const DEFAULT_CONTEXT_WINDOW = 32_768;

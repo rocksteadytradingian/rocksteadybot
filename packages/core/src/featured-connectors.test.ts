@@ -62,10 +62,17 @@ describe("featured connectors", () => {
     expect(resolveFeaturedCatalogItem("notion", catalog)?.slug).toBe("NOTION");
   });
 
-  it("marks all featured tiles missing when the catalog is empty", () => {
+  it("uses fallback catalog items so Gmail stays addable when the live list is empty", () => {
     const tiles = buildFeaturedConnectorTiles([]);
     expect(tiles).toHaveLength(7);
-    expect(tiles.every((tile) => !tile.item && !tile.missing)).toBe(true);
+    const gmail = tiles.find((tile) => tile.id === "gmail");
+    expect(gmail?.missing).toBe(false);
+    expect(gmail?.item).toMatchObject({
+      connectorId: "composio",
+      slug: "gmail",
+      name: "Gmail",
+      connected: false,
+    });
   });
 
   it("marks unknown featured apps missing when the catalog has other apps", () => {

@@ -1,5 +1,6 @@
 import { randomBytes } from "node:crypto";
 import type { Prisma, PrismaClient } from "./client.js";
+import { ensureIdentityDocuments } from "./identity-files.js";
 import { IsolationError } from "./scope.js";
 
 export class WorkspaceError extends Error {
@@ -103,6 +104,7 @@ export async function createWorkspace(
             content: "# User memory\n\nAccount-wide preferences live here.\n",
           },
         });
+        await ensureIdentityDocuments(tx, { workspaceId: orgId, userId: input.userId });
         await tx.notificationPreference.create({
           data: {
             workspaceId: orgId,
@@ -165,8 +167,22 @@ export async function deleteWorkspace(
       where: { userId: input.userId, workspaceId: input.workspaceId, kind: "composio" },
       data: { workspaceId: fallback.id },
     });
+    const stillUsed = [
+      ...(await tx.userModelCredential.findMany({
+        where: { userId: input.userId },
+        select: { secretId: true },
+      })),
+      ...(await tx.userVoiceCredential.findMany({
+        where: { userId: input.userId },
+        select: { secretId: true },
+      })),
+    ].map((row) => row.secretId);
     await tx.secret.deleteMany({
-      where: { userId: input.userId, workspaceId: input.workspaceId },
+      where: {
+        userId: input.userId,
+        workspaceId: input.workspaceId,
+        ...(stillUsed.length > 0 ? { id: { notIn: stillUsed } } : {}),
+      },
     });
     await tx.organization.delete({ where: { id: input.workspaceId } });
   });
@@ -195,52 +211,29 @@ async function copyScopedCredentials(
       where: { userId, workspaceId: sourceWorkspaceId },
     }),
   ]);
-  const secretIds = [
-    ...new Set([
-      ...modelCreds.map((row) => row.secretId),
-      ...voiceCreds.map((row) => row.secretId),
-    ]),
-  ];
-  if (secretIds.length === 0) return;
-  const secrets = await tx.secret.findMany({
-    where: { id: { in: secretIds }, userId, workspaceId: sourceWorkspaceId },
-  });
-  const secretIdByOld = new Map<string, string>();
-  for (const secret of secrets) {
-    const created = await tx.secret.create({
-      data: {
-        userId,
-        workspaceId: targetWorkspaceId,
-        kind: secret.kind,
-        ciphertext: secret.ciphertext,
-      },
-    });
-    secretIdByOld.set(secret.id, created.id);
-  }
+  // Reuse the source secretId. Duplicating OAuth ciphertext splits refresh tokens:
+  // the first workspace to refresh invalidates the copy, so new-workspace bots
+  // look disconnected from the model provider.
   for (const cred of modelCreds) {
-    const secretId = secretIdByOld.get(cred.secretId);
-    if (!secretId) continue;
     await tx.userModelCredential.create({
       data: {
         userId,
         workspaceId: targetWorkspaceId,
         provider: cred.provider,
         label: cred.label,
-        secretId,
+        secretId: cred.secretId,
         isDefault: cred.isDefault,
         defaultModel: cred.defaultModel,
       },
     });
   }
   for (const cred of voiceCreds) {
-    const secretId = secretIdByOld.get(cred.secretId);
-    if (!secretId) continue;
     await tx.userVoiceCredential.create({
       data: {
         userId,
         workspaceId: targetWorkspaceId,
         provider: cred.provider,
-        secretId,
+        secretId: cred.secretId,
         isDefault: cred.isDefault,
         voiceId: cred.voiceId,
       },

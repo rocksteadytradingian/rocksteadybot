@@ -22,6 +22,16 @@ export const FEATURED_CONNECTOR_LABELS: Record<FeaturedConnectorId, string> = {
   linear: "Linear",
 };
 
+const FEATURED_CONNECTOR_SLUGS: Record<FeaturedConnectorId, string> = {
+  gmail: "gmail",
+  "google-calendar": "googlecalendar",
+  "google-drive": "googledrive",
+  slack: "slack",
+  github: "github",
+  notion: "notion",
+  linear: "linear",
+};
+
 const FEATURED_ALIASES: Record<FeaturedConnectorId, readonly string[]> = {
   gmail: ["gmail", "googlemail", "google mail"],
   "google-calendar": ["googlecalendar", "google calendar", "google_calendar", "gcal"],
@@ -62,6 +72,17 @@ export function featuredConnectorProvidersMatch(left: string, right: string): bo
   return leftId !== null && leftId === rightId;
 }
 
+export function featuredConnectorCatalogItem(id: FeaturedConnectorId): ConnectionCatalogItem {
+  return {
+    connectorId: "composio",
+    slug: FEATURED_CONNECTOR_SLUGS[id],
+    name: FEATURED_CONNECTOR_LABELS[id],
+    logo: null,
+    connected: false,
+    noAuth: false,
+  };
+}
+
 export function resolveFeaturedCatalogItem(
   id: FeaturedConnectorId,
   catalog: readonly ConnectionCatalogItem[],
@@ -78,7 +99,9 @@ export function buildFeaturedConnectorTiles(
 ): FeaturedConnectorTile[] {
   const hasCatalog = catalog.length > 0;
   return FEATURED_CONNECTOR_IDS.map((id) => {
-    const item = hasCatalog ? resolveFeaturedCatalogItem(id, catalog) : undefined;
+    const item = hasCatalog
+      ? resolveFeaturedCatalogItem(id, catalog)
+      : featuredConnectorCatalogItem(id);
     return {
       id,
       label: FEATURED_CONNECTOR_LABELS[id],

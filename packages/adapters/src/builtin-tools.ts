@@ -110,7 +110,7 @@ export const builtinAgentTools: ConnectorTool[] = [
   {
     name: "open_path",
     description:
-      "Open a workspace file or an http(s) URL in its default graphical application on this bot's computer and return the resulting screen.",
+      "Open a workspace file or an http(s) URL in its default graphical application on this bot's computer and return the resulting screen. Do not open Gmail, YouTube Studio, Google Business, Calendar, Drive, or other signed-in Google consumer sites — connect the matching plugin instead.",
     inputSchema: {
       type: "object",
       properties: { path: { type: "string" } },
@@ -133,7 +133,7 @@ export const builtinAgentTools: ConnectorTool[] = [
   {
     name: "request_takeover",
     description:
-      "Ask the user to take over the computer screen for login or human judgment. Protected input stays off the thread.",
+      "Ask the user to take over the computer screen for login or human judgment. Protected input stays off the thread. Do not use this to sign into Google accounts — connect Gmail and other Google apps as plugins instead.",
     inputSchema: {
       type: "object",
       properties: { reason: { type: "string" } },
@@ -232,18 +232,65 @@ export const builtinAgentTools: ConnectorTool[] = [
   },
   {
     name: "remember",
-    description: "Store a durable fact in this bot's explicit memory.",
+    description:
+      "Write or replace an explicit Markdown memory document. Use USER.md (user scope) for who the user is, SOUL.md for how you speak, IDENTITY.md for who you are, and MEMORY.md for other durable facts.",
     inputSchema: {
       type: "object",
       properties: {
         content: { type: "string" },
-        path: { type: "string" },
+        path: {
+          type: "string",
+          description: "Document path, e.g. USER.md, SOUL.md, IDENTITY.md, or MEMORY.md.",
+        },
+        scope: {
+          type: "string",
+          enum: ["bot", "user"],
+          description: "Defaults to user for USER.md, otherwise bot.",
+        },
       },
       required: ["content"],
     },
   },
+  {
+    name: "read_memory",
+    description:
+      "Read an explicit durable Markdown memory document by scope and path. Use when the always-on memory block lists a document in the index.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        scope: {
+          type: "string",
+          enum: ["bot", "user"],
+          description: "bot for this bot's memory, user for account-wide memory. Defaults to bot.",
+        },
+        path: {
+          type: "string",
+          description: "Document path, e.g. MEMORY.md.",
+        },
+      },
+      required: ["path"],
+    },
+  },
+  {
+    name: "search_memory",
+    description:
+      "Search explicit durable Markdown memory by substring. This is not semantic recall of compacted conversations.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        query: { type: "string" },
+        scope: {
+          type: "string",
+          enum: ["bot", "user", "all"],
+          description: "Defaults to all.",
+        },
+      },
+      required: ["query"],
+    },
+  },
   // Semantic-memory tools: exposed by selectMemoryTools() only when a
-  // workspace memory provider is configured (which hides `remember`).
+  // workspace memory provider is configured. `remember` stays so identity
+  // files (USER.md, SOUL.md, IDENTITY.md) can still be written.
   {
     name: "save_memory",
     description:

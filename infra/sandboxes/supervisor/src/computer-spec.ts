@@ -118,6 +118,18 @@ export function screenUrlFor(hostPort: string, host = SCREEN_HOST) {
   return `http://${host}:${hostPort}/embed.html`;
 }
 
+export function isDockerNameConflict(error: unknown): boolean {
+  if (!error || typeof error !== "object") return false;
+  const statusCode = "statusCode" in error ? Number(error.statusCode) : 0;
+  const status = "status" in error ? Number(error.status) : 0;
+  const jsonMessage =
+    "json" in error && error.json && typeof error.json === "object" && "message" in error.json
+      ? String(error.json.message)
+      : "";
+  const message = jsonMessage || (error instanceof Error ? error.message : "");
+  return statusCode === 409 || status === 409 || /already in use/i.test(message);
+}
+
 /**
  * Decide which host:port clients (and readiness probes) should use.
  *

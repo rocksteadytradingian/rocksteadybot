@@ -15,14 +15,18 @@ function windowChrome(platform: NodeJS.Platform) {
     backgroundColor: "#050506",
     show: true,
     autoHideMenuBar: true,
-    frame: mac,
+    frame: true,
+    resizable: true,
+    minimizable: true,
+    maximizable: true,
+    closable: true,
     titleBarStyle: mac ? ("hiddenInset" as const) : undefined,
     trafficLightPosition: mac ? { x: 16, y: 16 } : undefined,
   };
 }
 
 export function browserWindowOptions(platform: NodeJS.Platform) {
-  return { width: 1440, height: 900, ...windowChrome(platform) };
+  return { width: 1440, height: 900, minWidth: 800, minHeight: 560, ...windowChrome(platform) };
 }
 
 /** The first-run setup window is smaller and keeps the same frameless chrome. */

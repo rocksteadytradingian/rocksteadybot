@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { canonicalUiThemeId, DEFAULT_UI_THEME, isUiThemeId, UI_THEMES, uiThemeById } from "./themes.js";
+import {
+  canonicalUiThemeId,
+  DEFAULT_UI_THEME,
+  isUiThemeId,
+  UI_THEMES,
+  uiThemeById,
+} from "./themes.js";
 
 describe("UI themes", () => {
   it("defaults to Claude", () => {

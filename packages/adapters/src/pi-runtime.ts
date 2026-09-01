@@ -18,7 +18,9 @@ import type {
   ConnectorTool,
 } from "@rakazo/adapter-kit";
 import { PRODUCT_NAME } from "@rakazo/contracts";
+import { GOOGLE_CONSUMER_AUTH_INSTRUCTION } from "@rakazo/core";
 import { builtinAgentTools, DELEGATION_TOOL_NAMES } from "./builtin-tools.js";
+import { humanizeModelConnectionError } from "./model-connection-error.js";
 import { PiRuntimeCredentialStore, toOAuthCredential } from "./pi-credentials.js";
 import { registerLocalProvider } from "./pi-local-provider.js";
 import {
@@ -26,6 +28,12 @@ import {
   registerOpenAiCompatibleCatalog,
   registerOpenAiCompatibleRuntime,
 } from "./pi-openai-compatible-provider.js";
+import {
+  registerTokenRouterCatalog,
+  registerTokenRouterRuntime,
+  TOKENROUTER_PROVIDER_ID,
+} from "./pi-tokenrouter-provider.js";
+import { compactToolResultForModel } from "./tool-result-compact.js";
 import { textContentArg } from "./tool-text.js";
 
 const running = new Map<string, AbortController>();
@@ -98,7 +106,12 @@ export class PiAgentRuntime implements AgentRuntime {
             : request.model.id.trim();
         const models = modelsForRequest(request, provider);
         let model = models.getModel(provider, modelId);
-        if (!model && provider !== "openrouter" && provider !== OPENAI_COMPATIBLE_PROVIDER_ID) {
+        if (
+          !model &&
+          provider !== "openrouter" &&
+          provider !== OPENAI_COMPATIBLE_PROVIDER_ID &&
+          provider !== TOKENROUTER_PROVIDER_ID
+        ) {
           model = models.getModel("openrouter", modelId);
         }
         if (
@@ -119,10 +132,12 @@ export class PiAgentRuntime implements AgentRuntime {
           ? undefined
           : request.model.provider === OPENAI_COMPATIBLE_PROVIDER_ID
             ? request.model.apiKey || "local"
-            : // Only OpenRouter may fall back to the OpenRouter env key. Handing it to
-              // another provider would ship our key to a vendor it was not issued for.
-              (request.model.apiKey ??
-              (provider === "openrouter" ? process.env.OPENROUTER_API_KEY : undefined));
+            : request.model.provider === TOKENROUTER_PROVIDER_ID
+              ? request.model.apiKey
+              : // Only OpenRouter may fall back to the OpenRouter env key. Handing it to
+                // another provider would ship our key to a vendor it was not issued for.
+                (request.model.apiKey ??
+                (provider === "openrouter" ? process.env.OPENROUTER_API_KEY : undefined));
         const toolDefs = request.tools.length ? request.tools : builtinAgentTools;
         const nestedAgents = new Set<Agent>();
         const host: ToolHost = {
@@ -150,8 +165,8 @@ export class PiAgentRuntime implements AgentRuntime {
             systemPrompt:
               request.instructions ||
               (toolDefs.some((tool) => tool.name === "computer_observe")
-                ? `You are a ${PRODUCT_NAME} bot with a real computer. Use computer_observe and computer_act to operate its visible desktop, including browsers and installed applications. Use shell and the file tools for precise filesystem and terminal work. The user may interact with the same desktop while you run, so re-observe when the screen may have changed. Be concise.`
-                : `You are a ${PRODUCT_NAME} bot with a persistent sandbox filesystem and shell. Be concise.`),
+                ? `You are a ${PRODUCT_NAME} bot with a real computer. Use computer_observe and computer_act to operate its visible desktop, including browsers and installed applications. Use shell and the file tools for precise filesystem and terminal work. The user may interact with the same desktop while you run, so re-observe when the screen may have changed. Be concise: skip filler, hedging, and tool-call narration. Keep code, commands, and error strings exact. ${GOOGLE_CONSUMER_AUTH_INSTRUCTION}`
+                : `You are a ${PRODUCT_NAME} bot with a persistent sandbox filesystem and shell. Be concise: skip filler, hedging, and tool-call narration. Keep code, commands, and error strings exact.`),
             model,
             thinkingLevel: thinkingLevelFor(model, request.model.thinkingLevel),
             tools,
@@ -236,7 +251,7 @@ export class PiAgentRuntime implements AgentRuntime {
         const budgetExceeded = host.toolCallBudget.exceeded;
         const error = agent.state.errorMessage;
         if (error && !budgetExceeded) {
-          throw new Error(sanitizeError(error));
+          throw new Error(sanitizeError(error, request.model));
         }
         if (budgetExceeded) {
           const budgetMessage = toolCallBudgetExceededMessage(host.toolCallBudget.limit);
@@ -255,7 +270,10 @@ export class PiAgentRuntime implements AgentRuntime {
         }
         queue.push({ type: "done", text: streamed });
       } catch (error) {
-        const message = sanitizeError(error instanceof Error ? error.message : String(error));
+        const message = sanitizeError(
+          error instanceof Error ? error.message : String(error),
+          request.model,
+        );
         queue.fail(new Error(message));
       } finally {
         queue.close();
@@ -320,6 +338,12 @@ export function modelsForRequest(
       baseUrl: request.model.baseUrl,
     });
   }
+  if (provider === TOKENROUTER_PROVIDER_ID && request.model.id.trim()) {
+    const models = registerTokenRouterCatalog(
+      registerOpenAiCompatibleCatalog(registerLocalProvider(builtinModels())),
+    );
+    return registerTokenRouterRuntime(models, { modelId: request.model.id });
+  }
   return catalogModels();
 }
 
@@ -369,7 +393,9 @@ export function describeToolActivity(toolName: string, args: unknown): string {
   if (toolName === "computer_observe") return "Looking at the screen";
   if (toolName === "computer_act") return "Operating the computer";
   if (toolName === "run_subagent") return `Delegating to helper: ${detail(record.name)}`;
-  if (toolName === "remember") return "Saving a note to memory";
+  if (toolName === "remember") return `Saving ${detail(record.path ?? "MEMORY.md")}`;
+  if (toolName === "read_memory") return `Reading memory ${detail(record.path)}`;
+  if (toolName === "search_memory") return `Searching memory: ${detail(record.query)}`;
   if (toolName === "skill_read") return `Reading skill: ${detail(record.name)}`;
   if (toolName === "skill_create") return `Creating skill: ${detail(record.name ?? "skill")}`;
   if (toolName === "skill_update")
@@ -454,7 +480,23 @@ function toAgentTool(tool: ConnectorTool, host: ToolHost, exposedName: string): 
         };
       }
       if (tool.name === "remember") {
-        return { content: String(raw.content ?? ""), path: String(raw.path ?? "MEMORY.md") };
+        return {
+          content: String(raw.content ?? ""),
+          path: String(raw.path ?? "MEMORY.md"),
+          ...(raw.scope !== undefined ? { scope: String(raw.scope) } : {}),
+        };
+      }
+      if (tool.name === "read_memory") {
+        return {
+          path: String(raw.path ?? "MEMORY.md"),
+          ...(raw.scope !== undefined ? { scope: String(raw.scope) } : {}),
+        };
+      }
+      if (tool.name === "search_memory") {
+        return {
+          query: String(raw.query ?? ""),
+          ...(raw.scope !== undefined ? { scope: String(raw.scope) } : {}),
+        };
       }
       if (tool.name === "request_takeover") {
         return { reason: String(raw.reason ?? "I need you on the screen.") };
@@ -583,7 +625,7 @@ async function executeSubagent(host: ToolHost, executionId: string, args: Record
       systemPrompt: [
         `You are a ${PRODUCT_NAME} subagent named "${name}".`,
         "You run inside the parent bot's turn — you are not a separate bot chat.",
-        "Complete the task and return a concise result. Do not spawn bots or further subagents.",
+        "Complete the task and return a concise result. Skip filler and tool-call narration. Do not spawn bots or further subagents.",
         extra,
       ]
         .filter(Boolean)
@@ -666,7 +708,7 @@ async function executeSubagent(host: ToolHost, executionId: string, args: Record
     const budgetExceeded = host.toolCallBudget.exceeded;
     const error = nested.state.errorMessage;
     if (error && !budgetExceeded) {
-      const message = sanitizeError(error);
+      const message = sanitizeError(error, host.request.model);
       host.queue.push({ type: "subagent", agentId, name, task, status: "failed", result: message });
       return `Subagent failed: ${message}`;
     }
@@ -688,7 +730,10 @@ async function executeSubagent(host: ToolHost, executionId: string, args: Record
     });
     return clipped;
   } catch (error) {
-    const message = sanitizeError(error instanceof Error ? error.message : String(error));
+    const message = sanitizeError(
+      error instanceof Error ? error.message : String(error),
+      host.request.model,
+    );
     host.queue.push({ type: "subagent", agentId, name, task, status: "failed", result: message });
     return `Subagent failed: ${message}`;
   } finally {
@@ -712,7 +757,11 @@ function parametersFor(tool: ConnectorTool) {
     return Type.Object({ reason: Type.String() });
   }
   if (tool.name === "remember") {
-    return Type.Object({ content: Type.String(), path: Type.String() });
+    return Type.Object({
+      content: Type.String(),
+      path: Type.Optional(Type.String()),
+      scope: Type.Optional(Type.String()),
+    });
   }
   if (tool.name === "shell") {
     return Type.Object({
@@ -831,13 +880,7 @@ function jsonField(spec: unknown): ReturnType<typeof Type.String> {
 }
 
 function summarizeToolResult(result: unknown) {
-  try {
-    const text = JSON.stringify(result);
-    if (!text) return "ok";
-    return text.length > 12_000 ? `${text.slice(0, 12_000)}…` : text;
-  } catch {
-    return "ok";
-  }
+  return compactToolResultForModel(result);
 }
 
 function assistantText(message: unknown): string {
@@ -868,8 +911,11 @@ function sanitizeSensitiveText(message: string) {
     .replace(/((?:auth|authorization)\s*[=:]\s*)(?!Bearer\b)[^\s"',;&]+/gi, "$1[redacted]");
 }
 
-function sanitizeError(message: string) {
-  return sanitizeSensitiveText(message);
+function sanitizeError(message: string, model?: { provider?: string; baseUrl?: string | null }) {
+  return humanizeModelConnectionError(sanitizeSensitiveText(message), {
+    provider: model?.provider,
+    baseUrl: model?.baseUrl,
+  });
 }
 
 interface EventQueue {

@@ -1,4 +1,6 @@
 import { Trans, useLingui } from "@lingui/react/macro";
+import { USER_IDENTITY_PATH } from "@rakazo/core";
+import type { MemoryDocument } from "@rakazo/contracts";
 import { ChevronDown } from "lucide-react";
 import {
   type KeyboardEvent as ReactKeyboardEvent,
@@ -8,8 +10,13 @@ import {
   useState,
 } from "react";
 import { ApprovalRulesSettings } from "../components/ApprovalRulesSettings";
+import {
+  identityDocumentByPath,
+  IdentityMarkdownField,
+} from "../components/IdentityFilesEditor";
 import { UiThemePicker } from "../components/UiThemePicker";
 import { getActiveUiLocale, setUiLocale } from "../lib/i18n";
+import { rpc } from "../lib/rpc";
 import { UI_LOCALE_LABELS, UI_LOCALES, type UiLocale } from "../lib/ui-locale";
 import { resolveUiTheme, setUiTheme, type UiThemeId } from "../lib/ui-theme";
 
@@ -34,6 +41,10 @@ export function AccountSettingsOverlay({
   const [locale, setLocale] = useState<UiLocale>(() => getActiveUiLocale());
   const [theme, setTheme] = useState<UiThemeId>(() => resolveUiTheme());
   const localeRequestRef = useRef(0);
+  const [userDoc, setUserDoc] = useState<MemoryDocument | null>(null);
+  const [userFile, setUserFile] = useState("");
+  const [identitySaving, setIdentitySaving] = useState(false);
+  const [identityError, setIdentityError] = useState<string | null>(null);
 
   useEffect(() => {
     const previousFocus =
@@ -54,6 +65,18 @@ export function AccountSettingsOverlay({
       previousFocus?.focus();
     };
   }, [focusUsage]);
+
+  useEffect(() => {
+    void rpc.memory
+      .list({ scope: "user" })
+      .then((documents) => {
+        const next = identityDocumentByPath(documents, USER_IDENTITY_PATH);
+        if (!next) return;
+        setUserDoc(next);
+        setUserFile(next.content);
+      })
+      .catch(() => undefined);
+  }, []);
 
   function chooseLocale(next: UiLocale) {
     if (next === locale) return;
@@ -101,6 +124,38 @@ export function AccountSettingsOverlay({
           </h3>
           <p className="mt-3 text-[14px] text-[var(--rk-body)]">{name}</p>
           {email ? <p className="mt-1 text-[13px] text-[var(--rk-muted)]">{email}</p> : null}
+        </section>
+
+        <section className="mt-5 rounded-[14px] border border-[var(--rk-hairline-strong)] bg-[var(--rk-input)] px-4 py-4">
+          <IdentityMarkdownField
+            path={USER_IDENTITY_PATH}
+            hint={<Trans>How you are.</Trans>}
+            value={userFile}
+            onChange={setUserFile}
+            className="block text-[14px] text-[var(--rk-muted)]"
+          />
+          {identityError ? (
+            <p className="mt-2 text-[13px] text-[var(--rk-danger)]">{identityError}</p>
+          ) : null}
+          <button
+            type="button"
+            disabled={identitySaving || !userDoc}
+            onClick={() => {
+              if (!userDoc) return;
+              setIdentitySaving(true);
+              setIdentityError(null);
+              void rpc.memory
+                .update({ documentId: userDoc.id, content: userFile })
+                .then(setUserDoc)
+                .catch((err) =>
+                  setIdentityError(err instanceof Error ? err.message : t`Could not save`),
+                )
+                .finally(() => setIdentitySaving(false));
+            }}
+            className="mt-3 rounded-[11px] bg-[var(--rk-solid)] px-4 py-2 text-[14px] text-[var(--rk-solid-ink)] disabled:opacity-40"
+          >
+            {identitySaving ? <Trans>Saving…</Trans> : <Trans>Save</Trans>}
+          </button>
         </section>
 
         <section className="mt-5 rounded-[14px] border border-[var(--rk-hairline-strong)] bg-[var(--rk-input)] px-4 py-4">
@@ -273,7 +328,7 @@ function UiLocalePicker({
         aria-controls={listboxId}
         aria-expanded={open}
         aria-haspopup="listbox"
-        className="flex w-full items-center justify-between rounded-[11px] border border-[var(--rk-hairline-strong)] bg-[var(--rk-input)] px-3.5 py-3 text-start text-[var(--rk-ink)] outline-none focus-visible:border-[#4A4A50]"
+        className="flex w-full items-center justify-between rounded-[11px] border border-[var(--rk-hairline-strong)] bg-[var(--rk-input)] px-3.5 py-3 text-start text-[var(--rk-ink)] outline-none focus-visible:border-[var(--rk-hairline-strong)]"
         onClick={() => setOpen((current) => !current)}
         onKeyDown={onTriggerKeyDown}
       >

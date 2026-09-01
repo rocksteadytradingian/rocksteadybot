@@ -171,6 +171,7 @@ export type MobileMe = Pick<
   | "defaultProvider"
   | "defaultModel"
   | "needsModel"
+  | "isDeploymentOwner"
 >;
 
 export type MobileModel = ModelCatalogEntry;
@@ -190,7 +191,7 @@ export type MobileMessage = {
 
 export type MobileGroup = Pick<
   Group,
-  "id" | "name" | "preview" | "unread" | "updatedAt" | "members"
+  "id" | "name" | "preview" | "unread" | "updatedAt" | "members" | "defaultBotId"
 >;
 
 export type MobileSnapshot = {

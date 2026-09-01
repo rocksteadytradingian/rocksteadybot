@@ -126,21 +126,21 @@ export function PeerMessagesOverlay({
   }, []);
 
   return (
-    <div className="absolute inset-0 z-30 flex items-center justify-center bg-[rgba(4,4,5,.62)] p-4 sm:p-10">
+    <div className="absolute inset-0 z-30 flex items-center justify-center bg-[var(--rk-overlay)] p-4 sm:p-10">
       <div
         ref={panelRef}
         role="dialog"
         aria-modal="true"
         aria-labelledby="peer-messages-title"
         tabIndex={-1}
-        className="flex h-[min(680px,100%)] w-[880px] max-w-full flex-col overflow-hidden rounded-[26px] border border-[#232326] bg-[#141416] shadow-[0_40px_90px_rgba(0,0,0,.55)] outline-none"
+        className="flex h-[min(680px,100%)] w-[880px] max-w-full flex-col overflow-hidden rounded-[26px] border border-[var(--rk-hairline-strong)] bg-[var(--rk-panel)] shadow-[var(--rk-shadow)] outline-none"
       >
         <div className="flex items-start justify-between px-6 pt-6 sm:px-8 sm:pt-7">
           <div>
-            <div id="peer-messages-title" className="text-2xl font-medium text-[#F1F1F2]">
+            <div id="peer-messages-title" className="text-2xl font-medium text-[var(--rk-ink)]">
               <Trans>Bot messages</Trans>
             </div>
-            <p className="mt-1 text-[13.5px] text-[#7A7A80]">
+            <p className="mt-1 text-[13.5px] text-[var(--rk-muted)]">
               {!historyReady ? (
                 <Trans>Loading peer messages…</Trans>
               ) : conversations.length === 0 ? (
@@ -154,18 +154,18 @@ export function PeerMessagesOverlay({
             type="button"
             aria-label={t`Close bot messages`}
             onClick={onClose}
-            className="text-[#85858A]"
+            className="text-[var(--rk-muted)]"
           >
             ✕
           </button>
         </div>
 
         {!historyReady ? (
-          <div className="grid flex-1 place-items-center px-8 text-center text-[13.5px] text-[#6C6C70]">
+          <div className="grid flex-1 place-items-center px-8 text-center text-[13.5px] text-[var(--rk-muted-2)]">
             <Trans>Loading peer messages…</Trans>
           </div>
         ) : conversations.length === 0 ? (
-          <div className="grid flex-1 place-items-center px-8 text-center text-[13.5px] text-[#6C6C70]">
+          <div className="grid flex-1 place-items-center px-8 text-center text-[13.5px] text-[var(--rk-muted-2)]">
             <Trans>
               When {botName} messages another bot, the exchange shows up here instead of in the
               chat.
@@ -184,14 +184,14 @@ export function PeerMessagesOverlay({
                     onClick={() => setSelectedId(conversation.peerBotId)}
                     className={`mb-1.5 block w-full rounded-[13px] border px-3.5 py-2.5 text-start ${
                       active
-                        ? "border-[#2F2F34] bg-[#1B1B1E]"
-                        : "border-transparent hover:bg-[#161618]"
+                        ? "border-[var(--rk-hairline-strong)] bg-[var(--rk-surface-2)]"
+                        : "border-transparent hover:bg-[var(--rk-hover)]"
                     }`}
                   >
-                    <div className="truncate text-[14px] text-[#ECECEE]">
+                    <div className="truncate text-[14px] text-[var(--rk-ink)]">
                       {conversation.peerBotName}
                     </div>
-                    <div className="mt-0.5 truncate text-[12.5px] text-[#6C6C70]">
+                    <div className="mt-0.5 truncate text-[12.5px] text-[var(--rk-muted-2)]">
                       {conversation.lastText}
                     </div>
                   </button>
@@ -199,7 +199,7 @@ export function PeerMessagesOverlay({
               })}
             </div>
 
-            <div className="flex min-w-0 flex-1 flex-col overflow-y-auto rounded-[16px] border border-[#26262A] bg-[#101012] p-4">
+            <div className="flex min-w-0 flex-1 flex-col overflow-y-auto rounded-[16px] border border-[var(--rk-hairline-strong)] bg-[var(--rk-input)] p-4">
               {selected?.messages.map((peerMessage, index) => {
                 const sent = peerMessage.direction === "sent";
                 return (
@@ -209,13 +209,13 @@ export function PeerMessagesOverlay({
                   >
                     <div
                       className={`max-w-[80%] rounded-[16px] px-4 py-2.5 ${
-                        sent ? "bg-[#1F1F23]" : "bg-[#17171A]"
+                        sent ? "bg-[var(--rk-hover)]" : "bg-[var(--rk-surface)]"
                       }`}
                     >
-                      <div className="mb-1 text-[12px] text-[#7A7A80]">
+                      <div className="mb-1 text-[12px] text-[var(--rk-muted)]">
                         {sent ? `${botName} → ${peerMessage.peerBotName}` : peerMessage.peerBotName}
                       </div>
-                      <div className="text-[14.5px] leading-[1.5] text-[#DFDFE2]" dir="auto">
+                      <div className="text-[14.5px] leading-[1.5] text-[var(--rk-body)]" dir="auto">
                         <ChatMarkdown>{peerMessage.text}</ChatMarkdown>
                       </div>
                     </div>

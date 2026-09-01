@@ -30,6 +30,8 @@ describe("plugin catalog marketplace", () => {
     expect(classifyPluginCategory("gmail", "Gmail")).toBe("inbox-and-collaboration");
     expect(classifyPluginCategory("googlecalendar", "Google Calendar")).toBe("scheduling");
     expect(classifyPluginCategory("google_drive", "Google Drive")).toBe("documents-and-files");
+    expect(classifyPluginCategory("youtube", "YouTube")).toBe("more");
+    expect(classifyPluginCategory("googlebusinessprofile", "Google Business Profile")).toBe("sales");
     expect(classifyPluginCategory("github", "GitHub")).toBe("infrastructure");
     expect(classifyPluginCategory("figma", "Figma")).toBe("design");
     expect(classifyPluginCategory("stripe", "Stripe")).toBe("payments");
@@ -44,6 +46,9 @@ describe("plugin catalog marketplace", () => {
   it("prefers catalog descriptions and fills known copy", () => {
     expect(pluginDescriptionFor(item("gmail", "Gmail"))).toBe(
       "Search, read, draft, and manage email.",
+    );
+    expect(pluginDescriptionFor(item("youtube", "YouTube"))).toBe(
+      "Manage videos, comments, and channel data.",
     );
     expect(pluginDescriptionFor(item("mystery", "Mystery", { description: "Live copy." }))).toBe(
       "Live copy.",

@@ -45,7 +45,10 @@ describe("Docker sandbox", () => {
       { type: "stderr", data: "command timed out after 75 ms\n" },
       { type: "exit", code: 124 },
     ]);
-    expect(fetchMock.mock.calls[0]?.[1]?.headers).not.toHaveProperty("x-rakazo-screen-id");
+    expect(fetchMock.mock.calls[0]?.[1]?.headers).toMatchObject({
+      "x-rakazo-bot-id": "bot",
+      "x-rakazo-screen-id": "bot",
+    });
   });
 
   it("releases this bot's screen assignment through the supervisor", async () => {
@@ -65,6 +68,7 @@ describe("Docker sandbox", () => {
         headers: expect.objectContaining({
           authorization: "Bearer test-token",
           "x-rakazo-bot-id": "home-bot",
+          "x-rakazo-screen-id": "bot",
           "x-rakazo-screen-lease-id": "run-1:1",
           "x-rakazo-workspace-id": "workspace",
         }),
@@ -91,5 +95,49 @@ describe("Docker sandbox", () => {
 
     expect(fetchMock).toHaveBeenCalledOnce();
     expect(fetchMock.mock.calls[0]?.[1]).not.toHaveProperty("signal");
+  });
+
+  it("surfaces a leftover screen lease as a screen-unavailable error", async () => {
+    const fetchMock = vi.fn(async (_input: string | URL | Request, _init?: RequestInit) =>
+      Response.json(
+        { error: "This computer screen is owned by a newer execution." },
+        { status: 500 },
+      ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const provider = new DockerSandboxProvider("http://supervisor.test", "test-token");
+
+    await expect(
+      provider.observe(
+        { id: "computer", botId: "home-bot", kind: "docker", providerRef: "computer" },
+        context,
+      ),
+    ).rejects.toMatchObject({
+      name: "ComputerScreenUnavailableError",
+      message: "This computer screen is owned by a newer execution.",
+    });
+    expect(fetchMock.mock.calls[0]?.[1]?.headers).toMatchObject({
+      "x-rakazo-bot-id": "home-bot",
+      "x-rakazo-screen-id": "bot",
+      "x-rakazo-screen-lease-id": "run-1:1",
+    });
+  });
+
+  it("asks the supervisor to replace a leftover container on restart", async () => {
+    const fetchMock = vi.fn(async (_input: string | URL | Request, _init?: RequestInit) =>
+      Response.json({ id: "computer", resumed: false }, { status: 200 }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const provider = new DockerSandboxProvider("http://supervisor.test", "test-token");
+
+    await provider.provision(
+      { botId: "home-bot", homePath: "/data/homes/home-bot" },
+      { ...context, operationId: "restart" },
+    );
+
+    expect(JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body))).toMatchObject({
+      botId: "home-bot",
+      replace: true,
+    });
   });
 });

@@ -1,3 +1,4 @@
+import type { Server } from "node:http";
 import type { JobPublisher, JobWorkerHost } from "@rakazo/adapter-kit";
 import { loadRootEnv } from "@rakazo/core/node/load-root-env";
 
@@ -34,6 +35,7 @@ import {
 import { resolveEncryptionKey } from "@rakazo/core";
 import { createDb, createThreadEvents } from "@rakazo/db";
 import { MarkdownMemoryStore } from "@rakazo/memory";
+import { listenWorkerHealth, workerHealthPort } from "./health.js";
 
 async function main() {
   const databaseUrl = process.env.DATABASE_URL;
@@ -141,10 +143,26 @@ async function main() {
   });
   reconciler.start();
 
+  let health: Server;
+  try {
+    health = await listenWorkerHealth();
+  } catch (error) {
+    const code = typeof error === "object" && error && "code" in error ? error.code : "";
+    if (code === "EADDRINUSE") {
+      console.error(`rakazo worker health port ${workerHealthPort()} is already in use`);
+      process.exit(1);
+    }
+    throw error;
+  }
+  const healthAddress = health.address();
+  const healthPort =
+    healthAddress && typeof healthAddress === "object" ? healthAddress.port : undefined;
+
   let stopping = false;
   const stop = async () => {
     if (stopping) return;
     stopping = true;
+    await new Promise<void>((resolve) => health.close(() => resolve()));
     await reconciler.stop();
     await jobHost.stop();
     await jobs.close();
@@ -157,7 +175,9 @@ async function main() {
   process.once("SIGTERM", () => void stop());
   process.once("SIGINT", () => void stop());
 
-  console.log("rakazo worker ready");
+  console.log(
+    healthPort ? `rakazo worker ready on http://127.0.0.1:${healthPort}` : "rakazo worker ready",
+  );
 }
 
 main().catch((error) => {

@@ -24,8 +24,8 @@ import {
   probeFailureMessage,
   resolveStartupTarget,
   safeExternalUrl,
-  servesBundledRenderer,
   sessionPartitionForServerUrl,
+  shouldInstallBundledRenderer,
 } from "./setup-config.js";
 import { clearSetup, readSetup, writeSetup } from "./setup-store.js";
 import { browserWindowOptions, setupWindowOptions, warmWindowTtlMs } from "./window-options.js";
@@ -62,6 +62,10 @@ markOnce("rk:main:module-evaluated");
 if (PERFORMANCE_USER_DATA) {
   app.setPath("userData", PERFORMANCE_USER_DATA);
   app.setPath("sessionData", path.join(PERFORMANCE_USER_DATA, "session"));
+}
+const gotSingleInstanceLock = app.requestSingleInstanceLock();
+if (!gotSingleInstanceLock) {
+  app.quit();
 }
 app.once("will-finish-launching", () => markOnce("rk:main:will-finish-launching"));
 app.once("ready", () => markOnce("rk:main:ready"));
@@ -451,8 +455,7 @@ async function installBundledRenderer(
   targetSession: Session,
   partition: string | null,
 ) {
-  if (!app.isPackaged || process.env.RAKAZO_DISABLE_BUNDLED_RENDERER === "1") return;
-  if (!servesBundledRenderer(targetUrl)) return;
+  if (!app.isPackaged || !shouldInstallBundledRenderer(targetUrl)) return;
   const webUrl = new URL(targetUrl);
   const installationKey = `${partition ?? "default"}:${webUrl.protocol}`;
   if (bundledRendererInstallations.has(installationKey)) return;
@@ -565,7 +568,7 @@ function restoreAppWindowAfterSetup() {
 function installApplicationMenu() {
   const changeServer: Electron.MenuItemConstructorOptions = {
     id: "change-rakazo-server",
-    label: "Change Rakazo Server…",
+    label: "Change RocksteadyBot Server…",
     accelerator: "CmdOrCtrl+Shift+K",
     click: () => showSetupWindow(),
   };
@@ -626,7 +629,7 @@ async function probeServer(rawUrl: string): Promise<DesktopReachability> {
         ok: false,
         status: response.status,
         url,
-        error: "That address redirects elsewhere. Enter the final Rakazo server address.",
+        error: "That address redirects elsewhere. Enter the final RocksteadyBot server address.",
       };
     }
     if (!response.ok) {
@@ -643,7 +646,7 @@ async function probeServer(rawUrl: string): Promise<DesktopReachability> {
         ok: false,
         status: response.status,
         url,
-        error: "That address did not respond like a Rakazo server.",
+        error: "That address did not respond like a RocksteadyBot server.",
       };
     }
     return {
@@ -837,7 +840,29 @@ function safeOrigin(targetUrl: string) {
   }
 }
 
+function focusExistingWindow() {
+  if (setupWindow !== null && !setupWindow.isDestroyed()) {
+    if (setupWindow.isMinimized()) setupWindow.restore();
+    setupWindow.show();
+    setupWindow.focus();
+    return true;
+  }
+  if (mainWindow !== null && !mainWindow.isDestroyed()) {
+    clearTimeout(warmWindowTimer);
+    if (mainWindow.isMinimized()) mainWindow.restore();
+    mainWindow.show();
+    mainWindow.focus();
+    return true;
+  }
+  return false;
+}
+
+app.on("second-instance", () => {
+  focusExistingWindow();
+});
+
 app.whenReady().then(async () => {
+  if (!gotSingleInstanceLock) return;
   const userDataDir = app.getPath("userData");
   currentSetup = await readSetup(userDataDir);
   const target = resolveStartupTarget({
@@ -995,17 +1020,7 @@ app.whenReady().then(async () => {
 
   // Register before startup awaits so macOS dock clicks during probe/open are handled.
   app.on("activate", () => {
-    if (setupWindow !== null && !setupWindow.isDestroyed()) {
-      setupWindow.show();
-      setupWindow.focus();
-      return;
-    }
-    if (mainWindow !== null && !mainWindow.isDestroyed()) {
-      clearTimeout(warmWindowTimer);
-      mainWindow.show();
-      mainWindow.focus();
-      return;
-    }
+    if (focusExistingWindow()) return;
     if (openAppPromise !== null) return;
     if (currentTargetUrl === null) showSetupWindow(setupError);
     else
@@ -1035,7 +1050,10 @@ app.whenReady().then(async () => {
 });
 
 app.on("window-all-closed", () => {
-  if (process.platform !== "darwin") app.quit();
+  if (process.platform === "darwin") return;
+  if (openAppPromise !== null) return;
+  if (setupWindow !== null && !setupWindow.isDestroyed()) return;
+  app.quit();
 });
 
 app.on("before-quit", () => {

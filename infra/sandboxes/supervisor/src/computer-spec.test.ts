@@ -7,6 +7,7 @@ import {
   computerNetworkNamesForCleanup,
   containerCreateOptions,
   containerNameFor,
+  isDockerNameConflict,
   resolveScreenPublishTarget,
   screenPorts,
   screenUrlFor,
@@ -99,6 +100,12 @@ describe("graphical computer spec", () => {
     expect(dockerfile).toMatch(/chromium/);
     expect(start).toMatch(/rakazo-browser/);
     expect(start).toMatch(/x11vnc .* -viewonly /);
+    expect(dockerfile).toMatch(/autocutsel/);
+    expect(dockerfile).toMatch(/host-clipboard\.js/);
+    expect(start).toMatch(/autocutsel -display :1 -selection CLIPBOARD/);
+    expect(start).toMatch(/setsid autocutsel/);
+    const embed = readFileSync(path.join(root, "embed.html"), "utf8");
+    expect(embed).toMatch(/attachHostClipboard/);
     expect(browser).toMatch(/\.browser-profiles\/chromium/);
     expect(start).not.toMatch(/windowsize 1280 800/);
   });
@@ -106,6 +113,16 @@ describe("graphical computer spec", () => {
   it("keeps container names stable so a bot can resume", () => {
     expect(containerNameFor("bot_1")).toBe("rakazo-bot-bot_1");
     expect(containerNameFor("bot_1")).toBe(containerNameFor("bot_1"));
+  });
+
+  it("detects Docker container name conflicts", () => {
+    expect(isDockerNameConflict({ statusCode: 409, message: "Conflict" })).toBe(true);
+    expect(
+      isDockerNameConflict({
+        json: { message: 'The container name "/rakazo-bot-bot_1" is already in use' },
+      }),
+    ).toBe(true);
+    expect(isDockerNameConflict({ statusCode: 500, message: "server error" })).toBe(false);
   });
 
   it("points the screen at the chrome-less noVNC embed", () => {

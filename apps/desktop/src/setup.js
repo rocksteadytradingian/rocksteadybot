@@ -51,7 +51,7 @@
       const result = await bridge.test(value);
       if (result.ok) {
         activeField().value = result.url;
-        setStatus(`Rakazo answered at ${result.url}.`, "ok");
+        setStatus(`RocksteadyBot answered at ${result.url}.`, "ok");
       } else {
         setStatus(result.error ?? "Could not reach that address.", "error");
       }
@@ -103,6 +103,10 @@
       setBusy(true);
       return;
     }
+    if (bridge.platform && bridge.platform !== "darwin") {
+      document.body.classList.add("native-chrome");
+      document.title = "RocksteadyBot";
+    }
 
     try {
       const state = await bridge.state();
@@ -118,7 +122,7 @@
       if (state.error) setStatus(state.error, "error");
       activeField().focus();
     } catch {
-      setStatus("Setup could not start. Quit Rakazo and try again.", "error");
+      setStatus("Setup could not start. Quit RocksteadyBot and try again.", "error");
       setBusy(true);
     }
   }

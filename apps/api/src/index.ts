@@ -12,6 +12,14 @@ const { app, stop } = await createApp(env);
 const server = serve({ fetch: app.fetch, port: env.port }, () => {
   console.log(`rakazo api on http://127.0.0.1:${env.port}`);
 });
+server.on("error", (error) => {
+  const code = typeof error === "object" && error && "code" in error ? error.code : "";
+  if (code === "EADDRINUSE") {
+    console.error(`rakazo api port ${env.port} is already in use`);
+    process.exit(1);
+  }
+  throw error;
+});
 
 // Long-lived connections (threads.subscribe SSE streams) never end on their
 // own, so server.close() alone waits forever for them. Track sockets and

@@ -55,7 +55,10 @@ export class SingleScreenClaimTracker {
 export function isComputerScreenUnavailable(error: unknown): error is Error {
   return (
     error instanceof ComputerScreenUnavailableError ||
-    (error instanceof Error && /cannot allocate another screen/i.test(error.message))
+    (error instanceof Error &&
+      /cannot allocate another screen|owned by a newer execution|still being released/i.test(
+        error.message,
+      ))
   );
 }
 

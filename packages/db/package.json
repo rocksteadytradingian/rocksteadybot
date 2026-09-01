@@ -12,7 +12,7 @@
   },
   "scripts": {
     "generate": "prisma generate",
-    "migrate": "prisma migrate deploy",
+    "migrate": "node ./scripts/migrate-deploy.mjs",
     "migrate:dev": "prisma migrate dev",
     "check": "tsc --noEmit -p tsconfig.json",
     "test": "vitest run --root ../.. packages/db/src"

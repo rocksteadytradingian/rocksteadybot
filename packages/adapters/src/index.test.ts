@@ -146,6 +146,8 @@ describe("builtin tools", () => {
         "attach_file",
         "shell",
         "remember",
+        "read_memory",
+        "search_memory",
         "request_takeover",
         "run_subagent",
         "spawn_bot",

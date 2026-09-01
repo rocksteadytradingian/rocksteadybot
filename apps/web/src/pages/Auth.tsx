@@ -12,7 +12,11 @@ export function AuthPage({ mode }: { mode: "in" | "up" }) {
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
   const title =
-    mode === "in" ? <Trans>Sign in to RocksteadyBot</Trans> : <Trans>Create your RocksteadyBot</Trans>;
+    mode === "in" ? (
+      <Trans>Sign in to RocksteadyBot</Trans>
+    ) : (
+      <Trans>Create your RocksteadyBot</Trans>
+    );
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -85,7 +89,7 @@ export function AuthPage({ mode }: { mode: "in" | "up" }) {
             className="mt-2 w-full rounded-[13px] border border-[var(--rk-hairline-strong)] bg-[var(--rk-input)] px-[18px] py-[17px] text-[17px] text-[var(--rk-ink)] outline-none"
           />
         </label>
-        {error ? <p className="mt-3 w-full text-sm text-[#C94244]">{error}</p> : null}
+        {error ? <p className="mt-3 w-full text-sm text-[var(--rk-danger)]">{error}</p> : null}
         <button
           type="submit"
           disabled={pending}

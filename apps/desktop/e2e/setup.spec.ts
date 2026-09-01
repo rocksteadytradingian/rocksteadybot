@@ -387,7 +387,7 @@ test("a generic web page is not accepted as a Rakazo server", async () => {
     await setup.getByRole("button", { name: "Continue" }).click();
 
     await expect(setup.locator("#status")).toHaveText(
-      "That address did not respond like a Rakazo server.",
+      "That address did not respond like a RocksteadyBot server.",
     );
     await expect(async () => {
       await expect(readFile(path.join(userData, "setup.json"), "utf8")).rejects.toThrow();

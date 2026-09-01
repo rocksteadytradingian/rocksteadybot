@@ -7,6 +7,7 @@ import {
 } from "@rakazo/contracts";
 import type { PrismaClient } from "./client.js";
 import { type ComputerMode, ensureComputerRecord, parseComputerMode } from "./computers.js";
+import { ensureIdentityDocuments } from "./identity-files.js";
 import { createThreadMessageInTransaction } from "./messages.js";
 import { IsolationError } from "./scope.js";
 
@@ -295,6 +296,16 @@ export function createRepos(prisma: PrismaClient) {
             scope: "bot",
             path: "MEMORY.md",
             content: `# ${input.name}\n\n`,
+          },
+        });
+        await ensureIdentityDocuments(tx, {
+          workspaceId: actor.workspaceId,
+          userId: actor.userId,
+          botId: created.id,
+          bot: {
+            name: input.name,
+            title: input.title,
+            description: input.description,
           },
         });
         return tx.bot.findFirstOrThrow({

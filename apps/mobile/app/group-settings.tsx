@@ -12,6 +12,7 @@ export default function GroupSettingsScreen() {
   const [bots, setBots] = useState<MobileBot[]>([]);
   const [name, setName] = useState("");
   const [selected, setSelected] = useState<string[]>([]);
+  const [defaultBotId, setDefaultBotId] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
 
@@ -28,6 +29,7 @@ export default function GroupSettingsScreen() {
         setGroup(nextGroup);
         setName(nextGroup.name);
         setSelected(nextGroup.members.map((member) => member.botId));
+        setDefaultBotId(nextGroup.defaultBotId ?? "");
         setBots(nextBots.filter((bot) => !bot.archivedAt));
       })
       .catch((err) => setError(err instanceof Error ? err.message : "Could not load group"));
@@ -35,9 +37,13 @@ export default function GroupSettingsScreen() {
 
   function toggle(botId: string) {
     setSelected((current) => {
-      if (current.includes(botId)) return current.filter((id) => id !== botId);
-      if (current.length >= GROUP_MEMBER_MAX) return current;
-      return [...current, botId];
+      const next = current.includes(botId)
+        ? current.filter((id) => id !== botId)
+        : current.length >= GROUP_MEMBER_MAX
+          ? current
+          : [...current, botId];
+      if (defaultBotId && !next.includes(defaultBotId)) setDefaultBotId("");
+      return next;
     });
   }
 
@@ -46,11 +52,17 @@ export default function GroupSettingsScreen() {
     setPending(true);
     setError(null);
     try {
-      const input: { groupId: string; name?: string; botIds?: string[] } = { groupId };
+      const nextDefault = selected.includes(defaultBotId) ? defaultBotId || null : null;
+      const input: {
+        groupId: string;
+        name?: string;
+        botIds?: string[];
+        defaultBotId?: string | null;
+      } = { groupId, defaultBotId: nextDefault };
       if (name.trim() !== group.name) input.name = name.trim();
       const memberIds = group.members.map((member) => member.botId).join(",");
       if (selected.join(",") !== memberIds) input.botIds = selected;
-      if (input.name || input.botIds) await rpc("groups/update", input);
+      await rpc("groups/update", input);
       router.back();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not save group");
@@ -118,6 +130,36 @@ export default function GroupSettingsScreen() {
             </Pressable>
           );
         })}
+        <Text
+          accessibilityLabel="Leader, the bot that responds first"
+          style={{ color: "#85858A", fontSize: 14, marginTop: 20 }}
+        >
+          Leader
+        </Text>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityState={{ selected: !defaultBotId }}
+          onPress={() => setDefaultBotId("")}
+          style={{ flexDirection: "row", alignItems: "center", gap: 12, paddingVertical: 12 }}
+        >
+          <Text style={{ flex: 1, color: "#ECECEE", fontSize: 16 }}>First member</Text>
+          <Text style={{ color: "#6C6C70" }}>{defaultBotId ? "" : "✓"}</Text>
+        </Pressable>
+        {bots
+          .filter((bot) => selected.includes(bot.id))
+          .map((bot) => (
+            <Pressable
+              key={`leader-${bot.id}`}
+              accessibilityRole="button"
+              accessibilityState={{ selected: defaultBotId === bot.id }}
+              onPress={() => setDefaultBotId(bot.id)}
+              style={{ flexDirection: "row", alignItems: "center", gap: 12, paddingVertical: 12 }}
+            >
+              <BotAvatar color={bot.color} size={34} status={bot.status} />
+              <Text style={{ flex: 1, color: "#ECECEE", fontSize: 16 }}>{bot.name}</Text>
+              <Text style={{ color: "#6C6C70" }}>{defaultBotId === bot.id ? "✓" : ""}</Text>
+            </Pressable>
+          ))}
         {error ? <Text style={{ color: "#FF6B6B", marginTop: 12 }}>{error}</Text> : null}
         <Pressable
           onPress={() => void save()}

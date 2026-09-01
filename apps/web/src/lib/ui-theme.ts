@@ -3,8 +3,8 @@ import {
   DEFAULT_UI_THEME,
   isUiThemeId,
   UI_THEMES,
-  uiThemeById,
   type UiThemeId,
+  uiThemeById,
 } from "@rakazo/ui-tokens";
 
 export const UI_THEME_STORAGE_KEY = "rakazo.uiTheme";
@@ -14,8 +14,8 @@ export {
   DEFAULT_UI_THEME,
   isUiThemeId,
   UI_THEMES,
-  uiThemeById,
   type UiThemeId,
+  uiThemeById,
 };
 
 function readStoredTheme(storage: Pick<Storage, "getItem"> | null | undefined): string | null {

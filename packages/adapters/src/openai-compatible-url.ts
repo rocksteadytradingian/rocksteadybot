@@ -1,10 +1,11 @@
 import { isIP } from "node:net";
-import { OPENAI_COMPATIBLE_PROVIDER_ID } from "@rakazo/contracts";
+import { OPENAI_COMPATIBLE_PROVIDER_ID, TOKENROUTER_BASE_URL } from "@rakazo/contracts";
 import { isLinkLocalAddress, isPrivateAddress } from "./network-address.js";
 
 export { OPENAI_COMPATIBLE_PROVIDER_ID };
 
 const METADATA_HOSTS = new Set(["metadata.google.internal", "metadata.goog", "169.254.169.254"]);
+const TRUSTED_PUBLIC_OPENAI_COMPAT_HOSTS = new Set([new URL(TOKENROUTER_BASE_URL).hostname]);
 
 export function openAiCompatAllowPublicHosts(): boolean {
   return process.env.RAKAZO_OPENAI_COMPAT_ALLOW_PUBLIC === "1";
@@ -90,6 +91,12 @@ export function assertAllowedOpenAiCompatibleRequestUrl(
   }
   const allowPublic = opts?.allowPublic ?? openAiCompatAllowPublicHosts();
   if (isPrivateOpenAiCompatibleHostname(hostname)) return url;
+  if (TRUSTED_PUBLIC_OPENAI_COMPAT_HOSTS.has(hostname)) {
+    if (url.protocol !== "https:") {
+      throw new Error("Trusted model endpoints must use https");
+    }
+    return url;
+  }
   if (!allowPublic) {
     throw new Error(
       "Public model endpoints are blocked. Set RAKAZO_OPENAI_COMPAT_ALLOW_PUBLIC=1 to allow them.",

@@ -15,6 +15,7 @@ import type {
   ScreenSession,
 } from "@rakazo/adapter-kit";
 import { boundedSandboxCommandTimeoutMs, resolveSupervisorToken } from "@rakazo/core";
+import { ComputerScreenUnavailableError } from "./computer-screens.js";
 import {
   boundedComputerActions,
   clampRounded,
@@ -52,22 +53,15 @@ export class DockerSandboxProvider implements SandboxProvider {
     return `${this.supervisorUrl.replace(/\/$/, "")}${path}`;
   }
 
-  // No x-rakazo-screen-id here: the supervisor keys a screen off
-  // x-rakazo-bot-id alone (the ComputerRef's homeKey — shared across every
-  // bot on a Team Computer, distinct per bot on a dedicated one). Keying it
-  // off the calling bot's own id instead would give each bot on a shared
-  // Team Computer its own Xvfb/Chromium/x11vnc stack — several times the RAM
-  // for one container, and each stack fighting the same Chromium profile dir
-  // (homeKey is shared too) for its SingletonLock, so only the first bot to
-  // grab it gets the real logged-in session and the rest boot to a blank
-  // profile. Screen VIEWING is safely shared already (x11vnc -shared serves
-  // any number of simultaneous viewers of the one desktop); who gets to
-  // actually drive it is gated separately by the execution lease.
+  // Container identity uses homeKey (x-rakazo-bot-id). Screen slots use the
+  // calling bot (x-rakazo-screen-id) so each Team bot has its own desktop and a
+  // leftover Team assignment cannot block that bot after it switches to Private.
   private headers(context: AdapterContext, botId?: string) {
     return {
       authorization: `Bearer ${this.supervisorToken}`,
       "x-rakazo-workspace-id": context.workspaceId,
       ...(botId ? { "x-rakazo-bot-id": botId } : {}),
+      ...(context.botId ? { "x-rakazo-screen-id": context.botId } : {}),
       ...(context.screenLeaseId ? { "x-rakazo-screen-lease-id": context.screenLeaseId } : {}),
     };
   }
@@ -83,6 +77,7 @@ export class DockerSandboxProvider implements SandboxProvider {
         botId: request.botId,
         homePath: request.homePath,
         workspaceId: context.workspaceId,
+        ...(context.operationId === "restart" ? { replace: true } : {}),
       }),
       signal: context.signal,
     });
@@ -145,8 +140,13 @@ export class DockerSandboxProvider implements SandboxProvider {
     });
     if (!res.ok) {
       const detail = await res.text().catch(() => "");
-      if (/cannot allocate another screen/i.test(detail)) {
-        throw new Error("This Team Computer cannot allocate another screen.");
+      const message = supervisorErrorMessage(detail);
+      if (
+        /owned by a newer execution|still being released|cannot allocate another screen/i.test(
+          message,
+        )
+      ) {
+        throw new ComputerScreenUnavailableError(message);
       }
       return { url: null, mimeType: "text/html", close: async () => undefined };
     }
@@ -197,10 +197,9 @@ export class DockerSandboxProvider implements SandboxProvider {
       headers: this.headers(context, computer.botId),
       signal: context.signal,
     });
-    if (!res.ok)
-      throw new Error(
-        `sandbox observation failed: ${res.status} ${await res.text().catch(() => "")}`.trim(),
-      );
+    if (!res.ok) {
+      throwIfSupervisorScreenFailed("observation", res.status, await res.text().catch(() => ""));
+    }
     const body = (await res.json()) as {
       image: string;
       mimeType: "image/png" | "image/jpeg";
@@ -230,10 +229,9 @@ export class DockerSandboxProvider implements SandboxProvider {
       }),
       signal: context.signal,
     });
-    if (!res.ok)
-      throw new Error(
-        `sandbox action failed: ${res.status} ${await res.text().catch(() => "")}`.trim(),
-      );
+    if (!res.ok) {
+      throwIfSupervisorScreenFailed("action", res.status, await res.text().catch(() => ""));
+    }
     const body = (await res.json()) as {
       completed: number;
       observation?: {
@@ -379,6 +377,26 @@ export class DockerSandboxProvider implements SandboxProvider {
       for (const file of batch) yield file;
     }
   }
+}
+
+function throwIfSupervisorScreenFailed(kind: string, status: number, detail: string): never {
+  const message = supervisorErrorMessage(detail);
+  if (
+    /owned by a newer execution|still being released|cannot allocate another screen/i.test(message)
+  ) {
+    throw new ComputerScreenUnavailableError(message);
+  }
+  throw new Error(`sandbox ${kind} failed: ${status} ${detail}`.trim());
+}
+
+function supervisorErrorMessage(detail: string) {
+  try {
+    const parsed = JSON.parse(detail) as { error?: unknown };
+    if (typeof parsed.error === "string" && parsed.error) return parsed.error;
+  } catch {
+    // Supervisor sometimes returns a raw string instead of JSON.
+  }
+  return detail;
 }
 
 function dockerCwd(cwd: string | undefined) {

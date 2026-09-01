@@ -183,6 +183,8 @@ export function narrateTool(toolName: string): string | null {
     [/^spawn_bot$/, "creating a bot"],
     [/^(archive_bot|delete_bot)$/, "archiving a bot"],
     [/^remember$/, "writing a memory"],
+    [/^read_memory$/, "reading a memory"],
+    [/^search_memory$/, "searching memory"],
     [/^attach_file$/, "attaching a file"],
     [/^request_takeover$/, "asking you to take over"],
   ];

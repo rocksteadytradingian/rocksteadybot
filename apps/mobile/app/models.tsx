@@ -1,9 +1,19 @@
 import type { ModelOAuthBegin } from "@rakazo/contracts";
 import {
+  COMPLEXITY_ROUTER_MODEL_ID,
+  complexityRouterActiveSummary,
+  complexityRouterSlotOptions,
+  isComplexityRouterProvider,
+  isProbedModelProvider,
   OPENAI_COMPATIBLE_BASE_URL_HINT,
   OPENAI_COMPATIBLE_PROVIDER_ID,
   openAiCompatibleConnectReady,
   openAiCompatibleProbeSuccessMessage,
+  pinActiveModelProviders,
+  selectProviderCredential,
+  TOKENROUTER_BASE_URL,
+  TOKENROUTER_PROVIDER_ID,
+  tokenRouterConnectReady,
 } from "@rakazo/contracts";
 import { useFocusEffect } from "expo-router";
 import { useCallback, useMemo, useRef, useState } from "react";
@@ -47,14 +57,19 @@ export default function Models() {
   const [oauth, setOauth] = useState<ModelOAuthBegin | null>(null);
   const [pasteCode, setPasteCode] = useState("");
   const [loading, setLoading] = useState(true);
-  const [pending, setPending] = useState<"connect" | "default" | null>(null);
+  const [pending, setPending] = useState<"connect" | "default" | "router" | null>(null);
   const [oauthPending, setOauthPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [routerFast, setRouterFast] = useState("");
+  const [routerSmart, setRouterSmart] = useState("");
+  const [routerHeavy, setRouterHeavy] = useState("");
   const oauthAbortRef = useRef<AbortController | null>(null);
   const oauthLoginIdRef = useRef<string | null>(null);
   const oauthCodeSubmittingRef = useRef(false);
   const probeRequestIdRef = useRef(0);
+  const routerDraftRef = useRef({ fast: "", smart: "", heavy: "" });
+  const routerSaveSeqRef = useRef(0);
 
   const cancelOAuth = useCallback(() => {
     const loginId = oauthLoginIdRef.current;
@@ -79,32 +94,37 @@ export default function Models() {
         : nextMe.defaultProvider) ??
       nextCatalog[0]?.provider ??
       "";
-    const nextCredential = nextCredentials.find((entry) => entry.provider === nextProvider);
-    const nextModel =
-      nextProvider === OPENAI_COMPATIBLE_PROVIDER_ID
-        ? preferred.modelId?.trim() ||
-          nextCredential?.modelId ||
-          (nextMe.defaultProvider === OPENAI_COMPATIBLE_PROVIDER_ID ? nextMe.defaultModel : "") ||
-          ""
-        : (nextCatalog.find(
-            (entry) => entry.provider === nextProvider && entry.id === preferred.modelId,
-          )?.id ??
-          nextCatalog.find(
-            (entry) => entry.provider === nextProvider && entry.id === nextMe.defaultModel,
-          )?.id ??
-          nextCatalog.find((entry) => entry.provider === nextProvider)?.id ??
-          "");
+    const nextCredential = selectProviderCredential(nextCredentials, nextProvider);
+    const nextModel = isProbedModelProvider(nextProvider)
+      ? preferred.modelId?.trim() ||
+        nextCredential?.modelId ||
+        (isProbedModelProvider(nextMe.defaultProvider ?? "") ? nextMe.defaultModel : "") ||
+        ""
+      : (nextCatalog.find(
+          (entry) => entry.provider === nextProvider && entry.id === preferred.modelId,
+        )?.id ??
+        nextCatalog.find(
+          (entry) => entry.provider === nextProvider && entry.id === nextMe.defaultModel,
+        )?.id ??
+        nextCatalog.find((entry) => entry.provider === nextProvider)?.id ??
+        "");
     setMe(nextMe);
     setCatalog(nextCatalog);
     setCredentials(nextCredentials);
-    probeRequestIdRef.current += 1;
-    setProbeModels([]);
-    setProbedBaseUrl(null);
-    setProbing(false);
     setProvider(nextProvider);
     setModelId(nextModel);
+    const draft = {
+      fast: nextCredential?.routerFastModel ?? "",
+      smart: nextCredential?.routerSmartModel ?? "",
+      heavy: nextCredential?.routerHeavyModel ?? "",
+    };
+    routerDraftRef.current = draft;
+    setRouterFast(draft.fast);
+    setRouterSmart(draft.smart);
+    setRouterHeavy(draft.heavy);
     if (nextProvider === OPENAI_COMPATIBLE_PROVIDER_ID) {
-      setBaseUrl(nextCredential?.baseUrl ?? "");
+      const restored = nextCredential?.baseUrl?.trim();
+      if (restored) setBaseUrl(restored);
     }
   }, []);
 
@@ -129,32 +149,108 @@ export default function Models() {
       entries.push(entry);
       grouped.set(entry.provider, entries);
     }
-    return [...grouped].map(([id, entries]) => ({
-      id,
-      name: entries[0]?.providerName ?? id,
-      entries,
-    }));
-  }, [catalog]);
+    return pinActiveModelProviders(
+      [...grouped].map(([id, entries]) => ({
+        id,
+        name: entries[0]?.providerName ?? id,
+        entries,
+      })),
+      {
+        activeProvider: me?.defaultProvider,
+        connectedProviders: credentials.map((entry) => entry.provider),
+      },
+    );
+  }, [catalog, credentials, me?.defaultProvider]);
   const modelsForProvider = catalog.filter((entry) => entry.provider === provider);
   const selected = modelsForProvider.find((entry) => entry.id === modelId) ?? modelsForProvider[0];
   const isOpenAiCompatible = provider === OPENAI_COMPATIBLE_PROVIDER_ID;
-  const credential = credentials.find((entry) => entry.provider === provider);
+  const isTokenRouter = provider === TOKENROUTER_PROVIDER_ID;
+  const isProbedProvider = isProbedModelProvider(provider);
+  const credential = selectProviderCredential(credentials, provider);
   const currentEntry = catalog.find(
     (entry) => entry.provider === me?.defaultProvider && entry.id === me?.defaultModel,
   );
   const isActive =
     me?.defaultProvider === selected?.provider &&
-    me?.defaultModel === (isOpenAiCompatible ? modelId.trim() : selected?.id);
+    me?.defaultModel === (isProbedProvider ? modelId.trim() : selected?.id);
   const acceptsKey = selected?.auth !== "oauth";
   const subscriptionSignIn = selected?.signIn !== undefined;
   const busy = pending !== null || oauthPending;
-  const effectiveBaseUrl = baseUrl.trim();
+  const effectiveBaseUrl = isTokenRouter ? TOKENROUTER_BASE_URL : baseUrl.trim();
   const openAiCompatibleReady = openAiCompatibleConnectReady({
     baseUrl: effectiveBaseUrl,
     modelId,
     probedBaseUrl,
     storedBaseUrl: credential?.baseUrl,
   });
+  const tokenRouterReady = tokenRouterConnectReady({
+    apiKey,
+    modelId,
+    probed: probedBaseUrl === TOKENROUTER_BASE_URL,
+  });
+  const isRouterProvider = isComplexityRouterProvider(provider);
+  const defaultCredential = selectProviderCredential(credentials, me?.defaultProvider ?? "");
+  const routerSummary = complexityRouterActiveSummary(
+    me?.defaultProvider === provider
+      ? { fast: routerFast, smart: routerSmart, heavy: routerHeavy }
+      : {
+          fast: defaultCredential?.routerFastModel,
+          smart: defaultCredential?.routerSmartModel,
+          heavy: defaultCredential?.routerHeavyModel,
+        },
+  );
+  const showAutoModel = Boolean(routerFast.trim() || credential?.routerFastModel);
+  const routerSlotIds = complexityRouterSlotOptions({
+    probeModels,
+    catalogIds: modelsForProvider
+      .filter((entry) => !entry.placeholder && entry.id !== COMPLEXITY_ROUTER_MODEL_ID)
+      .map((entry) => entry.id),
+    modelId:
+      modelId.trim() && modelId !== COMPLEXITY_ROUTER_MODEL_ID
+        ? modelId
+        : credential?.modelId === COMPLEXITY_ROUTER_MODEL_ID
+          ? undefined
+          : credential?.modelId,
+    routerFastModel: routerFast || credential?.routerFastModel,
+    routerSmartModel: routerSmart || credential?.routerSmartModel,
+    routerHeavyModel: routerHeavy || credential?.routerHeavyModel,
+  });
+  const openAiModelChoices = [
+    ...(showAutoModel ? [COMPLEXITY_ROUTER_MODEL_ID] : []),
+    ...probeModels.filter((id) => id !== COMPLEXITY_ROUTER_MODEL_ID),
+  ];
+
+  function updateRouterSlot(key: "fast" | "smart" | "heavy", next: string) {
+    const draft = { ...routerDraftRef.current, [key]: next };
+    routerDraftRef.current = draft;
+    setRouterFast(draft.fast);
+    setRouterSmart(draft.smart);
+    setRouterHeavy(draft.heavy);
+    void saveRouter(draft);
+  }
+
+  async function saveRouter(next: { fast: string; smart: string; heavy: string }) {
+    if (!credential || !isRouterProvider) return;
+    const fast = next.fast.trim();
+    if (!fast) return;
+    const seq = ++routerSaveSeqRef.current;
+    setError(null);
+    setNotice(null);
+    try {
+      await rpc("models/setRouter", {
+        provider,
+        fast,
+        smart: next.smart.trim() || null,
+        heavy: next.heavy.trim() || null,
+      });
+      if (seq !== routerSaveSeqRef.current) return;
+      await load({ provider });
+    } catch (err) {
+      if (seq !== routerSaveSeqRef.current) return;
+      const message = err instanceof Error ? err.message : "Could not save routing";
+      setError(message === "Not Found" ? "Could not save routing" : message);
+    }
+  }
 
   function resetOpenAiCompatibleProbe() {
     probeRequestIdRef.current += 1;
@@ -179,13 +275,23 @@ export default function Models() {
     cancelOAuth();
     setProvider(nextProvider);
     setModelId(
-      nextProvider === OPENAI_COMPATIBLE_PROVIDER_ID
-        ? (credentials.find((entry) => entry.provider === nextProvider)?.modelId ?? "")
+      isProbedModelProvider(nextProvider)
+        ? (selectProviderCredential(credentials, nextProvider)?.modelId ?? "")
         : (catalog.find((entry) => entry.provider === nextProvider)?.id ?? ""),
     );
+    const nextCredential = selectProviderCredential(credentials, nextProvider);
+    const draft = {
+      fast: nextCredential?.routerFastModel ?? "",
+      smart: nextCredential?.routerSmartModel ?? "",
+      heavy: nextCredential?.routerHeavyModel ?? "",
+    };
+    routerDraftRef.current = draft;
+    setRouterFast(draft.fast);
+    setRouterSmart(draft.smart);
+    setRouterHeavy(draft.heavy);
     setBaseUrl(
       nextProvider === OPENAI_COMPATIBLE_PROVIDER_ID
-        ? (credentials.find((entry) => entry.provider === nextProvider)?.baseUrl ?? "")
+        ? (selectProviderCredential(credentials, nextProvider)?.baseUrl ?? "")
         : "",
     );
     setApiKey("");
@@ -197,6 +303,7 @@ export default function Models() {
   async function probeServerModels() {
     const trimmedBaseUrl = effectiveBaseUrl;
     if (!trimmedBaseUrl) return;
+    if (isTokenRouter && apiKey.trim().length < 8) return;
     resetOpenAiCompatibleProbe();
     const requestId = probeRequestIdRef.current;
     setProbing(true);
@@ -222,15 +329,15 @@ export default function Models() {
 
   async function setModelDefault() {
     if (!selected || !credential) return;
-    const activeModelId = isOpenAiCompatible ? modelId.trim() : selected.id;
-    if (isOpenAiCompatible && !activeModelId) return;
+    const activeModelId = isProbedProvider ? modelId.trim() : selected.id;
+    if (isProbedProvider && !activeModelId) return;
     setError(null);
     setNotice(null);
     setPending("default");
     try {
       await rpc("models/setDefault", { provider: selected.provider, modelId: activeModelId });
       await load({ provider, modelId: activeModelId });
-      setNotice(isOpenAiCompatible ? "Model updated." : `Now using ${selected.label}.`);
+      setNotice(isProbedProvider ? "Model updated." : `Now using ${selected.label}.`);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not change the default model");
     } finally {
@@ -239,36 +346,71 @@ export default function Models() {
   }
 
   async function connectKey() {
-    if (!selected) return;
-    if (isOpenAiCompatible) {
+    if (!isProbedProvider && !selected) return;
+    if (isTokenRouter) {
+      if (!tokenRouterReady) return;
+    } else if (isOpenAiCompatible) {
       if (!effectiveBaseUrl || !modelId.trim()) return;
     } else if (!apiKey.trim()) {
       return;
     }
+    const connectProvider = selected?.provider ?? provider;
+    const fast = routerDraftRef.current.fast.trim();
+    const routerFields =
+      isRouterProvider && fast
+        ? {
+            modelId: COMPLEXITY_ROUTER_MODEL_ID,
+            routerFastModel: fast,
+            routerSmartModel: routerDraftRef.current.smart.trim() || null,
+            routerHeavyModel: routerDraftRef.current.heavy.trim() || null,
+          }
+        : null;
     setError(null);
     setNotice(null);
     setPending("connect");
     try {
-      await rpc(
+      const saved = await rpc<MobileModelCredential>(
         "models/connect",
         isOpenAiCompatible
           ? {
-              provider: selected.provider,
+              provider: connectProvider,
               baseUrl: effectiveBaseUrl,
-              modelId: modelId.trim(),
+              modelId: routerFields?.modelId ?? modelId.trim(),
               apiKey: apiKey.trim() || undefined,
-              label: selected.providerName ?? selected.provider,
+              label: selected?.providerName ?? connectProvider,
+              ...(routerFields
+                ? {
+                    routerFastModel: routerFields.routerFastModel,
+                    routerSmartModel: routerFields.routerSmartModel,
+                    routerHeavyModel: routerFields.routerHeavyModel,
+                  }
+                : {}),
             }
-          : {
-              provider: selected.provider,
-              apiKey: apiKey.trim(),
-              modelId: selected.id,
-              label: selected.providerName ?? selected.provider,
-            },
+          : isTokenRouter
+            ? {
+                provider: connectProvider,
+                apiKey: apiKey.trim(),
+                modelId: routerFields?.modelId ?? modelId.trim(),
+                label: selected?.providerName ?? connectProvider,
+                ...(routerFields
+                  ? {
+                      routerFastModel: routerFields.routerFastModel,
+                      routerSmartModel: routerFields.routerSmartModel,
+                      routerHeavyModel: routerFields.routerHeavyModel,
+                    }
+                  : {}),
+              }
+            : {
+                provider: connectProvider,
+                apiKey: apiKey.trim(),
+                modelId: selected!.id,
+                label: selected!.providerName ?? connectProvider,
+              },
       );
       setApiKey("");
-      await load({ provider, modelId });
-      setNotice(isOpenAiCompatible ? "Saved." : `Connected and using ${selected.label}.`);
+      if (saved.baseUrl) setBaseUrl(saved.baseUrl);
+      await load({ provider, modelId: routerFields?.modelId ?? modelId });
+      setNotice(isProbedProvider ? "Saved." : `Connected and using ${selected!.label}.`);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not connect this provider");
     } finally {
@@ -385,6 +527,7 @@ export default function Models() {
           <Text style={styles.secondary}>
             {currentEntry?.providerName ?? me?.defaultProvider ?? "Configured by deployment"}
           </Text>
+          {routerSummary ? <Text style={styles.secondary}>{routerSummary}</Text> : null}
         </View>
 
         {error ? <Text style={styles.error}>{error}</Text> : null}
@@ -417,68 +560,125 @@ export default function Models() {
           })}
         </View>
 
-        {selected ? (
+        {selected || isProbedProvider ? (
           <>
-            {!isOpenAiCompatible ? <Text style={styles.sectionTitle}>Model</Text> : null}
-            {isOpenAiCompatible ? (
+            {!isProbedProvider ? <Text style={styles.sectionTitle}>Model</Text> : null}
+            {isProbedProvider ? (
               <>
-                <Text style={styles.sectionTitle}>Server URL</Text>
-                <TextInput
-                  accessibilityLabel="OpenAI-compatible server URL"
-                  autoCapitalize="none"
-                  autoCorrect={false}
-                  editable={!busy}
-                  onChangeText={updateBaseUrl}
-                  placeholder="http://127.0.0.1:8000/v1"
-                  placeholderTextColor={native.tertiaryLabel}
-                  style={styles.keyInput}
-                  value={baseUrl}
-                />
-                <Pressable
-                  accessibilityRole="button"
-                  accessibilityState={{ expanded: showEndpointHelp }}
-                  onPress={() => setShowEndpointHelp((visible) => !visible)}
-                >
-                  <Text style={styles.helpLabel}>Setup help</Text>
-                </Pressable>
-                {showEndpointHelp ? (
-                  <Text style={styles.hint}>{OPENAI_COMPATIBLE_BASE_URL_HINT}</Text>
+                {isOpenAiCompatible ? (
+                  <>
+                    <Text style={styles.sectionTitle}>Server URL</Text>
+                    <TextInput
+                      accessibilityLabel="OpenAI-compatible server URL"
+                      autoCapitalize="none"
+                      autoCorrect={false}
+                      editable={!busy}
+                      onChangeText={updateBaseUrl}
+                      placeholder="http://127.0.0.1:8000/v1"
+                      placeholderTextColor={native.tertiaryLabel}
+                      style={styles.keyInput}
+                      value={baseUrl}
+                    />
+                    <Pressable
+                      accessibilityRole="button"
+                      accessibilityState={{ expanded: showEndpointHelp }}
+                      onPress={() => setShowEndpointHelp((visible) => !visible)}
+                    >
+                      <Text style={styles.helpLabel}>Setup help</Text>
+                    </Pressable>
+                    {showEndpointHelp ? (
+                      <Text style={styles.hint}>{OPENAI_COMPATIBLE_BASE_URL_HINT}</Text>
+                    ) : null}
+                  </>
+                ) : null}
+                {isTokenRouter ? (
+                  <>
+                    <Text style={styles.sectionTitle}>
+                      {credential ? "Replace API key" : "API key"}
+                    </Text>
+                    <TextInput
+                      accessibilityLabel="API key"
+                      autoCapitalize="none"
+                      autoCorrect={false}
+                      autoComplete="off"
+                      editable={!busy}
+                      importantForAutofill="no"
+                      onChangeText={updateApiKey}
+                      placeholder="sk-…"
+                      placeholderTextColor={native.tertiaryLabel}
+                      secureTextEntry
+                      style={styles.keyInput}
+                      textContentType="none"
+                      value={apiKey}
+                    />
+                  </>
                 ) : null}
                 <Pressable
                   accessibilityRole="button"
-                  disabled={busy || probing || !effectiveBaseUrl}
+                  disabled={
+                    busy ||
+                    probing ||
+                    (isTokenRouter ? apiKey.trim().length < 8 : !effectiveBaseUrl)
+                  }
                   onPress={() => void probeServerModels()}
                   style={({ pressed }) => [
                     styles.outlineButton,
-                    (busy || probing || !effectiveBaseUrl) && styles.disabled,
+                    (busy ||
+                      probing ||
+                      (isTokenRouter ? apiKey.trim().length < 8 : !effectiveBaseUrl)) &&
+                      styles.disabled,
                     pressed && styles.pressed,
                   ]}
                 >
                   <Text style={styles.outlineLabel}>{probing ? "Finding…" : "Find models"}</Text>
                 </Pressable>
                 <Text style={[styles.sectionTitle, { marginTop: 12 }]}>Model</Text>
-                {probeModels.length && probeModels.includes(modelId) ? (
+                {openAiModelChoices.length && openAiModelChoices.includes(modelId) ? (
                   <View style={styles.card}>
-                    {probeModels.map((entry) => (
+                    {showAutoModel ? (
                       <Pressable
-                        key={entry}
                         accessibilityRole="radio"
-                        accessibilityState={{ selected: entry === modelId }}
+                        accessibilityLabel="Auto"
+                        accessibilityState={{ selected: modelId === COMPLEXITY_ROUTER_MODEL_ID }}
                         disabled={probing}
-                        onPress={() => setModelId(entry)}
+                        onPress={() => setModelId(COMPLEXITY_ROUTER_MODEL_ID)}
                         style={({ pressed }) => [
                           styles.modelRow,
-                          entry === modelId && styles.selectedRow,
+                          modelId === COMPLEXITY_ROUTER_MODEL_ID && styles.selectedRow,
                           probing && styles.disabled,
                           pressed && styles.pressed,
                         ]}
                       >
                         <View style={styles.radio}>
-                          {entry === modelId ? <View style={styles.radioDot} /> : null}
+                          {modelId === COMPLEXITY_ROUTER_MODEL_ID ? (
+                            <View style={styles.radioDot} />
+                          ) : null}
                         </View>
-                        <Text style={styles.modelLabel}>{entry}</Text>
+                        <Text style={styles.modelLabel}>Auto</Text>
                       </Pressable>
-                    ))}
+                    ) : null}
+                    {probeModels
+                      .filter((entry) => entry !== COMPLEXITY_ROUTER_MODEL_ID)
+                      .map((entry) => (
+                        <Pressable
+                          key={entry}
+                          accessibilityRole="radio"
+                          accessibilityState={{ selected: entry === modelId }}
+                          disabled={probing}
+                          onPress={() => setModelId(entry)}
+                          style={({ pressed }) => [
+                            styles.modelRow,
+                            entry === modelId && styles.selectedRow,
+                            probing && styles.disabled,
+                            pressed && styles.pressed,
+                          ]}
+                        >
+                          <View style={styles.radio}>
+                            {entry === modelId ? <View style={styles.radioDot} /> : null}
+                          </View>
+                          <Text style={styles.modelLabel}>{entry}</Text>
+                        </Pressable>
+                      ))}
                     <Pressable
                       accessibilityRole="radio"
                       accessibilityState={{ selected: false }}
@@ -518,7 +718,7 @@ export default function Models() {
                   </>
                 )}
               </>
-            ) : (
+            ) : selected ? (
               <View style={styles.card}>
                 {modelsForProvider.map((entry) => (
                   <Pressable
@@ -544,8 +744,76 @@ export default function Models() {
                   </Pressable>
                 ))}
               </View>
-            )}
-            {!isOpenAiCompatible ? <Text style={styles.billing}>{selected.billing}</Text> : null}
+            ) : null}
+            {credential && isRouterProvider ? (
+              <View style={{ marginTop: 16, gap: 12 }}>
+                {(
+                  [
+                    {
+                      key: "fast" as const,
+                      value: routerFast,
+                      label: "Fast",
+                      accessible: "Fast — simple",
+                    },
+                    {
+                      key: "smart" as const,
+                      value: routerSmart,
+                      label: "Smart",
+                      accessible: "Smart — planning and coding",
+                    },
+                    {
+                      key: "heavy" as const,
+                      value: routerHeavy,
+                      label: "Heavy",
+                      accessible: "Heavy — hard and vision",
+                    },
+                  ] as const
+                ).map((slot) => (
+                  <View key={slot.key}>
+                    <Text style={styles.sectionTitle}>{slot.label}</Text>
+                    {routerSlotIds.length ? (
+                      <View style={styles.card}>
+                        {routerSlotIds.map((id) => (
+                          <Pressable
+                            key={id}
+                            accessibilityRole="radio"
+                            accessibilityLabel={`${slot.accessible}: ${id}`}
+                            accessibilityState={{ selected: slot.value === id }}
+                            onPress={() => updateRouterSlot(slot.key, id)}
+                            style={({ pressed }) => [
+                              styles.modelRow,
+                              slot.value === id && styles.selectedRow,
+                              pressed && styles.pressed,
+                            ]}
+                          >
+                            <View style={styles.radio}>
+                              {slot.value === id ? <View style={styles.radioDot} /> : null}
+                            </View>
+                            <Text style={styles.modelLabel}>{id}</Text>
+                          </Pressable>
+                        ))}
+                      </View>
+                    ) : (
+                      <TextInput
+                        accessibilityLabel={slot.accessible}
+                        autoCapitalize="none"
+                        autoCorrect={false}
+                        defaultValue={slot.value}
+                        placeholder={slot.key === "fast" ? "qwen3:8b" : ""}
+                        placeholderTextColor={native.tertiaryLabel}
+                        onEndEditing={(event) => {
+                          const next = event.nativeEvent.text.trim();
+                          if (next === slot.value) return;
+                          updateRouterSlot(slot.key, next);
+                        }}
+                        style={styles.keyInput}
+                      />
+                    )}
+                  </View>
+                ))}
+              </View>
+            ) : null}
+            {!isOpenAiCompatible ? <Text style={styles.billing}>{selected?.billing}</Text> : null}
 
             {!isOpenAiCompatible ? (
               <View style={styles.credentialCard}>
@@ -655,7 +923,7 @@ export default function Models() {
                       />
                     ) : null}
                   </>
-                ) : (
+                ) : isTokenRouter ? null : (
                   <>
                     <Text style={styles.sectionTitle}>
                       {credential
@@ -684,13 +952,22 @@ export default function Models() {
                 <Pressable
                   accessibilityRole="button"
                   disabled={
-                    busy || (isOpenAiCompatible ? !openAiCompatibleReady : apiKey.trim().length < 8)
+                    busy ||
+                    (isOpenAiCompatible
+                      ? !openAiCompatibleReady
+                      : isTokenRouter
+                        ? !tokenRouterReady
+                        : apiKey.trim().length < 8)
                   }
                   onPress={() => void connectKey()}
                   style={({ pressed }) => [
                     styles.primaryButton,
                     (busy ||
-                      (isOpenAiCompatible ? !openAiCompatibleReady : apiKey.trim().length < 8)) &&
+                      (isOpenAiCompatible
+                        ? !openAiCompatibleReady
+                        : isTokenRouter
+                          ? !tokenRouterReady
+                          : apiKey.trim().length < 8)) &&
                       styles.disabled,
                     pressed && styles.pressed,
                   ]}
@@ -708,7 +985,7 @@ export default function Models() {
               </View>
             ) : null}
 
-            {selected.auth === "oauth" && !subscriptionSignIn ? (
+            {selected?.auth === "oauth" && !subscriptionSignIn ? (
               <Text style={styles.secondary}>
                 This subscription sign-in is not available in RocksteadyBot yet. Use a deployment
                 credential or choose another provider.
@@ -718,7 +995,7 @@ export default function Models() {
             {credential && !isActive ? (
               <Pressable
                 accessibilityRole="button"
-                disabled={busy || (isOpenAiCompatible && !modelId.trim())}
+                disabled={busy || (isProbedProvider && !modelId.trim())}
                 onPress={() => void setModelDefault()}
                 style={({ pressed }) => [
                   styles.primaryButton,

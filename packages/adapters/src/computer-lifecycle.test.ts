@@ -14,6 +14,7 @@ import {
   ComputerBusyError,
   computerSupportsUpdate,
   provisionComputer,
+  releaseBotComputerSession,
   releaseComputerExecutionLease,
   renewComputerExecutionLease,
   replaceComputer,
@@ -336,10 +337,63 @@ describe("computer provisioning", () => {
       await rm(dataDir, { recursive: true, force: true });
     }
   });
+
+  it("stores the replacement container id when a running computer is recreated", async () => {
+    const dataDir = await mkdtemp(path.join(tmpdir(), "rakazo-provision-reconnect-replace-"));
+    const ref = {
+      id: "container-after-reboot",
+      botId: "bot-1",
+      kind: "docker" as const,
+      providerRef: "container-after-reboot",
+      fresh: true,
+    };
+    const updateMany = vi.fn().mockResolvedValue({ count: 1 });
+    const prisma = {
+      computer: {
+        findUniqueOrThrow: vi.fn().mockResolvedValue({
+          id: "computer-1",
+          homeKey: "bot-1",
+          providerRef: "container-before-reboot",
+          kind: "docker",
+          scope: "dedicated",
+          state: "running",
+          controlLeaseId: null,
+        }),
+        updateMany,
+      },
+    } as unknown as PrismaClient;
+    const sandbox = {
+      provision: vi.fn().mockResolvedValue(ref),
+      prepare: vi.fn().mockResolvedValue(undefined),
+    } as unknown as SandboxProvider;
+
+    try {
+      await expect(
+        provisionComputer(
+          {
+            prisma,
+            sandbox,
+            home: {} as AgentHomeStore,
+            jobs: {} as JobPublisher,
+            events: {} as ThreadEvents,
+            dataDir,
+          },
+          "computer-1",
+          context,
+        ),
+      ).resolves.toEqual(ref);
+      expect(updateMany).toHaveBeenCalledWith({
+        where: { id: "computer-1", state: "running" },
+        data: { providerRef: "container-after-reboot", kind: "docker" },
+      });
+    } finally {
+      await rm(dataDir, { recursive: true, force: true });
+    }
+  });
 });
 
 describe("computer execution leases", () => {
-  it("does not serialize dedicated computers", async () => {
+  it("fences a dedicated computer without reporting it busy", async () => {
     const prisma = leasePrisma({ scope: "dedicated" });
 
     await expect(
@@ -348,12 +402,39 @@ describe("computer execution leases", () => {
         runId: "run-1",
         botId: "bot-1",
       }),
-    ).resolves.toBeNull();
-    expect(prisma.updateManyAndReturn).not.toHaveBeenCalled();
+    ).resolves.toEqual({
+      computerId: "computer-1",
+      botId: "bot-1",
+      runId: "run-1",
+      fence: 1,
+    });
+    expect(prisma.updateManyAndReturn).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { computerId: "computer-1", botId: "bot-1" },
+      }),
+    );
+    expect(prisma.create).toHaveBeenCalled();
+  });
+
+  it("lets a dedicated computer reclaim a leftover screen fence immediately", async () => {
+    const prisma = leasePrisma({ scope: "dedicated", reclaim: true, fence: 4 });
+
+    await expect(
+      acquireComputerExecutionLease(prisma.client, {
+        computerId: "computer-1",
+        runId: "run-2",
+        botId: "bot-1",
+      }),
+    ).resolves.toEqual({
+      computerId: "computer-1",
+      botId: "bot-1",
+      runId: "run-2",
+      fence: 4,
+    });
     expect(prisma.create).not.toHaveBeenCalled();
   });
 
-  it("fences one Team bot's screen and releases only the matching lease", async () => {
+  it("fences one Team bot's screen and expires only the matching lease", async () => {
     const prisma = leasePrisma({ scope: "team" });
     const lease = await acquireComputerExecutionLease(prisma.client, {
       computerId: "computer-1",
@@ -391,13 +472,14 @@ describe("computer execution leases", () => {
       data: { expiresAt: expect.any(Date) },
     });
     await releaseComputerExecutionLease(prisma.client, lease);
-    expect(prisma.deleteMany).toHaveBeenCalledWith({
+    expect(prisma.updateMany).toHaveBeenLastCalledWith({
       where: {
         computerId: "computer-1",
         botId: "bot-1",
         runId: "run-1",
         fence: 1,
       },
+      data: { expiresAt: new Date(0) },
     });
   });
 
@@ -492,13 +574,50 @@ describe("computer execution leases", () => {
         botId: "bot-1",
       }),
     ).rejects.toThrow("Computer is busy");
-    expect(prisma.deleteMany).toHaveBeenCalledWith({
+    expect(prisma.updateMany).toHaveBeenCalledWith({
       where: {
         computerId: "computer-1",
         botId: "bot-1",
         runId: "run-1",
         fence: 1,
       },
+      data: { expiresAt: new Date(0) },
+    });
+  });
+
+  it("releases this bot's leftover screen assignment when leaving a computer", async () => {
+    const releaseScreen = vi.fn().mockResolvedValue(undefined);
+    const findUnique = vi.fn().mockResolvedValue({ runId: "run-1", fence: 3 });
+    const deleteMany = vi.fn().mockResolvedValue({ count: 1 });
+    const prisma = {
+      computerExecutionLease: { findUnique, deleteMany },
+    } as unknown as PrismaClient;
+    const context = {
+      operationId: "computer.switch",
+      traceId: "computer.switch",
+      workspaceId: "workspace",
+      userId: "user",
+      botId: "bot-1",
+      signal: new AbortController().signal,
+    };
+
+    await releaseBotComputerSession(
+      { prisma, sandbox: { releaseScreen } as unknown as SandboxProvider },
+      {
+        id: "computer-1",
+        homeKey: "team-home",
+        kind: "docker",
+        providerRef: "container-1",
+      },
+      context,
+    );
+
+    expect(releaseScreen).toHaveBeenCalledWith(
+      { id: "container-1", botId: "team-home", kind: "docker", providerRef: "container-1" },
+      expect.objectContaining({ botId: "bot-1", screenLeaseId: "run-1:3" }),
+    );
+    expect(deleteMany).toHaveBeenCalledWith({
+      where: { computerId: "computer-1", botId: "bot-1" },
     });
   });
 });
@@ -872,5 +991,70 @@ describe("computer replacement", () => {
       ),
     ).rejects.toBeInstanceOf(ComputerBusyError);
     expect(prisma.computer.updateMany).not.toHaveBeenCalled();
+  });
+
+  it("force-replaces a computer stuck booting with an active run", async () => {
+    const dataDir = await mkdtemp(path.join(tmpdir(), "rakazo-force-replace-"));
+    const homeRoot = await mkdtemp(path.join(tmpdir(), "rakazo-force-replace-home-"));
+    const home = new LocalAgentHomeStore(homeRoot);
+    const sandbox = new FakeSandboxProvider();
+    const first = await sandbox.provision({ botId: "bot-1", homePath: dataDir }, context);
+
+    const computerRecord = {
+      id: "computer-1",
+      homeKey: "bot-1",
+      providerRef: first.providerRef,
+      kind: "fake",
+      scope: "dedicated",
+      state: "booting",
+      controlLeaseId: null,
+      homeRevision: "empty",
+    };
+    const findUniqueOrThrow = vi
+      .fn()
+      .mockResolvedValueOnce(computerRecord)
+      .mockResolvedValue({
+        ...computerRecord,
+        state: "stopped",
+        providerRef: null,
+      });
+    const updateMany = vi.fn().mockResolvedValue({ count: 1 });
+    const update = vi.fn().mockResolvedValue({});
+    const prisma = {
+      computer: { findUniqueOrThrow, updateMany, update },
+      computerExecutionLease: { deleteMany: vi.fn().mockResolvedValue({ count: 1 }) },
+      run: { findFirst: vi.fn().mockResolvedValue({ id: "stuck-run" }) },
+    } as unknown as PrismaClient;
+    const destroy = vi.spyOn(sandbox, "destroy");
+
+    try {
+      const ref = await replaceComputer(
+        {
+          prisma,
+          sandbox,
+          home,
+          jobs: {} as JobPublisher,
+          events: {} as ThreadEvents,
+          dataDir,
+        },
+        "computer-1",
+        "recover",
+        context,
+        "none",
+        { force: true },
+      );
+      expect(prisma.run.findFirst).not.toHaveBeenCalled();
+      expect(destroy).toHaveBeenCalledOnce();
+      expect(ref.fresh).toBe(true);
+      expect(update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: "computer-1" },
+          data: expect.objectContaining({ state: "suspending" }),
+        }),
+      );
+    } finally {
+      await rm(dataDir, { recursive: true, force: true });
+      await rm(homeRoot, { recursive: true, force: true });
+    }
   });
 });

@@ -14,8 +14,8 @@
   --bui-green: var(--rk-success-soft);
   --bui-green-tint: color-mix(in srgb, var(--rk-success-soft) 14%, transparent);
   --bui-accent: var(--rk-accent);
-  --bui-shadow-btn: 0 0 0 1px var(--bui-line-strong),
-    0 1px 2px color-mix(in srgb, var(--rk-ink) 12%, transparent);
+  --bui-shadow-btn:
+    0 0 0 1px var(--bui-line-strong), 0 1px 2px color-mix(in srgb, var(--rk-ink) 12%, transparent);
   --bui-shadow-card: var(--rk-shadow);
 }
 

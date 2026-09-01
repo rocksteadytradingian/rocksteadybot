@@ -258,7 +258,7 @@ export function WorkspacePicker({
               {workspaces.length > 1 ? (
                 <button
                   type="button"
-                  className="block w-full px-3.5 py-2 text-start text-[14px] text-[#E24B4A] hover:bg-[var(--rk-surface-2)]"
+                  className="block w-full px-3.5 py-2 text-start text-[14px] text-[var(--rk-danger)] hover:bg-[var(--rk-surface-2)]"
                   onClick={() => void removeCurrent()}
                 >
                   <Trans>Delete workspace</Trans>

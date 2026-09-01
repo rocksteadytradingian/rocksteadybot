@@ -26,6 +26,7 @@ import type {
   VoiceInfo,
   VoiceStatus,
   WorkspaceMemoryConfig,
+  MemoryDocument,
 } from "@rakazo/contracts";
 import {
   ATTACHMENT_MAX_BYTES,
@@ -40,6 +41,7 @@ import {
   abortableDelay,
   attachmentsForThread,
   buildComposerMentionOptions,
+  canRepairHostStack,
   type ComposerMention,
   cronFromPreset,
   defaultCronPreset,
@@ -49,6 +51,7 @@ import {
   isActive,
   isApprovalAskBlock,
   isRunTerminalEvent,
+  isStackRepairApproval,
   isWorking,
   latestAnswerableAskMessageId,
   mentionChipKey,
@@ -58,6 +61,8 @@ import {
   type SlashActionId,
   searchHitThreadTarget,
   serializeComposerPrompt,
+  SOUL_IDENTITY_PATH,
+  BOT_IDENTITY_PATH,
   speechFromBlocks,
   truncateSlashDescription,
 } from "@rakazo/core";
@@ -82,6 +87,7 @@ import {
   Phone,
   Plus,
   Puzzle,
+  RefreshCw,
   Reply,
   Settings,
   Square,
@@ -114,6 +120,10 @@ import {
   SuccessPop,
 } from "../components/beautiful-ui/primitives";
 import { ComputerMaintenanceActions } from "../components/ComputerMaintenanceActions";
+import {
+  identityDocumentByPath,
+  IdentityMarkdownField,
+} from "../components/IdentityFilesEditor";
 import { SkillDraftCard } from "../components/teach/SkillDraftCard";
 import { TeachCaptureOverlay } from "../components/teach/TeachCaptureOverlay";
 import { TeachComputerSection } from "../components/teach/TeachComputerSection";
@@ -147,6 +157,7 @@ import {
   reduceThreadSnapshot,
   userHoldsComputerControl,
 } from "../lib/thread-events";
+import { isTranscriptNearBottom, scrollTranscriptToBottom } from "../lib/transcript-scroll";
 import { speaker } from "../lib/tts";
 import { resolveUiTheme, setUiTheme, uiThemeById } from "../lib/ui-theme";
 import { ActivityList } from "./ActivityList";
@@ -155,6 +166,7 @@ import {
   ApprovalsOverlay,
   ApprovalsPanelSection,
   usePendingApprovals,
+  useWorkerStallNotification,
 } from "./ApprovalsInbox";
 import type { ContextMenuPosition } from "./BotContextMenu";
 import { CreateGroupForm, GroupSettings, memberName } from "./GroupPanel";
@@ -310,6 +322,8 @@ export function ShellPage() {
   const [modelsOpen, setModelsOpen] = useState(false);
   const [approvalsOpen, setApprovalsOpen] = useState(false);
   const [approvalBusyId, setApprovalBusyId] = useState<string | null>(null);
+  const [stackRestartBusy, setStackRestartBusy] = useState(false);
+  const [computerRestartBusy, setComputerRestartBusy] = useState(false);
   const [memorySettingsOpen, setMemorySettingsOpen] = useState(false);
   const [memoryProviderConfig, setMemoryProviderConfig] = useState<
     WorkspaceMemoryConfig | null | undefined
@@ -378,6 +392,7 @@ export function ShellPage() {
   const jumpGeneration = useRef(0);
   const initiallyScrolledThread = useRef<string | null>(null);
   const messageScroll = useRef<HTMLDivElement>(null);
+  const followTranscript = useRef(true);
   const pinnedAroundRef = useRef<{
     botId?: string;
     groupId?: string;
@@ -526,9 +541,7 @@ export function ShellPage() {
 
   async function refreshGroupThread(id: string) {
     const scrollElement = messageScroll.current;
-    const stickToEnd =
-      !scrollElement ||
-      scrollElement.scrollHeight - scrollElement.scrollTop - scrollElement.clientHeight < 80;
+    const stickToEnd = !scrollElement || isTranscriptNearBottom(scrollElement);
     markOnce("rk:renderer:thread-request-start");
     const request = ++groupRefreshEpoch.current;
     const snap = await rpc.threads.get({ groupId: id });
@@ -546,9 +559,10 @@ export function ShellPage() {
     setRoutinesBotId(null);
     // Keep the search-jump viewport; expandedHistoryThread merge still accepts live messages.
     if (stickToEnd && expandedHistoryThread.current !== snap.threadId) {
+      followTranscript.current = true;
       window.requestAnimationFrame(() => {
         const element = messageScroll.current;
-        if (element) element.scrollTop = element.scrollHeight;
+        if (element) scrollTranscriptToBottom(element);
       });
     }
     return snap;
@@ -556,9 +570,7 @@ export function ShellPage() {
 
   async function refreshThread(id: string) {
     const scrollElement = messageScroll.current;
-    const stickToEnd =
-      !scrollElement ||
-      scrollElement.scrollHeight - scrollElement.scrollTop - scrollElement.clientHeight < 80;
+    const stickToEnd = !scrollElement || isTranscriptNearBottom(scrollElement);
     markOnce("rk:renderer:thread-request-start");
     const epoch = historyEpoch.current;
     const request = ++threadRefreshEpoch.current;
@@ -583,9 +595,10 @@ export function ShellPage() {
     commitComputer(reconciled.computer);
     cacheComputerFor(id, { computer: reconciled.computer });
     if (stickToEnd && expandedHistoryThread.current !== snap.threadId) {
+      followTranscript.current = true;
       window.requestAnimationFrame(() => {
         const element = messageScroll.current;
-        if (element) element.scrollTop = element.scrollHeight;
+        if (element) scrollTranscriptToBottom(element);
       });
     }
     const [routines, skills] = await Promise.all([
@@ -1211,10 +1224,18 @@ export function ShellPage() {
     refresh: refreshApprovals,
     setItems: setPendingApprovals,
   } = usePendingApprovals(pendingApprovalHint);
+  useWorkerStallNotification(pendingApprovals);
+  const stackRepair = pendingApprovals.find(isStackRepairApproval);
+  const canRepairStack = canRepairHostStack(
+    Boolean(bootstrapMe?.isDeploymentOwner),
+    window.location.origin,
+  );
   const botApprovals = useMemo(
     () =>
-      pendingApprovals.filter((item) =>
-        inGroup ? item.groupId === groupId : item.botId === active?.id && !item.groupId,
+      pendingApprovals.filter(
+        (item) =>
+          isStackRepairApproval(item) ||
+          (inGroup ? item.groupId === groupId : item.botId === active?.id && !item.groupId),
       ),
     [active?.id, groupId, inGroup, pendingApprovals],
   );
@@ -1363,7 +1384,8 @@ export function ShellPage() {
     }
     const element = messageScroll.current;
     if (!element) return;
-    element.scrollTop = element.scrollHeight;
+    followTranscript.current = true;
+    scrollTranscriptToBottom(element);
     initiallyScrolledThread.current = snapshot.threadId;
   }, [active, groupId, inGroup, snapshot?.botId, snapshot?.groupId, snapshot?.threadId]);
 
@@ -1403,6 +1425,10 @@ export function ShellPage() {
   }, []);
   const openApproval = useCallback(
     (item: PendingApproval) => {
+      if (isStackRepairApproval(item)) {
+        setApprovalsOpen(true);
+        return;
+      }
       setApprovalsOpen(false);
       setMobileSidebarOpen(false);
       const params = new URLSearchParams();
@@ -1418,6 +1444,13 @@ export function ShellPage() {
     async (item: PendingApproval) => {
       setApprovalBusyId(item.id);
       try {
+        if (isStackRepairApproval(item)) {
+          const result = await rpc.approvals.repairStack();
+          if (!result.ok) throw new Error(result.error || t`Could not start the worker`);
+          setPendingApprovals((current) => current.filter((row) => row.id !== item.id));
+          await refreshApprovals();
+          return;
+        }
         await rpc.threads.answer({
           ...(item.groupId ? { groupId: item.groupId } : { botId: item.botId }),
           runId: item.runId,
@@ -1436,8 +1469,47 @@ export function ShellPage() {
         setApprovalBusyId(null);
       }
     },
-    [refreshApprovals, setPendingApprovals],
+    [refreshApprovals, setPendingApprovals, t],
   );
+  const restartLocalStack = useCallback(async () => {
+    if (!canRepairStack || stackRestartBusy) return;
+    setStackRestartBusy(true);
+    setMenuOpen(false);
+    try {
+      const result = await rpc.approvals.repairStack({ restartApi: true });
+      if (!result.ok) throw new Error(result.error || t`Could not restart the API`);
+      setPendingApprovals((current) => current.filter((row) => !isStackRepairApproval(row)));
+      await refreshApprovals();
+    } catch {
+      await refreshApprovals();
+    } finally {
+      setStackRestartBusy(false);
+    }
+  }, [canRepairStack, refreshApprovals, setPendingApprovals, stackRestartBusy, t]);
+  const restartActiveComputer = useCallback(async () => {
+    const botTarget = activeBotId.current;
+    if (!botTarget || computerRestartBusy) return;
+    setComputerRestartBusy(true);
+    setMenuOpen(false);
+    setSendError(null);
+    try {
+      await rpc.threads.stop({ botId: botTarget }).catch(() => undefined);
+      await rpc.computer.restart({ botId: botTarget });
+      if (activeBotId.current === botTarget) {
+        updateSnapshot((prev) => {
+          if (!prev || (prev.botId !== botTarget && prev.botId)) return prev;
+          return clearActiveThreadRuns(prev);
+        });
+        await refreshThreadRef.current(botTarget).catch(() => undefined);
+      }
+    } catch (error) {
+      if (activeBotId.current === botTarget) {
+        setSendError(error instanceof Error ? error.message : t`Could not restart the computer`);
+      }
+    } finally {
+      setComputerRestartBusy(false);
+    }
+  }, [computerRestartBusy, t]);
   const onAttachmentPick = useCallback(
     async (files: ArrayLike<File> | null) => {
       const threadKey = activeGroupId.current ?? activeBotId.current;
@@ -1496,6 +1568,7 @@ export function ShellPage() {
       const groupTarget = plan.rerouteGroupId ?? initialGroupTarget;
       const botTarget = reroutedToGroup ? undefined : initialBotTarget;
       const trimmed = plan.trimmed;
+      followTranscript.current = true;
       setSending(true);
       setSendError(null);
       try {
@@ -1684,7 +1757,7 @@ export function ShellPage() {
     if (text && id) void speaker.speak(text, { botId: id, messageId: message.id });
   }, []);
 
-  async function createGroup(input: { name: string; botIds: string[] }) {
+  async function createGroup(input: { name: string; botIds: string[]; defaultBotId?: string }) {
     const group = await rpc.groups.create(input);
     setGroups((current) =>
       current.some((item) => item.id === group.id) ? current : [group, ...current],
@@ -1942,14 +2015,14 @@ export function ShellPage() {
           <div className="relative flex items-center gap-2.5">
             <button
               type="button"
-              aria-label={t`Activity`}
+              aria-label={stackRepair ? t`Activity, AI replies are stuck` : t`Activity`}
               aria-pressed={activityMode}
-              title={t`Activity`}
+              title={stackRepair ? t`AI replies are stuck` : t`Activity`}
               data-activity-mode={activityMode ? "on" : "off"}
               onClick={toggleActivityMode}
-              className={`app-no-drag flex h-7 w-7 items-center justify-center rounded-full ${
+              className={`app-no-drag relative flex h-7 w-7 items-center justify-center rounded-full ${
                 activityMode
-                  ? "bg-[#4C8DFF] text-white"
+                  ? "bg-[var(--rk-solid)] text-[var(--rk-solid-ink)]"
                   : "text-[var(--rk-muted)] hover:text-[var(--rk-body)]"
               }`}
             >
@@ -1959,6 +2032,13 @@ export function ShellPage() {
                 fill={activityMode ? "currentColor" : "none"}
                 aria-hidden="true"
               />
+              {stackRepair ? (
+                <span
+                  data-testid="worker-stall-bell"
+                  className="absolute end-0 top-0 h-2 w-2 rounded-full bg-[var(--rk-danger)]"
+                  aria-hidden="true"
+                />
+              ) : null}
             </button>
             <button
               type="button"
@@ -2025,16 +2105,16 @@ export function ShellPage() {
             }
           />
         ) : null}
-        <div className="mx-3.5 mb-3 flex items-center gap-2.5 rounded-xl border border-[var(--rk-hairline-strong)] bg-[var(--rk-surface)] px-3 py-2 text-[14px] text-[var(--rk-muted-2)]">
+        <div className="mx-3.5 mb-3 flex items-center gap-2.5 rounded-xl border border-[var(--rk-hairline-strong)] bg-[var(--rk-surface)] px-3 py-2 text-[14px] text-[var(--rk-muted)]">
           <span>⌕</span>
           <input
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder={t`Search`}
-            className="w-full bg-transparent outline-none"
+            className="w-full bg-transparent text-[var(--rk-ink)] outline-none placeholder:text-[var(--rk-muted)]"
           />
         </div>
-        <div className="rk-scroll flex flex-1 flex-col gap-0.5 overflow-y-auto px-2.5 pb-2.5">
+        <div className="rk-scroll relative z-0 isolate flex flex-1 flex-col gap-0.5 overflow-y-auto px-2.5 pb-2.5">
           {showWorkspaceSearch ? (
             <WorkspaceSearchResults
               hits={searchHits}
@@ -2062,7 +2142,7 @@ export function ShellPage() {
               {sidebarGroups.map((group) => (
                 <div key={group.key} data-sidebar-group={group.key}>
                   {group.title ? (
-                    <div className="px-2.5 pb-1 pt-3 text-[12.5px] font-medium text-[var(--rk-muted-2)]">
+                    <div className="px-2.5 pb-1 pt-3 text-[12.5px] font-medium text-[var(--rk-muted)]">
                       {group.title}
                     </div>
                   ) : null}
@@ -2114,7 +2194,7 @@ export function ShellPage() {
                             {bot.unread ? (
                               <span
                                 aria-hidden="true"
-                                className="inline-block h-2 w-2 rounded-full bg-[#8B5CF6]"
+                                className="inline-block h-2 w-2 rounded-full bg-[var(--rk-queued)]"
                               />
                             ) : null}
                           </span>
@@ -2174,7 +2254,7 @@ export function ShellPage() {
                       {group.unread ? (
                         <span
                           aria-hidden="true"
-                          className="inline-block h-2 w-2 rounded-full bg-[#8B5CF6]"
+                          className="inline-block h-2 w-2 rounded-full bg-[var(--rk-queued)]"
                         />
                       ) : null}
                     </div>
@@ -2224,7 +2304,7 @@ export function ShellPage() {
                         type="button"
                         aria-label={t`Delete ${bot.name}`}
                         onClick={() => setDeleteTarget(bot)}
-                        className="text-[12.5px] text-[#FF5364]"
+                        className="text-[12.5px] text-[var(--rk-danger)]"
                       >
                         <Trans>Delete</Trans>
                       </button>
@@ -2239,16 +2319,16 @@ export function ShellPage() {
           onClick={() => setPluginsOpen(true)}
           className="mx-3 mb-1 flex items-center gap-3 rounded-[11px] px-2.5 py-2 hover:bg-[var(--rk-hover)]"
         >
-          <span className="grid h-[30px] w-[30px] place-items-center rounded-full bg-[var(--rk-solid-ink)] text-[var(--rk-muted)]">
+          <span className="grid h-[30px] w-[30px] place-items-center rounded-full bg-[var(--rk-surface-2)] text-[var(--rk-ink)]">
             <Puzzle size={15} strokeWidth={1.7} />
           </span>
           <span className="text-[14.5px] text-[var(--rk-body)]">
             <Trans>Plugins</Trans>
           </span>
         </button>
-        <div className="relative">
+        <div className="relative z-20">
           {menuOpen ? (
-            <div className="absolute bottom-14 inset-x-3 rounded-2xl border border-[var(--rk-hairline-strong)] bg-[var(--rk-surface-2)] p-2 shadow-[var(--rk-shadow)]">
+            <div className="absolute bottom-14 inset-x-3 z-30 rounded-2xl border border-[var(--rk-hairline-strong)] bg-[var(--rk-surface-2)] p-2 shadow-[var(--rk-shadow)]">
               {themePickerOpen ? (
                 <>
                   <button
@@ -2359,6 +2439,40 @@ export function ShellPage() {
                       {uiThemeById(uiTheme).label}
                     </span>
                   </button>
+                  {active && !inGroup ? (
+                    <button
+                      type="button"
+                      data-testid="restart-computer-menu"
+                      disabled={computerRestartBusy}
+                      aria-label={t`Restart computer`}
+                      onClick={() => void restartActiveComputer()}
+                      className="flex w-full items-center gap-3 rounded-[11px] px-3 py-2.5 hover:bg-[var(--rk-hover)] disabled:opacity-40"
+                    >
+                      <Monitor size={16} strokeWidth={1.7} className="text-[var(--rk-muted)]" />
+                      <span className="flex-1 text-start text-[14.5px] text-[var(--rk-ink)]">
+                        {computerRestartBusy ? (
+                          <Trans>Restarting…</Trans>
+                        ) : (
+                          <Trans>Restart computer</Trans>
+                        )}
+                      </span>
+                    </button>
+                  ) : null}
+                  {canRepairStack ? (
+                    <button
+                      type="button"
+                      data-testid="restart-api-menu"
+                      disabled={stackRestartBusy}
+                      aria-label={t`Restart API`}
+                      onClick={() => void restartLocalStack()}
+                      className="flex w-full items-center gap-3 rounded-[11px] px-3 py-2.5 hover:bg-[var(--rk-hover)] disabled:opacity-40"
+                    >
+                      <RefreshCw size={16} strokeWidth={1.7} className="text-[var(--rk-muted)]" />
+                      <span className="flex-1 text-start text-[14.5px] text-[var(--rk-ink)]">
+                        {stackRestartBusy ? <Trans>Restarting…</Trans> : <Trans>Restart API</Trans>}
+                      </span>
+                    </button>
+                  ) : null}
                   <button
                     type="button"
                     onClick={() => void authClient.signOut().then(() => navigate("/"))}
@@ -2480,6 +2594,7 @@ export function ShellPage() {
         </div>
         <Transcript
           scrollRef={messageScroll}
+          followRef={followTranscript}
           artifactTarget={transcriptArtifactTarget}
           messages={activeSnapshot?.messages ?? []}
           olderCursor={activeSnapshot?.olderCursor ?? null}
@@ -2506,8 +2621,41 @@ export function ShellPage() {
           onSpeak={speakMessage}
         />
         {recordingSkill ? (
-          <div className="px-6 pb-2 text-center text-[13px] text-[#E65707]">
+          <div className="px-6 pb-2 text-center text-[13px] text-[var(--rk-danger)]">
             <Trans>Teaching in progress — stop teaching before sending a new message.</Trans>
+          </div>
+        ) : null}
+        {stackRepair ? (
+          <div className="px-6 pb-2">
+            <BuiCard
+              data-testid="worker-stall-banner"
+              className="flex items-start justify-between gap-3 border border-[var(--rk-hairline-strong)] p-3.5"
+            >
+              <p className="min-w-0 text-[13.5px] leading-[1.45] text-[var(--rk-ink)]">
+                {stackRepair.detail ?? stackRepair.summary}
+              </p>
+              {canRepairStack ? (
+                <BuiButton
+                  tone="accent"
+                  disabled={approvalBusyId === stackRepair.id}
+                  onClick={() => void answerApproval(stackRepair)}
+                >
+                  {approvalBusyId === stackRepair.id ? (
+                    <Trans>Starting…</Trans>
+                  ) : (
+                    <Trans>Start worker</Trans>
+                  )}
+                </BuiButton>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setApprovalsOpen(true)}
+                  className="shrink-0 text-[13px] text-[var(--rk-body)] hover:text-[var(--rk-ink)]"
+                >
+                  <Trans>Approvals</Trans>
+                </button>
+              )}
+            </BuiCard>
           </div>
         ) : null}
         <Composer
@@ -2673,7 +2821,7 @@ export function ShellPage() {
                   {computerOpen ? null : (
                     <button
                       type="button"
-                      className="absolute end-2.5 top-2.5 z-10 grid h-8 w-8 place-items-center rounded-[10px] bg-[rgba(4,4,5,.72)] text-[var(--rk-ink)] hover:bg-[rgba(4,4,5,.9)]"
+                      className="absolute end-2.5 top-2.5 z-10 grid h-8 w-8 place-items-center rounded-[10px] bg-[var(--rk-overlay)] text-[var(--rk-mark-dot)] hover:opacity-90"
                       aria-label={computerEnlarged ? t`Shrink computer` : t`Enlarge computer`}
                       aria-pressed={computerEnlarged}
                       data-testid="computer-enlarge-screen"
@@ -2722,6 +2870,7 @@ export function ShellPage() {
                 </div>
                 {computer?.state === "error" ||
                 computer?.state === "stopped" ||
+                computer?.state === "booting" ||
                 (computer?.state === "running" && !embeddedScreenUrl) ? (
                   <ComputerMaintenanceActions
                     botId={active.id}
@@ -2745,6 +2894,7 @@ export function ShellPage() {
                   <ApprovalsPanelSection
                     items={botApprovals}
                     busyId={approvalBusyId}
+                    canRepair={canRepairStack}
                     onViewAll={() => setApprovalsOpen(true)}
                     onView={openApproval}
                     onApprove={(item) => void answerApproval(item)}
@@ -2758,7 +2908,7 @@ export function ShellPage() {
                     return (
                       <div
                         key={routine.id}
-                        className="flex w-full items-center gap-2 rounded-[11px] px-2.5 py-2.5 hover:bg-[#121214]"
+                        className="flex w-full items-center gap-2 rounded-[11px] px-2.5 py-2.5 hover:bg-[var(--rk-hover)]"
                       >
                         <button
                           type="button"
@@ -2773,7 +2923,7 @@ export function ShellPage() {
                           }}
                           className="flex min-w-0 flex-1 items-center gap-3 text-start"
                         >
-                          <span className="text-[#E65707]">◷</span>
+                          <span className="text-[var(--rk-danger)]">◷</span>
                           <span
                             className="min-w-0 flex-1 truncate text-start text-[14.5px] text-[var(--rk-ink)]"
                             dir="auto"
@@ -2788,7 +2938,7 @@ export function ShellPage() {
                           <button
                             type="button"
                             onClick={() => void stopRun()}
-                            className="shrink-0 rounded-full bg-[rgba(230,87,7,.14)] px-2.5 py-1 text-[12px] text-[#E65707]"
+                            className="shrink-0 rounded-full bg-[color-mix(in_srgb,var(--rk-danger)_14%,transparent)] px-2.5 py-1 text-[12px] text-[var(--rk-danger)]"
                           >
                             <Trans>Running · Stop</Trans>
                           </button>
@@ -2942,7 +3092,7 @@ export function ShellPage() {
                 </label>
                 <div className="mt-5 text-[14px] text-[var(--rk-muted)]">
                   <Trans>When to run</Trans>
-                  <span className="ml-2 text-[12.5px] text-[#6E6E74]">
+                  <span className="ml-2 text-[12.5px] text-[var(--rk-muted-2)]">
                     {editingRoutine?.timezone ?? localTimezone()}
                   </span>
                   <Suspense fallback={null}>
@@ -3046,7 +3196,7 @@ export function ShellPage() {
                         type="button"
                         disabled={savingRoutine || runningRoutine}
                         onClick={() => setDeleteRoutineTarget(editingRoutine)}
-                        className="rounded-[11px] px-4 py-2 text-[14px] text-[#FF5364] disabled:opacity-40"
+                        className="rounded-[11px] px-4 py-2 text-[14px] text-[var(--rk-danger)] disabled:opacity-40"
                       >
                         <Trans>Delete routine</Trans>
                       </button>
@@ -3054,7 +3204,7 @@ export function ShellPage() {
                   ) : null}
                 </div>
                 {routineError ? (
-                  <p role="alert" className="mt-3 text-[13px] text-[#EF6461]">
+                  <p role="alert" className="mt-3 text-[13px] text-[var(--rk-danger)]">
                     {routineError}
                   </p>
                 ) : null}
@@ -3195,6 +3345,7 @@ export function ShellPage() {
             items={pendingApprovals}
             loading={approvalsLoading}
             busyId={approvalBusyId}
+            canRepair={canRepairStack}
             onClose={() => setApprovalsOpen(false)}
             onView={openApproval}
             onApprove={(item) => void answerApproval(item)}
@@ -3269,7 +3420,7 @@ export function ShellPage() {
       </Suspense>
 
       {booting ? (
-        <div className="absolute inset-0 z-30 flex flex-col items-center justify-center gap-[22px] bg-[rgba(4,4,5,.96)]">
+        <div className="absolute inset-0 z-30 flex flex-col items-center justify-center gap-[22px] bg-[var(--rk-overlay)]">
           <div className="text-[19px] font-medium text-[var(--rk-ink)]">
             <Trans>Booting up {active?.name}’s computer</Trans>
           </div>
@@ -3305,7 +3456,7 @@ export function ShellPage() {
                 </span>
               )}
               {!recordingSkill && hasControl ? (
-                <span className="rounded-full bg-[rgba(48,162,75,.14)] px-[11px] py-1 text-[13px] text-[#4ECB71]">
+                <span className="rounded-full bg-[color-mix(in_srgb,var(--rk-success)_14%,transparent)] px-[11px] py-1 text-[13px] text-[var(--rk-success)]">
                   <Trans>You have control</Trans>
                 </span>
               ) : null}
@@ -3369,10 +3520,7 @@ export function ShellPage() {
             </div>
           </div>
           {sendError ? (
-            <div
-              role="alert"
-              className="border-b border-[#5A2A2A] bg-[#2A1717] px-[18px] py-2 text-[13px] text-[#F1A8A8]"
-            >
+            <div role="alert" className="rk-banner-danger border-b px-[18px] py-2 text-[13px]">
               {sendError}
             </div>
           ) : null}
@@ -3407,7 +3555,7 @@ export function ShellPage() {
                 ) : null}
               </>
             ) : (
-              <div className="grid h-full place-items-center text-sm text-[var(--rk-muted-2)]">
+              <div className="grid h-full place-items-center text-sm text-[var(--rk-muted)]">
                 {computer?.state === "suspended"
                   ? t`Computer is asleep`
                   : computerLabel(computer?.mode, active.name)}
@@ -3422,6 +3570,7 @@ export function ShellPage() {
 
 const Transcript = memo(function Transcript({
   scrollRef,
+  followRef,
   artifactTarget,
   messages,
   olderCursor,
@@ -3445,6 +3594,7 @@ const Transcript = memo(function Transcript({
   onSpeak,
 }: {
   scrollRef: RefObject<HTMLDivElement | null>;
+  followRef: MutableRefObject<boolean>;
   artifactTarget: ArtifactTarget;
   messages: ThreadMessage[];
   olderCursor: number | null;
@@ -3468,71 +3618,116 @@ const Transcript = memo(function Transcript({
   onSpeak: (message: ThreadMessage) => void;
 }) {
   const { t } = useLingui();
+  const contentRef = useRef<HTMLDivElement>(null);
+  const ignoreScroll = useRef(false);
+  const wasLoadingOlder = useRef(false);
   const messageById = useMemo(
     () => new Map(messages.map((message) => [message.id, message])),
     [messages],
   );
+
+  const pinIfFollowing = useCallback(() => {
+    const element = scrollRef.current;
+    if (!element || !followRef.current) return;
+    ignoreScroll.current = true;
+    scrollTranscriptToBottom(element);
+    window.requestAnimationFrame(() => {
+      ignoreScroll.current = false;
+    });
+  }, [followRef, scrollRef]);
+
+  useLayoutEffect(() => {
+    if (loadingOlder) {
+      wasLoadingOlder.current = true;
+      return;
+    }
+    if (wasLoadingOlder.current) {
+      wasLoadingOlder.current = false;
+      return;
+    }
+    pinIfFollowing();
+  }, [loadingOlder, messages, pinIfFollowing, running]);
+
+  useEffect(() => {
+    const content = contentRef.current;
+    if (!content || typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(() => {
+      if (wasLoadingOlder.current) return;
+      pinIfFollowing();
+    });
+    observer.observe(content);
+    return () => observer.disconnect();
+  }, [pinIfFollowing]);
+
   return (
     <div
       ref={scrollRef}
       data-testid="transcript"
-      className="rk-scroll flex flex-1 flex-col gap-2 overflow-y-auto px-4 py-5 md:px-7 md:py-6"
+      onScroll={() => {
+        if (ignoreScroll.current) return;
+        const element = scrollRef.current;
+        if (!element) return;
+        followRef.current = isTranscriptNearBottom(element);
+      }}
+      className="rk-scroll flex flex-1 flex-col overflow-y-auto px-4 py-5 md:px-7 md:py-6"
     >
-      {olderCursor != null ? (
-        <button
-          type="button"
-          disabled={loadingOlder}
-          onClick={() => void onLoadOlder()}
-          className="self-center rounded-lg px-3 py-1.5 text-[13px] text-[var(--rk-muted)] hover:bg-[var(--rk-surface-2)] hover:text-[var(--rk-body)] disabled:opacity-50"
-        >
-          {loadingOlder ? t`Loading…` : t`Load earlier messages`}
-        </button>
-      ) : null}
-      {messages.map((message) => (
-        <div
-          key={message.id}
-          data-message-id={message.id}
-          className="group/message relative pt-9 hover:z-20"
-        >
-          <MessageHoverActions message={message} onReply={onReply} />
-          <MessageView
-            artifactTarget={artifactTarget}
-            message={message}
-            canAnswer={message.id === answerableAskMessageId}
-            onOpenBot={onOpenBot}
-            onOpenPeerMessages={onOpenPeerMessages}
-            onAnswer={onAnswer}
-            speakerName={message.role === "bot" ? memberName?.(message.botId) : undefined}
-            memberName={memberName}
-            replyPreview={
-              message.replyToMessageId ? messageById.get(message.replyToMessageId) : undefined
-            }
-            replyToMessageId={message.replyToMessageId}
-            onJumpToMessage={onJumpToMessage}
-            onRefresh={onRefresh}
-            onBotChanged={onBotChanged}
-            onAddRoutine={onAddRoutine}
-            voiceReady={voiceReady}
-            speaking={speakingMessageId === message.id}
-            onSpeak={() => onSpeak(message)}
-          />
-        </div>
-      ))}
-      {running ? (
-        <div
-          className="flex items-end justify-start gap-2.5 pt-1"
-          data-testid="working-indicator"
-          role="status"
-          aria-live="polite"
-        >
-          {workingAvatar ? (
-            <BotAvatar color={workingAvatar.color} size={32} status={workingAvatar.status} />
-          ) : null}
-          <div className="flex max-w-[74%] items-center rounded-[20px] bg-[var(--rk-surface-2)] px-[18px] py-3 text-[15.5px] leading-[1.5]">
-            <LoadingState label="working" startedAt={workingStartedAt} />
+      <div ref={contentRef} className="flex flex-col gap-2">
+        {olderCursor != null ? (
+          <button
+            type="button"
+            disabled={loadingOlder}
+            onClick={() => void onLoadOlder()}
+            className="self-center rounded-lg px-3 py-1.5 text-[13px] text-[var(--rk-muted)] hover:bg-[var(--rk-surface-2)] hover:text-[var(--rk-body)] disabled:opacity-50"
+          >
+            {loadingOlder ? t`Loading…` : t`Load earlier messages`}
+          </button>
+        ) : null}
+        {messages.map((message) => (
+          <div
+            key={message.id}
+            data-message-id={message.id}
+            className="group/message relative pt-9 hover:z-20"
+          >
+            <MessageHoverActions message={message} onReply={onReply} />
+            <MessageView
+              artifactTarget={artifactTarget}
+              message={message}
+              canAnswer={message.id === answerableAskMessageId}
+              onOpenBot={onOpenBot}
+              onOpenPeerMessages={onOpenPeerMessages}
+              onAnswer={onAnswer}
+              speakerName={message.role === "bot" ? memberName?.(message.botId) : undefined}
+              memberName={memberName}
+              replyPreview={
+                message.replyToMessageId ? messageById.get(message.replyToMessageId) : undefined
+              }
+              replyToMessageId={message.replyToMessageId}
+              onJumpToMessage={onJumpToMessage}
+              onRefresh={onRefresh}
+              onBotChanged={onBotChanged}
+              onAddRoutine={onAddRoutine}
+              voiceReady={voiceReady}
+              speaking={speakingMessageId === message.id}
+              onSpeak={() => onSpeak(message)}
+            />
           </div>
-        </div>
-      ) : null}
+        ))}
+        {running ? (
+          <div
+            className="flex items-end justify-start gap-2.5 pt-1"
+            data-testid="working-indicator"
+            role="status"
+            aria-live="polite"
+          >
+            {workingAvatar ? (
+              <BotAvatar color={workingAvatar.color} size={32} status={workingAvatar.status} />
+            ) : null}
+            <div className="flex max-w-[74%] items-center rounded-[20px] bg-[var(--rk-surface-2)] px-[18px] py-3 text-[15.5px] leading-[1.5]">
+              <LoadingState label="working" startedAt={workingStartedAt} />
+            </div>
+          </div>
+        ) : null}
+      </div>
     </div>
   );
 });
@@ -3730,14 +3925,14 @@ const Composer = memo(function Composer({
   return (
     <div className="relative z-30 px-3 pb-4 pt-3 md:px-6 md:pb-6">
       {sendError || dictationError ? (
-        <div className="mb-3 rounded-[14px] border border-[#5A2A2A] bg-[#2A1717] px-4 py-2 text-[13px] text-[#F1A8A8]">
+        <div className="mb-3 rk-banner-danger rounded-[14px] px-4 py-2 text-[13px]">
           {sendError ?? dictationError}
         </div>
       ) : null}
       {replyTarget ? (
         <div
           data-testid="reply-chip"
-          className="mb-2 flex items-center gap-2 rounded-full border border-[var(--rk-hairline-strong)] bg-[var(--rk-solid-ink)] px-3 py-1.5 text-[13px] text-[var(--rk-body)]"
+          className="mb-2 flex items-center gap-2 rounded-full border border-[var(--rk-hairline-strong)] bg-[var(--rk-surface)] px-3 py-1.5 text-[13px] text-[var(--rk-body)]"
         >
           <span className="min-w-0 flex-1 truncate text-[var(--rk-muted)]">{t`Replying to ${replyName}`}</span>
           <button
@@ -3751,7 +3946,7 @@ const Composer = memo(function Composer({
         </div>
       ) : null}
       {attachmentNotice ? (
-        <div className="mb-3 rounded-[14px] border border-[#3A3A20] bg-[#232316] px-4 py-2 text-[13px] text-[#D6CFA0]">
+        <div className="mb-3 rk-banner-warning rounded-[14px] px-4 py-2 text-[13px]">
           {attachmentNotice}
         </div>
       ) : null}
@@ -3760,7 +3955,7 @@ const Composer = memo(function Composer({
           {pendingAttachments.map((attachment) => (
             <div
               key={attachment.id}
-              className="flex items-center gap-2 rounded-full border border-[var(--rk-hairline-strong)] bg-[var(--rk-solid-ink)] px-3 py-1.5 text-[13px] text-[var(--rk-body)]"
+              className="flex items-center gap-2 rounded-full border border-[var(--rk-hairline-strong)] bg-[var(--rk-surface)] px-3 py-1.5 text-[13px] text-[var(--rk-body)]"
             >
               {attachment.previewUrl ? (
                 <img
@@ -3789,7 +3984,7 @@ const Composer = memo(function Composer({
       {mentionOptions.length ? (
         <div
           data-testid="mention-picker"
-          className="mb-2 overflow-hidden rounded-[14px] border border-[var(--rk-hairline-strong)] bg-[var(--rk-solid-ink)]"
+          className="mb-2 overflow-hidden rounded-[14px] border border-[var(--rk-hairline-strong)] bg-[var(--rk-surface)]"
         >
           {mentionOptions.map((mention) => (
             <button
@@ -3817,7 +4012,7 @@ const Composer = memo(function Composer({
       {showSlashPicker ? (
         <div
           data-testid="slash-picker"
-          className="mb-2 overflow-hidden rounded-[14px] border border-[var(--rk-hairline-strong)] bg-[var(--rk-solid-ink)]"
+          className="mb-2 overflow-hidden rounded-[14px] border border-[var(--rk-hairline-strong)] bg-[var(--rk-surface)]"
         >
           {slashSkillOptions.map((skill) => (
             <button
@@ -3894,7 +4089,7 @@ const Composer = memo(function Composer({
           onTouchEnd={onDictateStop}
           className={`grid h-[34px] w-[34px] shrink-0 place-items-center rounded-full border ${
             dictating
-              ? "border-[#4ECB71] bg-[rgba(48,162,75,.16)] text-[#4ECB71]"
+              ? "border-[var(--rk-success)] bg-[color-mix(in_srgb,var(--rk-success)_16%,transparent)] text-[var(--rk-success)]"
               : "border-[var(--rk-hairline-strong)] text-[var(--rk-muted)]"
           }`}
           title={transcribe ? t`Hold to talk` : t`Hold to talk (on-device dictation)`}
@@ -3996,7 +4191,7 @@ const Composer = memo(function Composer({
               setDropActive(false);
               attachFromClipboard(event);
             }}
-            className="max-h-32 min-h-[24px] min-w-[8rem] flex-1 resize-none overflow-y-auto bg-transparent py-0.5 text-[15.5px] leading-6 text-[var(--rk-ink)] outline-none disabled:opacity-40"
+            className="max-h-32 min-h-[24px] min-w-[8rem] flex-1 resize-none overflow-y-auto bg-transparent py-0.5 text-[15.5px] leading-6 text-[var(--rk-ink)] outline-none placeholder:text-[var(--rk-muted)] disabled:opacity-40"
           />
         </div>
         {running ? (
@@ -4215,7 +4410,7 @@ function ToolSteps({
             <span
               className="text-[13px]"
               style={{
-                color: isCurrent ? "#F5A03C" : "#4ECB71",
+                color: isCurrent ? "var(--rk-warning)" : "var(--rk-success)",
                 animation: isCurrent ? "rkPulse 1.2s ease-in-out infinite" : undefined,
               }}
             >
@@ -4294,7 +4489,7 @@ const MessageView = memo(function MessageView({
           data-testid="reply-parent-preview"
           aria-label={t`Jump to replied message`}
           onClick={() => onJumpToMessage?.(parentJumpId)}
-          className="mb-2 block max-w-[74%] truncate rounded-[14px] border border-[var(--rk-hairline-strong)] bg-[var(--rk-hover)] px-3 py-2 text-start text-[12.5px] text-[var(--rk-muted)] hover:border-[#34343B] hover:text-[var(--rk-body)]"
+          className="mb-2 block max-w-[74%] truncate rounded-[14px] border border-[var(--rk-hairline-strong)] bg-[var(--rk-hover)] px-3 py-2 text-start text-[12.5px] text-[var(--rk-muted)] hover:border-[var(--rk-hairline-strong)] hover:text-[var(--rk-body)]"
           dir="auto"
         >
           {replyPreview ? previewMessageText(replyPreview) : t`Earlier message`}
@@ -4390,7 +4585,7 @@ const MessageView = memo(function MessageView({
               key={i}
               className="flex items-center justify-center gap-2 py-1 text-[13.5px] text-[var(--rk-muted)]"
             >
-              <span className="text-[#E65707]">◷</span>
+              <span className="text-[var(--rk-danger)]">◷</span>
               <span>{block.text}</span>
             </div>
           );
@@ -4428,7 +4623,7 @@ const MessageView = memo(function MessageView({
           return (
             <div
               key={i}
-              className="w-[min(420px,90%)] rounded-[18px] border border-[#232326] bg-[var(--rk-solid-ink)] px-[18px] py-4"
+              className="w-[min(420px,90%)] rounded-[18px] border border-[var(--rk-hairline-strong)] bg-[var(--rk-surface)] px-[18px] py-4"
             >
               <div className="flex items-center justify-between gap-3">
                 <span className="text-[15px] font-medium text-[var(--rk-ink)]" dir="auto">
@@ -4438,11 +4633,15 @@ const MessageView = memo(function MessageView({
                   className="rounded-full px-[11px] py-1 text-[13px]"
                   style={{
                     background: failed
-                      ? "rgba(230,87,7,.14)"
+                      ? "color-mix(in srgb, var(--rk-danger) 14%, transparent)"
                       : running
-                        ? "rgba(245,160,60,.14)"
-                        : "rgba(48,162,75,.14)",
-                    color: failed ? "#E65707" : running ? "#F5A03C" : "#4ECB71",
+                        ? "color-mix(in srgb, var(--rk-warning) 14%, transparent)"
+                        : "color-mix(in srgb, var(--rk-success) 14%, transparent)",
+                    color: failed
+                      ? "var(--rk-danger)"
+                      : running
+                        ? "var(--rk-warning)"
+                        : "var(--rk-success)",
                     animation: running ? "rkPulse 1.2s ease-in-out infinite" : undefined,
                   }}
                 >
@@ -4468,7 +4667,7 @@ const MessageView = memo(function MessageView({
               type="button"
               disabled={removed}
               onClick={() => onOpenBot(block.botId)}
-              className="w-[min(340px,90%)] rounded-[18px] border border-[#232326] bg-[var(--rk-solid-ink)] px-[18px] py-4 text-start disabled:opacity-60"
+              className="w-[min(340px,90%)] rounded-[18px] border border-[var(--rk-hairline-strong)] bg-[var(--rk-surface)] px-[18px] py-4 text-start disabled:opacity-60"
             >
               <div className="flex items-center justify-between">
                 <span className="text-[15px] font-medium text-[var(--rk-ink)]" dir="auto">
@@ -4477,8 +4676,10 @@ const MessageView = memo(function MessageView({
                 <span
                   className="rounded-full px-[11px] py-1 text-[13px]"
                   style={{
-                    background: removed ? "rgba(230,87,7,.14)" : "rgba(48,162,75,.14)",
-                    color: removed ? "#E65707" : "#4ECB71",
+                    background: removed
+                      ? "color-mix(in srgb, var(--rk-danger) 14%, transparent)"
+                      : "color-mix(in srgb, var(--rk-success) 14%, transparent)",
+                    color: removed ? "var(--rk-danger)" : "var(--rk-success)",
                   }}
                 >
                   {block.status === "archived" ? (
@@ -4605,8 +4806,8 @@ const MessageView = memo(function MessageView({
               <div className="flex flex-col gap-2 rounded-[20px] bg-[var(--rk-surface-2)] px-5 py-4">
                 {block.lines.map((line) => (
                   <div key={line.k} className="flex items-baseline gap-2.5 text-[15px]">
-                    <span className="text-[#30A24B]">✓</span>
-                    <span className="font-semibold text-white">{line.k}</span>
+                    <span className="text-[var(--rk-success)]">✓</span>
+                    <span className="font-semibold text-[var(--rk-ink)]">{line.k}</span>
                     <span className="text-[var(--rk-muted)]">→</span>
                     <span>{line.v}</span>
                   </div>
@@ -4636,13 +4837,13 @@ const MessageView = memo(function MessageView({
           return (
             <div
               key={i}
-              className="w-[340px] rounded-[18px] border border-[#232326] bg-[var(--rk-solid-ink)] px-[18px] py-4"
+              className="w-[340px] rounded-[18px] border border-[var(--rk-hairline-strong)] bg-[var(--rk-surface)] px-[18px] py-4"
             >
               <div className="flex items-center justify-between">
                 <span className="text-[15px] font-medium text-[var(--rk-ink)]">
                   <Trans>Computer</Trans>
                 </span>
-                <span className="rounded-full bg-[rgba(48,162,75,.14)] px-[11px] py-1 text-[13px] text-[#4ECB71]">
+                <span className="rounded-full bg-[color-mix(in_srgb,var(--rk-success)_14%,transparent)] px-[11px] py-1 text-[13px] text-[var(--rk-success)]">
                   {block.state}
                 </span>
               </div>
@@ -4747,7 +4948,11 @@ function CreateBotForm({
         </button>
       </div>
       {error ? (
-        <p role="alert" data-testid="create-bot-error" className="mb-3 text-[13px] text-[#C94244]">
+        <p
+          role="alert"
+          data-testid="create-bot-error"
+          className="mb-3 text-[13px] text-[var(--rk-danger)]"
+        >
           {error}
         </p>
       ) : null}
@@ -4841,6 +5046,10 @@ function BotSettings({
   const [catalog, setCatalog] = useState<ModelCatalogEntry[]>([]);
   const [me, setMe] = useState<Me | null>(null);
   const [modelMetaReady, setModelMetaReady] = useState(false);
+  const [soulDoc, setSoulDoc] = useState<MemoryDocument | null>(null);
+  const [identityDoc, setIdentityDoc] = useState<MemoryDocument | null>(null);
+  const [soul, setSoul] = useState("");
+  const [identity, setIdentity] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -4859,7 +5068,22 @@ function BotSettings({
         setModelMetaReady(true);
       })
       .catch(() => undefined);
-  }, []);
+    void rpc.memory
+      .list({ botId: bot.id })
+      .then((documents) => {
+        const soulFile = identityDocumentByPath(documents, SOUL_IDENTITY_PATH);
+        const identityFile = identityDocumentByPath(documents, BOT_IDENTITY_PATH);
+        if (soulFile) {
+          setSoulDoc(soulFile);
+          setSoul(soulFile.content);
+        }
+        if (identityFile) {
+          setIdentityDoc(identityFile);
+          setIdentity(identityFile.content);
+        }
+      })
+      .catch(() => undefined);
+  }, [bot.id]);
 
   const connectedOptions: Array<{
     key: string;
@@ -4947,6 +5171,18 @@ function BotSettings({
           className="mt-2 w-full rounded-[11px] border border-[var(--rk-hairline-strong)] bg-transparent px-3.5 py-3 text-[var(--rk-ink)]"
         />
       </label>
+      <IdentityMarkdownField
+        path={SOUL_IDENTITY_PATH}
+        hint={<Trans>How it speaks.</Trans>}
+        value={soul}
+        onChange={setSoul}
+      />
+      <IdentityMarkdownField
+        path={BOT_IDENTITY_PATH}
+        hint={<Trans>How it acts.</Trans>}
+        value={identity}
+        onChange={setIdentity}
+      />
       <details data-testid="bot-settings-advanced" className="group mt-5">
         <summary className="flex cursor-pointer list-none items-center justify-between gap-3 text-[14px] text-[var(--rk-muted)]">
           <span className="text-[var(--rk-muted)]">
@@ -5021,7 +5257,7 @@ function BotSettings({
                   onClick={() => setMemoryScope(option.value)}
                   className={`flex-1 rounded-[11px] border px-3 py-2 text-[13px] ${
                     memoryScope === option.value
-                      ? "border-[#4A4A50] bg-[var(--rk-surface-2)] text-[var(--rk-ink)]"
+                      ? "border-[var(--rk-hairline-strong)] bg-[var(--rk-surface-2)] text-[var(--rk-ink)]"
                       : "border-[var(--rk-hairline-strong)] text-[var(--rk-muted)]"
                   }`}
                 >
@@ -5057,7 +5293,7 @@ function BotSettings({
           </label>
         ) : null}
       </details>
-      {error ? <p className="mt-2 text-[13px] text-[#E65707]">{error}</p> : null}
+      {error ? <p className="mt-2 text-[13px] text-[var(--rk-danger)]">{error}</p> : null}
       <div className="mt-5 flex flex-col items-start gap-3">
         <button
           type="button"
@@ -5066,27 +5302,41 @@ function BotSettings({
             setSaving(true);
             setError(null);
             const selected = modelKey ? parseModelOptionKey(modelKey) : null;
-            void onSave({
-              name,
-              title,
-              description,
-              instructions: description,
-              computerMode,
-              memoryScope,
-              autoSpeak,
-              voiceId: voiceId || null,
-              modelProvider: selected?.provider ?? null,
-              modelId: selected?.modelId ?? null,
-              // Only clear thinking when catalog metadata is available; otherwise
-              // preserve the stored override if models.list failed or is still loading.
-              ...(modelMetaReady
-                ? {
-                    thinkingLevel: thinkingOptions.length
-                      ? ((thinkingLevel || null) as ThinkingLevel | null)
-                      : null,
-                  }
-                : {}),
-            })
+            void (async () => {
+              const writes: Array<Promise<void>> = [];
+              if (soulDoc && soul !== soulDoc.content) {
+                writes.push(
+                  rpc.memory.update({ documentId: soulDoc.id, content: soul }).then(setSoulDoc),
+                );
+              }
+              if (identityDoc && identity !== identityDoc.content) {
+                writes.push(
+                  rpc.memory
+                    .update({ documentId: identityDoc.id, content: identity })
+                    .then(setIdentityDoc),
+                );
+              }
+              if (writes.length) await Promise.all(writes);
+              await onSave({
+                name,
+                title,
+                description,
+                instructions: description,
+                computerMode,
+                memoryScope,
+                autoSpeak,
+                voiceId: voiceId || null,
+                modelProvider: selected?.provider ?? null,
+                modelId: selected?.modelId ?? null,
+                ...(modelMetaReady
+                  ? {
+                      thinkingLevel: thinkingOptions.length
+                        ? ((thinkingLevel || null) as ThinkingLevel | null)
+                        : null,
+                    }
+                  : {}),
+              });
+            })()
               .catch((err) => setError(err instanceof Error ? err.message : t`Could not save`))
               .finally(() => setSaving(false));
           }}
@@ -5101,7 +5351,7 @@ function BotSettings({
         >
           <Trans>Export</Trans>
         </button>
-        <button type="button" onClick={onClear} className="text-[14px] text-[#E65707]">
+        <button type="button" onClick={onClear} className="text-[14px] text-[var(--rk-danger)]">
           <Trans>Clear conversation</Trans>
         </button>
         <ComputerMaintenanceActions
@@ -5168,7 +5418,7 @@ function NewBotSectionDialog({
   return (
     <div
       role="presentation"
-      className="absolute inset-0 z-50 grid place-items-center bg-[rgba(4,4,5,.76)] px-5"
+      className="absolute inset-0 z-50 grid place-items-center bg-[var(--rk-overlay)] px-5"
       onPointerDown={() => {
         if (!saving) onCancel();
       }}
@@ -5203,16 +5453,16 @@ function NewBotSectionDialog({
             maxLength={60}
             value={name}
             onChange={(event) => setName(event.target.value)}
-            className="mt-2 w-full rounded-[11px] border border-[var(--rk-hairline-strong)] bg-[var(--rk-input)] px-3.5 py-2.5 text-[14.5px] text-[var(--rk-ink)] outline-none focus:border-[#66666D]"
+            className="mt-2 w-full rounded-[11px] border border-[var(--rk-hairline-strong)] bg-[var(--rk-input)] px-3.5 py-2.5 text-[14.5px] text-[var(--rk-ink)] outline-none focus:border-[var(--rk-hairline-strong)]"
           />
         </label>
-        {error ? <p className="mt-3 text-[13.5px] text-[#FF5364]">{error}</p> : null}
+        {error ? <p className="mt-3 text-[13.5px] text-[var(--rk-danger)]">{error}</p> : null}
         <div className="mt-5 flex justify-end gap-2.5">
           <button
             type="button"
             disabled={saving}
             onClick={onCancel}
-            className="rounded-[10px] px-3.5 py-2 text-[14px] text-[var(--rk-body)] hover:bg-[#29292D] disabled:opacity-40"
+            className="rounded-[10px] px-3.5 py-2 text-[14px] text-[var(--rk-body)] hover:bg-[var(--rk-hover)] disabled:opacity-40"
           >
             <Trans>Cancel</Trans>
           </button>
@@ -5253,7 +5503,7 @@ function ClearConversationDialog({
   return (
     <div
       role="presentation"
-      className="absolute inset-0 z-50 grid place-items-center bg-[rgba(4,4,5,.76)] px-5"
+      className="absolute inset-0 z-50 grid place-items-center bg-[var(--rk-overlay)] px-5"
       onPointerDown={() => {
         if (!clearing) onCancel();
       }}
@@ -5278,13 +5528,13 @@ function ClearConversationDialog({
             memory, and routines are kept.
           </Trans>
         </p>
-        {error ? <p className="mt-3 text-[13.5px] text-[#FF5364]">{error}</p> : null}
+        {error ? <p className="mt-3 text-[13.5px] text-[var(--rk-danger)]">{error}</p> : null}
         <div className="mt-5 flex justify-end gap-2.5">
           <button
             type="button"
             disabled={clearing}
             onClick={onCancel}
-            className="rounded-[10px] px-3.5 py-2 text-[14px] text-[var(--rk-body)] hover:bg-[#29292D] disabled:opacity-40"
+            className="rounded-[10px] px-3.5 py-2 text-[14px] text-[var(--rk-body)] hover:bg-[var(--rk-hover)] disabled:opacity-40"
           >
             <Trans>Cancel</Trans>
           </button>
@@ -5299,7 +5549,7 @@ function ClearConversationDialog({
                 setClearing(false);
               });
             }}
-            className="rounded-[10px] bg-[#FF5364] px-3.5 py-2 text-[14px] font-medium text-white disabled:opacity-40"
+            className="rounded-[10px] bg-[var(--rk-danger)] px-3.5 py-2 text-[14px] font-medium text-[var(--rk-danger-ink)] disabled:opacity-40"
           >
             {clearing ? <Trans>Clearing…</Trans> : <Trans>Clear</Trans>}
           </button>
@@ -5334,7 +5584,7 @@ function DeleteBotDialog({
   return (
     <div
       role="presentation"
-      className="absolute inset-0 z-50 grid place-items-center bg-[rgba(4,4,5,.76)] px-5"
+      className="absolute inset-0 z-50 grid place-items-center bg-[var(--rk-overlay)] px-5"
       onPointerDown={() => {
         if (!deleting) onCancel();
       }}
@@ -5396,13 +5646,13 @@ function DeleteBotDialog({
             </span>
           </label>
         </fieldset>
-        {error ? <p className="mt-3 text-[13.5px] text-[#FF5364]">{error}</p> : null}
+        {error ? <p className="mt-3 text-[13.5px] text-[var(--rk-danger)]">{error}</p> : null}
         <div className="mt-5 flex justify-end gap-2.5">
           <button
             type="button"
             disabled={deleting}
             onClick={onCancel}
-            className="rounded-[10px] px-3.5 py-2 text-[14px] text-[var(--rk-body)] hover:bg-[#29292D] disabled:opacity-40"
+            className="rounded-[10px] px-3.5 py-2 text-[14px] text-[var(--rk-body)] hover:bg-[var(--rk-hover)] disabled:opacity-40"
           >
             <Trans>Cancel</Trans>
           </button>
@@ -5417,7 +5667,7 @@ function DeleteBotDialog({
                 setDeleting(false);
               });
             }}
-            className="rounded-[10px] bg-[#FF5364] px-3.5 py-2 text-[14px] font-medium text-white disabled:opacity-40"
+            className="rounded-[10px] bg-[var(--rk-danger)] px-3.5 py-2 text-[14px] font-medium text-[var(--rk-danger-ink)] disabled:opacity-40"
           >
             {deleting ? <Trans>Deleting…</Trans> : <Trans>Delete</Trans>}
           </button>
@@ -5451,7 +5701,7 @@ function DeleteRoutineDialog({
   return (
     <div
       role="presentation"
-      className="absolute inset-0 z-50 grid place-items-center bg-[rgba(4,4,5,.76)] px-5"
+      className="absolute inset-0 z-50 grid place-items-center bg-[var(--rk-overlay)] px-5"
       onPointerDown={() => {
         if (!deleting) onCancel();
       }}
@@ -5473,13 +5723,13 @@ function DeleteRoutineDialog({
         >
           <Trans>This cannot be undone.</Trans>
         </p>
-        {error ? <p className="mt-3 text-[13.5px] text-[#FF5364]">{error}</p> : null}
+        {error ? <p className="mt-3 text-[13.5px] text-[var(--rk-danger)]">{error}</p> : null}
         <div className="mt-5 flex justify-end gap-2.5">
           <button
             type="button"
             disabled={deleting}
             onClick={onCancel}
-            className="rounded-[10px] px-3.5 py-2 text-[14px] text-[var(--rk-body)] hover:bg-[#29292D] disabled:opacity-40"
+            className="rounded-[10px] px-3.5 py-2 text-[14px] text-[var(--rk-body)] hover:bg-[var(--rk-hover)] disabled:opacity-40"
           >
             <Trans>Cancel</Trans>
           </button>
@@ -5494,7 +5744,7 @@ function DeleteRoutineDialog({
                 setDeleting(false);
               });
             }}
-            className="rounded-[10px] bg-[#FF5364] px-3.5 py-2 text-[14px] font-medium text-white disabled:opacity-40"
+            className="rounded-[10px] bg-[var(--rk-danger)] px-3.5 py-2 text-[14px] font-medium text-[var(--rk-danger-ink)] disabled:opacity-40"
           >
             {deleting ? <Trans>Deleting…</Trans> : <Trans>Delete</Trans>}
           </button>
@@ -5588,7 +5838,7 @@ function ChoiceCard({
                 type="button"
                 disabled={Boolean(block.answerId) || pending}
                 onClick={() => void choose(option.id)}
-                className={`flex w-full items-center gap-3 rounded-[12px] border border-[var(--rk-hairline-strong)] px-3.5 py-3 text-start disabled:opacity-60 ${block.answerId ? "bg-[#1F1F23]" : "bg-[#161619] hover:bg-[#222226]"}`}
+                className={`flex w-full items-center gap-3 rounded-[12px] border border-[var(--rk-hairline-strong)] px-3.5 py-3 text-start disabled:opacity-60 ${block.answerId ? "bg-[var(--rk-hover)]" : "bg-[var(--rk-surface)] hover:bg-[var(--rk-hover)]"}`}
               >
                 <span className="grid h-[24px] w-[24px] place-items-center rounded-[7px] bg-[var(--rk-hover)] text-[12.5px] text-[var(--rk-muted)]">
                   {option.letter}
@@ -5598,11 +5848,13 @@ function ChoiceCard({
                 >
                   {option.label}
                 </span>
-                {block.answerId === option.id ? <span className="text-[#B9B9C0]">✓</span> : null}
+                {block.answerId === option.id ? (
+                  <span className="text-[var(--rk-muted)]">✓</span>
+                ) : null}
               </button>
             ))}
         </div>
-        {error ? <p className="mt-2 text-xs text-[#F07178]">{error}</p> : null}
+        {error ? <p className="mt-2 text-xs text-[var(--rk-danger)]">{error}</p> : null}
       </div>
     </div>
   );
@@ -5678,7 +5930,7 @@ function AppConnectCard({
             className="h-10 w-10 rounded-[10px] bg-white object-contain p-1"
           />
         ) : (
-          <span className="grid h-10 w-10 place-items-center rounded-[10px] bg-[#30356A] text-[15px] text-[#E2E4FF]">
+          <span className="grid h-10 w-10 place-items-center rounded-[10px] bg-[var(--rk-surface-2)] text-[15px] text-[var(--rk-ink)]">
             {block.name.slice(0, 1).toUpperCase()}
           </span>
         )}
@@ -5698,7 +5950,7 @@ function AppConnectCard({
           </BuiButton>
         )}
       </div>
-      {error ? <p className="mt-2 text-xs text-[#F07178]">{error}</p> : null}
+      {error ? <p className="mt-2 text-xs text-[var(--rk-danger)]">{error}</p> : null}
     </BuiCard>
   );
 }
@@ -5756,7 +6008,7 @@ function ChartCanvas({
   }, [spec, data, width, height, t]);
   if (error)
     return (
-      <div className="text-[13px] text-[#F3A2AA]">
+      <div className="text-[13px] text-[var(--rk-danger)]">
         <Trans>Chart failed to render: {error}</Trans>
       </div>
     );
@@ -5770,7 +6022,7 @@ function ChartCanvas({
           {meta.swatches.map((swatch) => (
             <span
               key={swatch.label}
-              className="flex items-center gap-1.5 text-[12px] text-[#A6A6AD]"
+              className="flex items-center gap-1.5 text-[12px] text-[var(--rk-muted)]"
             >
               <span
                 className="h-[10px] w-[10px] rounded-[3px]"
@@ -5836,7 +6088,7 @@ function McpApprovalCard({
   return (
     <BuiCard className="max-w-[74%] p-4">
       <div className="flex items-center gap-2">
-        <span className="grid h-7 w-7 place-items-center rounded-lg bg-[#30356A] text-xs text-[#E2E4FF]">
+        <span className="grid h-7 w-7 place-items-center rounded-lg bg-[var(--rk-surface-2)] text-xs text-[var(--rk-ink)]">
           M
         </span>
         <span className="text-[14.5px] font-medium" style={{ color: "var(--bui-ink)" }}>
@@ -5853,7 +6105,7 @@ function McpApprovalCard({
               ? t`This server uses browser sign-in. Authorize it to let your agents use its tools — a popup will open.`
               : t`Approve this server to let your agent use its tools.`}
           </p>
-          {error ? <p className="mt-2 text-xs text-[#F07178]">{error}</p> : null}
+          {error ? <p className="mt-2 text-xs text-[var(--rk-danger)]">{error}</p> : null}
           <div className="mt-3 flex gap-2">
             <BuiButton
               tone="accent"
@@ -5914,19 +6166,19 @@ function ChartBlockView({
   const expandedViewport = chartViewport(viewport.width, viewport.height);
   return (
     <>
-      <div className="group relative max-w-[74%] rounded-[20px] bg-[var(--rk-solid-ink)] p-4">
+      <div className="group relative max-w-[74%] rounded-[20px] bg-[var(--rk-surface)] p-4">
         <ChartCanvas spec={spec} data={data} width={520} />
         <button
           type="button"
           onClick={() => setExpanded(true)}
-          className="absolute end-3 top-3 rounded-lg border border-[#34343B] bg-[var(--rk-hover)] px-2.5 py-1 text-[11px] text-[#B9B9C0] opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#A6A6AD]"
+          className="absolute end-3 top-3 rounded-lg border border-[var(--rk-hairline-strong)] bg-[var(--rk-hover)] px-2.5 py-1 text-[11px] text-[var(--rk-muted)] opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--rk-muted)]"
         >
           <Trans>Expand</Trans>
         </button>
       </div>
       {expanded ? (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-[rgba(4,4,5,.78)] p-8"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-[var(--rk-overlay)] p-8"
           role="dialog"
           aria-modal="true"
           aria-label={name}
@@ -5937,7 +6189,7 @@ function ChartBlockView({
             if (event.key === "Escape") setExpanded(false);
           }}
         >
-          <div className="max-h-[92vh] w-[min(1320px,94vw)] overflow-auto rounded-[24px] border border-[#2A2A31] bg-[var(--rk-surface)] p-8 shadow-[0_40px_90px_rgba(0,0,0,.6)]">
+          <div className="max-h-[92vh] w-[min(1320px,94vw)] overflow-auto rounded-[24px] border border-[var(--rk-hairline-strong)] bg-[var(--rk-surface)] p-8 shadow-[var(--rk-shadow)]">
             <div className="mb-3 flex items-center justify-between">
               <span className="text-[13px] text-[var(--rk-muted)]">{name}</span>
               <button
@@ -6035,7 +6287,7 @@ function ArtifactImage({
           <img src={src} alt={name} className="max-h-48 w-full object-cover" />
         </button>
       ) : (
-        <div className="rounded-[20px] border border-[var(--rk-hairline-strong)] bg-[var(--rk-solid-ink)] px-4 py-3 text-[14px] text-[var(--rk-muted)]">
+        <div className="rounded-[20px] border border-[var(--rk-hairline-strong)] bg-[var(--rk-surface)] px-4 py-3 text-[14px] text-[var(--rk-muted)]">
           {name}
         </div>
       )}
@@ -6043,7 +6295,7 @@ function ArtifactImage({
         <button
           type="button"
           aria-label={t`Close image preview`}
-          className="fixed inset-0 z-50 grid place-items-center bg-[rgba(4,4,5,.82)] p-6"
+          className="fixed inset-0 z-50 grid place-items-center bg-[var(--rk-overlay)] p-6"
           onClick={() => setOpen(false)}
         >
           <img

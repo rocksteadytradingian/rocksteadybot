@@ -12,8 +12,10 @@ import {
   compactHistory,
   formatCompactedSummary,
   formatRecalledMemory,
+  formatVerbatimHistoryMemory,
   historyWindowSize,
   MAX_COMPACTED_SUMMARY_CHARS,
+  MAX_RECALLED_SNIPPET_CHARS,
   MAX_TRANSCRIPT_CHARS,
   nextCompactionBatchRange,
   selectCompactedHistory,
@@ -197,6 +199,24 @@ describe("formatRecalledMemory", () => {
   it("returns an empty string for no results", () => {
     expect(formatRecalledMemory([])).toBe("");
   });
+
+  it("injects a snippet of a long verbatim drawer rather than the full transcript", () => {
+    const memory = `Verbatim thread transcript\n\n${"word ".repeat(800)}`;
+    const block = formatRecalledMemory([{ memory }]);
+    expect(block).toContain("Use recall_memory for the full verbatim transcript");
+    expect(block).toContain("…");
+    expect(block.length).toBeLessThan(memory.length);
+    expect(block).toContain(memory.slice(0, MAX_RECALLED_SNIPPET_CHARS));
+  });
+});
+
+describe("formatVerbatimHistoryMemory", () => {
+  it("stores the transcript itself, not the local summary", () => {
+    const stored = formatVerbatimHistoryMemory("user: keep this sentence");
+    expect(stored).toContain("Verbatim thread transcript");
+    expect(stored).toContain("user: keep this sentence");
+    expect(stored).not.toContain("Summary of 50 messages.");
+  });
 });
 
 type HarnessMessage = {
@@ -219,6 +239,7 @@ function compactionHarness(
       userId: string;
       workspaceId: string;
       botId?: string;
+      purpose?: "run" | "compaction";
     }) => Promise<AgentRunRequest["model"]>;
     withMemoryProvider?: boolean;
     memoryConfig?: {
@@ -386,13 +407,19 @@ describe("compactHistory", () => {
 
     expect(harness.saveMemory).toHaveBeenCalledWith(
       {
-        content: "Summary of 50 messages.",
+        content: formatVerbatimHistoryMemory(
+          Array.from(
+            { length: 50 },
+            (_, i) => `${i % 2 === 0 ? "user" : "bot"}: message ${i}`,
+          ).join("\n\n"),
+        ),
         scope: "isolated",
         botId: "bot-1",
         source: { kind: "history", generation: 0 },
       },
       expect.objectContaining({ workspaceId: "workspace-1", botId: "bot-1" }),
     );
+    expect(harness.thread.historyCompactionSummary).toBe("Summary of 50 messages.");
 
     const [, context] = harness.runtime.run.mock.calls[0]!;
     expect(context.workspaceId).toBe("workspace-1");
@@ -424,12 +451,14 @@ describe("compactHistory", () => {
     expect(harness.saveMemory).toHaveBeenCalledOnce();
     expect(harness.saveMemory).toHaveBeenCalledWith(
       expect.objectContaining({
-        content: "Summary of 50 messages.",
+        content: expect.stringContaining("message 0"),
         scope: "isolated",
         source: { kind: "history", generation: 0 },
       }),
       expect.any(Object),
     );
+    expect(harness.saveMemory.mock.calls[0]![0].content).toContain("Verbatim thread transcript");
+    expect(harness.saveMemory.mock.calls[0]![0].content).not.toContain("Summary of 50 messages.");
   });
 
   it("serializes attachment metadata into the transcript", async () => {
@@ -505,6 +534,7 @@ describe("compactHistory", () => {
       userId: "user-1",
       workspaceId: "workspace-1",
       botId: "bot-1",
+      purpose: "compaction",
     });
     expect(harness.runtime.run.mock.calls[0]![0].model).toEqual({
       provider: "anthropic",
@@ -577,11 +607,12 @@ describe("compactHistory", () => {
     expect(request.prompt).not.toContain("message 0");
     expect(harness.saveMemory).toHaveBeenCalledWith(
       expect.objectContaining({
-        content: "Summary of 50 messages.",
+        content: expect.stringContaining("new message 50"),
         source: { kind: "history", generation: 1 },
       }),
       expect.any(Object),
     );
+    expect(harness.saveMemory.mock.calls[0]![0].content).not.toContain("Summary of 50 messages.");
     expect(harness.thread.historyCompactedUpToSeq).toBe(99);
   });
 
@@ -719,11 +750,12 @@ describe("compactHistory", () => {
     expect(harness.saveMemory).toHaveBeenCalledOnce();
     expect(harness.saveMemory).toHaveBeenCalledWith(
       expect.objectContaining({
-        content: "Summary of 50 messages.",
+        content: expect.stringContaining("message 0"),
         source: { kind: "history", generation: 0 },
       }),
       expect.any(Object),
     );
+    expect(harness.saveMemory.mock.calls[0]![0].content).not.toContain("Summary of 50 messages.");
     expect(harness.purgeHistory).toHaveBeenCalledWith(
       { botId: "bot-1", generations: [0] },
       expect.any(Object),

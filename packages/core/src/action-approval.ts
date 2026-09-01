@@ -10,6 +10,8 @@ const APPROVAL_EXEMPT_TOOLS = new Set([
   "open_path",
   "launch_app",
   "remember",
+  "read_memory",
+  "search_memory",
   "request_takeover",
   "run_subagent",
   "spawn_bot",

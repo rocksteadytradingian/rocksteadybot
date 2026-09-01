@@ -1,10 +1,13 @@
 import { Trans, useLingui } from "@lingui/react/macro";
 import type { PendingApproval } from "@rakazo/contracts";
+import { isStackRepairApproval } from "@rakazo/core";
 import { AlertTriangle, ShieldCheck } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { BuiButton, BuiCard } from "../components/beautiful-ui/primitives";
 import { rpc } from "../lib/rpc";
 
 const POLL_MS = 15_000;
+const STALL_NOTICE_KEY = "rk-worker-stall-notified";
 
 export function usePendingApprovals(refreshKey = 0) {
   const [items, setItems] = useState<PendingApproval[]>([]);
@@ -48,6 +51,28 @@ export function usePendingApprovals(refreshKey = 0) {
   return { items, loading, refresh, setItems };
 }
 
+export function useWorkerStallNotification(items: PendingApproval[]) {
+  useEffect(() => {
+    const stall = items.find(isStackRepairApproval);
+    if (!stall || typeof Notification === "undefined") {
+      if (!stall) sessionStorage.removeItem(STALL_NOTICE_KEY);
+      return;
+    }
+    const token = stall.requestedAt;
+    if (sessionStorage.getItem(STALL_NOTICE_KEY) === token) return;
+    sessionStorage.setItem(STALL_NOTICE_KEY, token);
+    const title = "AI replies are stuck";
+    const body = stall.detail ?? "Open Approvals to start the worker.";
+    const notify = () => new Notification(title, { body });
+    if (Notification.permission === "granted") notify();
+    else if (Notification.permission === "default") {
+      void Notification.requestPermission().then((permission) => {
+        if (permission === "granted") notify();
+      });
+    }
+  }, [items]);
+}
+
 export function ApprovalsNavButton({ count, onOpen }: { count: number; onOpen: () => void }) {
   const { t } = useLingui();
   const label = count > 0 ? t`Approvals, ${count} pending` : t`Approvals`;
@@ -69,7 +94,7 @@ export function ApprovalsNavButton({ count, onOpen }: { count: number; onOpen: (
       {count > 0 ? (
         <span
           data-testid="approvals-badge"
-          className="grid min-w-[18px] place-items-center rounded-full bg-[#FF5364] px-1.5 py-0.5 text-[11px] font-medium leading-none text-white"
+          className="grid min-w-[18px] place-items-center rounded-full bg-[var(--rk-danger)] px-1.5 py-0.5 text-[11px] font-medium leading-none text-[var(--rk-danger-ink)]"
         >
           {badge}
         </span>
@@ -81,12 +106,14 @@ export function ApprovalsNavButton({ count, onOpen }: { count: number; onOpen: (
 export function ApprovalsPanelSection({
   items,
   busyId,
+  canRepair = true,
   onViewAll,
   onView,
   onApprove,
 }: {
   items: PendingApproval[];
   busyId: string | null;
+  canRepair?: boolean;
   onViewAll: () => void;
   onView: (item: PendingApproval) => void;
   onApprove: (item: PendingApproval) => void;
@@ -100,7 +127,7 @@ export function ApprovalsPanelSection({
         <span className="text-[14px] text-[var(--rk-muted)]">
           <Trans>Approvals</Trans>
         </span>
-        <span className="rounded-full bg-[rgba(255,83,100,.14)] px-2 py-0.5 text-[11.5px] font-medium text-[#FF5364]">
+        <span className="rounded-full bg-[rgba(255,83,100,.14)] px-2 py-0.5 text-[11.5px] font-medium text-[var(--rk-danger)]">
           {t`${count} pending`}
         </span>
         <button
@@ -117,6 +144,7 @@ export function ApprovalsPanelSection({
             key={item.id}
             item={item}
             busy={busyId === item.id}
+            canRepair={canRepair}
             onView={() => onView(item)}
             onApprove={() => onApprove(item)}
           />
@@ -130,6 +158,7 @@ export function ApprovalsOverlay({
   items,
   loading,
   busyId,
+  canRepair = true,
   onClose,
   onView,
   onApprove,
@@ -137,6 +166,7 @@ export function ApprovalsOverlay({
   items: PendingApproval[];
   loading: boolean;
   busyId: string | null;
+  canRepair?: boolean;
   onClose: () => void;
   onView: (item: PendingApproval) => void;
   onApprove: (item: PendingApproval) => void;
@@ -199,6 +229,7 @@ export function ApprovalsOverlay({
                 key={item.id}
                 item={item}
                 busy={busyId === item.id}
+                canRepair={canRepair}
                 showBot
                 onView={() => onView(item)}
                 onApprove={() => onApprove(item)}
@@ -214,19 +245,59 @@ export function ApprovalsOverlay({
 function ApprovalItem({
   item,
   busy,
+  canRepair = true,
   showBot,
   onView,
   onApprove,
 }: {
   item: PendingApproval;
   busy: boolean;
+  canRepair?: boolean;
   showBot?: boolean;
   onView: () => void;
   onApprove: () => void;
 }) {
   const { i18n, t } = useLingui();
   const requested = formatRequestedAt(item.requestedAt, i18n.locale || "en");
-  const title = showBot && item.botName ? `${item.botName} · ${item.summary}` : item.summary;
+  const stackRepair = isStackRepairApproval(item);
+  const title =
+    showBot && item.botName && !stackRepair ? `${item.botName} · ${item.summary}` : item.summary;
+  if (stackRepair) {
+    return (
+      <BuiCard
+        data-testid="approval-item"
+        data-approval-kind="stack_repair"
+        className="border border-[var(--rk-hairline-strong)] p-3.5"
+      >
+        <div className="flex items-start gap-3">
+          <AlertTriangle
+            size={16}
+            strokeWidth={1.8}
+            className="mt-0.5 shrink-0 text-[var(--rk-warning)]"
+            aria-hidden="true"
+          />
+          <div className="min-w-0 flex-1">
+            <p className="text-[14.5px] font-medium text-[var(--rk-ink)]">{title}</p>
+            {item.detail ? (
+              <p className="mt-1 text-[13px] leading-[1.45] text-[var(--rk-body)]">{item.detail}</p>
+            ) : null}
+            {requested ? (
+              <p className="mt-1 text-[12.5px] text-[var(--rk-muted-2)]">{t`Requested ${requested}`}</p>
+            ) : null}
+          </div>
+          {canRepair ? (
+            <BuiButton tone="accent" disabled={busy} onClick={onApprove}>
+              {busy ? <Trans>Starting…</Trans> : <Trans>Start worker</Trans>}
+            </BuiButton>
+          ) : (
+            <p className="max-w-[10rem] text-end text-[12.5px] text-[var(--rk-muted)]">
+              <Trans>Ask the owner to start the worker</Trans>
+            </p>
+          )}
+        </div>
+      </BuiCard>
+    );
+  }
   return (
     <div
       data-testid="approval-item"
@@ -236,7 +307,7 @@ function ApprovalItem({
         <AlertTriangle
           size={16}
           strokeWidth={1.8}
-          className="mt-0.5 shrink-0 text-[#F5A03C]"
+          className="mt-0.5 shrink-0 text-[var(--rk-warning)]"
           aria-hidden="true"
         />
         <div className="min-w-0 flex-1">
@@ -245,7 +316,7 @@ function ApprovalItem({
               {title}
             </p>
             {item.highRisk ? (
-              <span className="shrink-0 rounded-full bg-[rgba(245,160,60,.16)] px-2 py-0.5 text-[11.5px] font-medium text-[#F5A03C]">
+              <span className="shrink-0 rounded-full bg-[color-mix(in_srgb,var(--rk-warning)_16%,transparent)] px-2 py-0.5 text-[11.5px] font-medium text-[var(--rk-warning)]">
                 <Trans>High risk action</Trans>
               </span>
             ) : null}

@@ -22,6 +22,7 @@ import {
   InMemoryJobQueue,
   InMemoryRealtimeFanout,
   InstalledConnectorProvider,
+  inspectWorkerStall,
   isComposioEnabled,
   isPipedreamEnabled,
   LocalAgentHomeStore,
@@ -35,6 +36,7 @@ import {
   pipedreamConfigFromEnv,
   pushTokenPath,
   type RemoteConnectorDependencies,
+  repairWorkerStack,
   ScriptedAgentRuntime,
   WorkspaceMemoryProviderResolver,
 } from "@rakazo/adapters";
@@ -246,6 +248,20 @@ export async function createApp(
     remoteConnectors,
     artifacts,
     dataDir: env.dataDir,
+    inspectWorkerStall: (workspaceId) =>
+      inspectWorkerStall(prisma, {
+        wakeupDriver: env.wakeupDriver,
+        workspaceId,
+        supervisorUrl: env.sandboxSupervisorUrl,
+      }),
+    repairWorkerStack: (input) =>
+      repairWorkerStack({
+        supervisorUrl: env.sandboxSupervisorUrl,
+        restartApi: input?.restartApi,
+      }),
+    scheduleProcessExit: (code, delayMs) => {
+      setTimeout(() => process.exit(code), delayMs);
+    },
     env: {
       defaultProvider: env.defaultProvider,
       defaultModel: env.defaultModel,

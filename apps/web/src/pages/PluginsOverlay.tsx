@@ -438,11 +438,22 @@ export function PluginsOverlay({
             <LoadingState label={t`Loading plugins`} />
           ) : (
             <>
-              {!configuredKey ? projectKeyCard : null}
+              {!configuredKey || catalog.length === 0 ? projectKeyCard : null}
+
+              {configuredKey && catalog.length > 0 && installed.length === 0 ? (
+                <p className="mb-4 text-[13.5px] leading-6 text-[var(--rk-muted)]">
+                  <Trans>
+                    Project key is active. Add Gmail to connect Google. 0 installed means no app is
+                    connected yet.
+                  </Trans>
+                </p>
+              ) : null}
 
               {catalog.length === 0 && sources.length === 0 ? (
-                <p className="text-[13.5px] leading-6 text-[var(--rk-muted-2)]">
-                  {EMPTY_PLUGIN_CATALOG_MESSAGE}
+                <p className="mb-4 text-[13.5px] leading-6 text-[var(--rk-muted-2)]">
+                  {configuredKey
+                    ? t`The full catalog did not load. You can still add Gmail below.`
+                    : EMPTY_PLUGIN_CATALOG_MESSAGE}
                 </p>
               ) : null}
 
@@ -455,6 +466,8 @@ export function PluginsOverlay({
                   {featuredTiles.map((tile) => {
                     const item = tile.item;
                     const key = item ? itemKey(item) : tile.id;
+                    const canConnect =
+                      Boolean(item) && !tile.missing && (configuredKey || catalog.length > 0);
                     const description = item
                       ? pluginDescriptionFor(item)
                       : tile.missing
@@ -468,9 +481,9 @@ export function PluginsOverlay({
                         logo={item?.logo ?? null}
                         connected={item?.connected ?? false}
                         pending={pending === key}
-                        disabled={tile.missing || !item}
+                        disabled={!canConnect}
                         onToggle={
-                          item && !tile.missing
+                          canConnect
                             ? () => void (item.connected ? revoke(item) : connect(item))
                             : undefined
                         }
@@ -584,7 +597,7 @@ export function PluginsOverlay({
             </summary>
 
             <div className="mt-4 space-y-4">
-              {configuredKey ? projectKeyCard : null}
+              {configuredKey && catalog.length > 0 ? projectKeyCard : null}
               {onOpenMcp ? (
                 <button
                   type="button"
@@ -774,7 +787,11 @@ function PluginSection({
   return (
     <section className="mb-7" data-testid={testId}>
       <div className="mb-2 flex items-center justify-between gap-3">
-        {title ? <h2 className="text-[13px] font-medium text-[var(--rk-muted)]">{title}</h2> : <span />}
+        {title ? (
+          <h2 className="text-[13px] font-medium text-[var(--rk-muted)]">{title}</h2>
+        ) : (
+          <span />
+        )}
         {showViewAll ? (
           <button
             type="button"

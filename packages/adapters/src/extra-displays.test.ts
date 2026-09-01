@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { ComputerScreenUnavailableError } from "./computer-screens.js";
 import {
   allocateExtraDisplayCommand,
+  ensureExtraDisplayCommand,
   extraDisplayLayout,
   parseAllocatedExtraDisplay,
   parseExtraDisplayViewPassword,
@@ -37,6 +38,17 @@ describe("extra display ports", () => {
     expect(allocate).not.toContain("writer");
     expect(release).toContain("RAKAZO_SCREEN_RELEASE=stale");
     expect(release.indexOf("pkill -f")).toBeLessThan(release.indexOf('rm -f "$slot"'));
+    expect(release).toContain("autocutsel -display :$display_number -selection");
+    expect(
+      ensureExtraDisplayCommand(
+        extraDisplayLayout(1, ":0"),
+        {
+          homeDir: "/home/user",
+          browserProfilesDir: "/home/user/.browser-profiles",
+        },
+        "view-secret",
+      ),
+    ).toContain("autocutsel -display :2 -selection CLIPBOARD");
     expect(parseAllocatedExtraDisplay("RAKAZO_SCREEN_INDEX=3\n")).toBe(3);
     expect(parseReleasedExtraDisplay("RAKAZO_SCREEN_RELEASE=3\n")).toBe(3);
     expect(parseReleasedExtraDisplay("RAKAZO_SCREEN_RELEASE=stale\n")).toBeUndefined();

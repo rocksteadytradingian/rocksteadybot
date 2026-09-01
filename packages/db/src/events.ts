@@ -745,23 +745,26 @@ export async function finalizeRun(
     });
     if (task.count !== 1) throw new Error("Run task was not available to finalize");
 
-    if (input.outcome === "completed") {
-      const message = await createThreadMessageInTransaction(tx, {
-        threadId: input.threadId,
-        role: "bot",
-        blocks: input.blocks,
-        botId: input.botId,
-        runId: input.runId,
-      });
-      await appendEventInTransaction(tx, {
-        workspaceId: input.workspaceId,
-        threadId: input.threadId,
-        botId: input.botId,
-        type: "thread.message.created",
-        runId: input.runId,
-        payload: { messageId: message.id, role: "bot", blocks: input.blocks },
-      });
-    }
+    // Persist the error in the transcript; otherwise the user message sits unanswered.
+    const blocks =
+      input.outcome === "completed"
+        ? input.blocks
+        : [{ kind: "text" as const, text: input.error.trim() || "Could not complete this reply." }];
+    const message = await createThreadMessageInTransaction(tx, {
+      threadId: input.threadId,
+      role: "bot",
+      blocks,
+      botId: input.botId,
+      runId: input.runId,
+    });
+    await appendEventInTransaction(tx, {
+      workspaceId: input.workspaceId,
+      threadId: input.threadId,
+      botId: input.botId,
+      type: "thread.message.created",
+      runId: input.runId,
+      payload: { messageId: message.id, role: "bot", blocks },
+    });
     const lastEvent = await appendEventInTransaction(tx, {
       workspaceId: input.workspaceId,
       threadId: input.threadId,

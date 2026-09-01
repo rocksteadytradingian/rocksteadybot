@@ -14,11 +14,17 @@ describe("desktop window chrome", () => {
     expect(opts.trafficLightPosition).toEqual({ x: 16, y: 16 });
   });
 
-  it("is frameless on Windows and Linux so in-app buttons control the window", () => {
+  it("uses a native OS frame on Windows and Linux so the window can move, resize, minimize, maximize, and close", () => {
     for (const platform of ["win32", "linux"] as const) {
       const opts = browserWindowOptions(platform);
-      expect(opts.frame).toBe(false);
+      expect(opts.frame).toBe(true);
+      expect(opts.resizable).toBe(true);
+      expect(opts.minimizable).toBe(true);
+      expect(opts.maximizable).toBe(true);
+      expect(opts.closable).toBe(true);
       expect(opts.titleBarStyle).toBeUndefined();
+      expect(opts.minWidth).toBeGreaterThan(0);
+      expect(opts.minHeight).toBeGreaterThan(0);
     }
   });
 });

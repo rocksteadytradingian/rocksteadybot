@@ -47,6 +47,13 @@ describe("Pi model catalog", () => {
     });
     const openAiCompatible = catalog.find((entry) => entry.provider === "openai-compatible");
     expect(openAiCompatible).toMatchObject({ id: "custom", placeholder: true });
+    const tokenRouter = catalog.find((entry) => entry.provider === "tokenrouter");
+    expect(tokenRouter).toMatchObject({
+      id: "custom",
+      placeholder: true,
+      providerName: "TokenRouter",
+      authHint: "tokenrouter.com",
+    });
   });
 
   it("adds a configured OpenRouter model that is newer than the static catalog", async () => {

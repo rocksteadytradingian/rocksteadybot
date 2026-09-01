@@ -60,10 +60,12 @@ const KNOWN_DESCRIPTIONS: Record<string, string> = {
   figma: "Browse files and design context.",
   github: "Read repos, issues, pull requests, and code.",
   gmail: "Search, read, draft, and manage email.",
+  googlebusinessprofile: "Publish and manage Google Business Profile posts.",
   googlecalendar: "Search events and schedule meetings.",
   googledocs: "Read and draft documents.",
   googledrive: "Search, read, create, and share files.",
   googlesheets: "Read and update spreadsheets.",
+  googlemybusiness: "Publish and manage Google Business Profile posts.",
   hubspot: "Search CRM records and update deals.",
   jira: "Search and update Jira issues.",
   linear: "Track issues and update project work.",
@@ -76,6 +78,7 @@ const KNOWN_DESCRIPTIONS: Record<string, string> = {
   stripe: "Look up customers, payments, and invoices.",
   trello: "Read and update boards and cards.",
   x: "Read and post on X.",
+  youtube: "Manage videos, comments, and channel data.",
   zapier: "Trigger and run Zapier workflows.",
 };
 
@@ -87,10 +90,12 @@ const KNOWN_CATEGORIES: Record<string, PluginCategoryId> = {
   figma: "design",
   github: "infrastructure",
   gmail: "inbox-and-collaboration",
+  googlebusinessprofile: "sales",
   googlecalendar: "scheduling",
   googledocs: "documents-and-files",
   googledrive: "documents-and-files",
   googlesheets: "data-analytics",
+  googlemybusiness: "sales",
   hubspot: "sales",
   jira: "productivity",
   linear: "productivity",
@@ -103,6 +108,7 @@ const KNOWN_CATEGORIES: Record<string, PluginCategoryId> = {
   stripe: "payments",
   trello: "productivity",
   x: "inbox-and-collaboration",
+  youtube: "more",
   zapier: "productivity",
 };
 

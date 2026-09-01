@@ -173,6 +173,7 @@ function performanceEnvironment(databaseUrl: string): NodeJS.ProcessEnv {
     RAKAZO_HOST: "127.0.0.1",
     RAKAZO_WEB_URL: webOrigin,
     RAKAZO_DISABLE_BUNDLED_RENDERER: remoteRenderer ? "1" : "0",
+    RAKAZO_FORCE_BUNDLED_RENDERER: remoteRenderer ? "0" : "1",
     RAKAZO_DISABLE_WARM_WINDOW: disableWarmWindow ? "1" : "0",
     RAKAZO_PERFORMANCE_ASSET_DELAY_MS: String(assetDelayMs),
     DATA_DIR: path.join(temporaryRoot, "data"),

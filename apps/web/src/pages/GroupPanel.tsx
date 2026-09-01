@@ -17,6 +17,40 @@ function sameMembers(left: readonly string[], right: readonly string[]) {
   return left.every((id) => rightIds.has(id));
 }
 
+function LeaderSelect({
+  bots,
+  selected,
+  value,
+  onChange,
+}: {
+  bots: Bot[];
+  selected: string[];
+  value: string;
+  onChange: (botId: string) => void;
+}) {
+  const { t } = useLingui();
+  const options = useMemo(() => bots.filter((bot) => selected.includes(bot.id)), [bots, selected]);
+
+  return (
+    <label className="mt-5 block text-[14px] text-[var(--rk-muted)]">
+      <Trans>Leader</Trans>
+      <select
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        aria-label={t`Leader, the bot that responds first`}
+        className="mt-2 w-full rounded-[11px] border border-[var(--rk-hairline-strong)] bg-transparent px-3.5 py-3 text-[var(--rk-ink)]"
+      >
+        <option value="">{t`First member`}</option>
+        {options.map((bot) => (
+          <option key={bot.id} value={bot.id}>
+            {bot.name}
+          </option>
+        ))}
+      </select>
+    </label>
+  );
+}
+
 function MemberPicker({
   bots,
   selected,
@@ -52,10 +86,10 @@ function MemberPicker({
             }`}
           >
             <BotAvatar color={bot.color} size={32} status={bot.status} />
-            <span className="flex-1 text-[15px] text-[#ECECEE]" dir="auto">
+            <span className="flex-1 text-[15px] text-[var(--rk-ink)]" dir="auto">
               {bot.name}
             </span>
-            <span className="text-[13px] text-[#6C6C70]">{checked ? "✓" : ""}</span>
+            <span className="text-[13px] text-[var(--rk-muted-2)]">{checked ? "✓" : ""}</span>
           </button>
         );
       })}
@@ -70,11 +104,12 @@ export function CreateGroupForm({
 }: {
   bots: Bot[];
   onCancel: () => void;
-  onCreate: (input: { name: string; botIds: string[] }) => Promise<void>;
+  onCreate: (input: { name: string; botIds: string[]; defaultBotId?: string }) => Promise<void>;
 }) {
   const { t } = useLingui();
   const [name, setName] = useState("");
   const [selected, setSelected] = useState<string[]>([]);
+  const [defaultBotId, setDefaultBotId] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -83,7 +118,11 @@ export function CreateGroupForm({
     setSubmitting(true);
     setError(null);
     try {
-      await onCreate({ name: name.trim(), botIds: selected });
+      await onCreate({
+        name: name.trim(),
+        botIds: selected,
+        ...(defaultBotId ? { defaultBotId } : {}),
+      });
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : t`Could not create group`);
     } finally {
@@ -94,7 +133,7 @@ export function CreateGroupForm({
   return (
     <div>
       <div className="mb-4 flex items-center justify-between">
-        <span className="text-[13.5px] text-[#85858A]">
+        <span className="text-[13.5px] text-[var(--rk-muted)]">
           <Trans>New group</Trans>
         </span>
         <button type="button" aria-label={t`Cancel new group`} onClick={onCancel}>
@@ -102,20 +141,20 @@ export function CreateGroupForm({
         </button>
       </div>
       {error ? (
-        <p role="alert" className="mb-3 text-[13px] text-[#C94244]">
+        <p role="alert" className="mb-3 text-[13px] text-[var(--rk-danger)]">
           {error}
         </p>
       ) : null}
-      <label className="block text-[14px] text-[#85858A]">
+      <label className="block text-[14px] text-[var(--rk-muted)]">
         <Trans>Name</Trans>
         <input
           value={name}
           onChange={(e) => setName(e.target.value)}
           placeholder={t`Name this group`}
-          className="mt-2 w-full rounded-[11px] border border-[#26262A] bg-transparent px-3.5 py-3 text-[#ECECEE]"
+          className="mt-2 w-full rounded-[11px] border border-[var(--rk-hairline-strong)] bg-transparent px-3.5 py-3 text-[var(--rk-ink)]"
         />
       </label>
-      <div className="mt-5 text-[14px] text-[#85858A]">
+      <div className="mt-5 text-[14px] text-[var(--rk-muted)]">
         <Trans>
           Members (pick {GROUP_MEMBER_MIN}–{GROUP_MEMBER_MAX})
         </Trans>
@@ -123,8 +162,17 @@ export function CreateGroupForm({
       <MemberPicker
         bots={bots}
         selected={selected}
-        onChange={setSelected}
+        onChange={(next) => {
+          setSelected(next);
+          if (defaultBotId && !next.includes(defaultBotId)) setDefaultBotId("");
+        }}
         maxHeight="max-h-[280px]"
+      />
+      <LeaderSelect
+        bots={bots}
+        selected={selected}
+        value={defaultBotId}
+        onChange={setDefaultBotId}
       />
       <Button
         className="mt-5 w-full"
@@ -145,12 +193,17 @@ export function GroupSettings({
 }: {
   group: Group;
   bots: Bot[];
-  onSave: (input: { name?: string; botIds?: string[] }) => Promise<void>;
+  onSave: (input: {
+    name?: string;
+    botIds?: string[];
+    defaultBotId?: string | null;
+  }) => Promise<void>;
   onRemove: () => Promise<void>;
 }) {
   const { t } = useLingui();
   const [name, setName] = useState(group.name);
   const [selected, setSelected] = useState(group.members.map((member) => member.botId));
+  const [defaultBotId, setDefaultBotId] = useState(group.defaultBotId ?? "");
   const [pending, setPending] = useState<"save" | "remove" | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -182,30 +235,31 @@ export function GroupSettings({
       )
         ? undefined
         : selected,
+      defaultBotId: defaultBotId || null,
     });
   }
 
   return (
     <div>
       <div className="mb-4 flex items-center justify-between">
-        <span className="text-[13.5px] text-[#85858A]">
+        <span className="text-[13.5px] text-[var(--rk-muted)]">
           <Trans>Group settings</Trans>
         </span>
       </div>
       {error ? (
-        <p role="alert" className="mb-3 text-[13px] text-[#C94244]">
+        <p role="alert" className="mb-3 text-[13px] text-[var(--rk-danger)]">
           {error}
         </p>
       ) : null}
-      <label className="block text-[14px] text-[#85858A]">
+      <label className="block text-[14px] text-[var(--rk-muted)]">
         <Trans>Name</Trans>
         <input
           value={name}
           onChange={(e) => setName(e.target.value)}
-          className="mt-2 w-full rounded-[11px] border border-[#26262A] bg-transparent px-3.5 py-3 text-[#ECECEE]"
+          className="mt-2 w-full rounded-[11px] border border-[var(--rk-hairline-strong)] bg-transparent px-3.5 py-3 text-[var(--rk-ink)]"
         />
       </label>
-      <div className="mt-5 text-[14px] text-[#85858A]">
+      <div className="mt-5 text-[14px] text-[var(--rk-muted)]">
         <Trans>
           Members ({GROUP_MEMBER_MIN}–{GROUP_MEMBER_MAX})
         </Trans>
@@ -213,8 +267,17 @@ export function GroupSettings({
       <MemberPicker
         bots={bots}
         selected={selected}
-        onChange={setSelected}
+        onChange={(next) => {
+          setSelected(next);
+          if (defaultBotId && !next.includes(defaultBotId)) setDefaultBotId("");
+        }}
         maxHeight="max-h-[240px]"
+      />
+      <LeaderSelect
+        bots={bots}
+        selected={selected}
+        value={defaultBotId}
+        onChange={setDefaultBotId}
       />
       <Button
         className="mt-5 w-full"
@@ -227,7 +290,7 @@ export function GroupSettings({
         type="button"
         disabled={pending !== null}
         onClick={() => void mutate("remove", onRemove)}
-        className="mt-4 w-full rounded-[11px] border border-[#3A2020] px-3.5 py-3 text-[14px] text-[#FF6B6B] disabled:opacity-40"
+        className="mt-4 w-full rounded-[11px] border border-[color-mix(in_srgb,var(--rk-danger)_45%,var(--rk-hairline))] px-3.5 py-3 text-[14px] text-[var(--rk-danger)] disabled:opacity-40"
       >
         {pending === "remove" ? <Trans>Deleting…</Trans> : <Trans>Delete group</Trans>}
       </button>

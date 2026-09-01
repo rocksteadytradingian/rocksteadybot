@@ -136,7 +136,7 @@ export default function Home() {
   useEffect(() => {
     if (!hasSession) return;
     void registerPushToken().catch(() => undefined);
-    void rpc<MobileMe>("me")
+    void rpc<MobileMe>("me", { restoreLastWorking: true })
       .then(setMe)
       .catch(() => undefined);
   }, [hasSession]);
