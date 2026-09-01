@@ -1,8 +1,8 @@
 import { Trans, useLingui } from "@lingui/react/macro";
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { authClient } from "../lib/auth";
-import { resetPasswordTokenFromSearch } from "../lib/reset-password";
+import { passwordResetProofFromLocation, resetPasswordBody } from "../lib/reset-password";
 
 export type AuthMode = "in" | "up" | "forgot" | "reset";
 
@@ -10,13 +10,22 @@ export function AuthPage({ mode }: { mode: AuthMode }) {
   const { t } = useLingui();
   const navigate = useNavigate();
   const [params] = useSearchParams();
+  const [hash] = useState(() => (typeof window === "undefined" ? "" : window.location.hash));
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [name, setName] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
-  const resetToken = resetPasswordTokenFromSearch(params.toString());
+  const resetProof = useMemo(
+    () => passwordResetProofFromLocation(params.toString(), hash),
+    [params, hash],
+  );
+
+  useEffect(() => {
+    if (!hash || typeof window === "undefined" || !window.location.hash) return;
+    window.history.replaceState(null, "", `${window.location.pathname}${window.location.search}`);
+  }, [hash]);
   const title =
     mode === "in" ? (
       <Trans>Sign in to RocksteadyBot</Trans>
@@ -52,18 +61,34 @@ export function AuthPage({ mode }: { mode: AuthMode }) {
       return;
     }
     if (mode === "reset") {
-      if (!resetToken) {
+      if (!resetProof) {
         setPending(false);
         setError(t`This reset link is missing or invalid`);
         return;
       }
-      const result = await authClient.resetPassword({
-        newPassword: password,
-        token: resetToken,
+      if (resetProof.method === "better-auth") {
+        const result = await authClient.resetPassword({
+          newPassword: password,
+          token: resetProof.token,
+        });
+        setPending(false);
+        if (result.error) {
+          setError(result.error.message ?? t`Could not continue`);
+          return;
+        }
+        navigate("/sign-in");
+        return;
+      }
+      const response = await fetch("/api/auth/reset-password", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify(resetPasswordBody(resetProof, password)),
       });
+      const payload = (await response.json().catch(() => ({}))) as { message?: string };
       setPending(false);
-      if (result.error) {
-        setError(result.error.message ?? t`Could not continue`);
+      if (!response.ok) {
+        setError(payload.message ?? t`Could not continue`);
         return;
       }
       navigate("/sign-in");

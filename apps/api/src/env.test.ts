@@ -92,4 +92,18 @@ describe("loadEnv", () => {
     expect(loadEnv({ ...base, GIT_SHA: "  3c6e209  " }).gitSha).toBe("3c6e209");
     expect(loadEnv({ ...base, RAKAZO_GIT_SHA: "abc1234" }).gitSha).toBe("abc1234");
   });
+
+  it("loads optional Supabase auth configuration", () => {
+    expect(loadEnv(base).supabaseUrl).toBeUndefined();
+    expect(
+      loadEnv({
+        ...base,
+        SUPABASE_URL: "https://example.supabase.co/",
+        SUPABASE_SERVICE_ROLE_KEY: "service-role-test",
+      }),
+    ).toMatchObject({
+      supabaseUrl: "https://example.supabase.co/",
+      supabaseServiceRoleKey: "service-role-test",
+    });
+  });
 });

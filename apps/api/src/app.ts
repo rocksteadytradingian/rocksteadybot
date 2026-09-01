@@ -36,6 +36,7 @@ import {
   pushTokenPath,
   type RemoteConnectorDependencies,
   ScriptedAgentRuntime,
+  supabaseAuthConfigFromEnv,
   WorkspaceMemoryProviderResolver,
 } from "@rakazo/adapters";
 import { blockedAuthPaths, createAuth, type SendResetPassword } from "@rakazo/auth";
@@ -46,6 +47,7 @@ import { cors } from "hono/cors";
 import { loadUserComposioApiKey } from "./composio-project-key.js";
 import { type AppEnv, loadEnv } from "./env.js";
 import { createRouter } from "./router.js";
+import { handleSupabaseIdentity } from "./supabase-identity.js";
 import { mountVoiceHttpRoutes } from "./voice.js";
 
 export interface AppHandles {
@@ -271,10 +273,40 @@ export async function createApp(
       credentials: true,
     }),
   );
+  const supabaseAuth = supabaseAuthConfigFromEnv(
+    {
+      SUPABASE_URL: env.supabaseUrl,
+      SUPABASE_SERVICE_ROLE_KEY: env.supabaseServiceRoleKey,
+    },
+    `${env.webOrigin}/reset-password`,
+  );
   app.on(["GET", "POST"], "/api/auth/*", async (c) => {
     const path = new URL(c.req.url).pathname.replace("/api/auth", "");
     if (blockedAuthPaths.some((blocked) => path.startsWith(blocked))) {
       return c.json({ error: "Not available in version 1" }, 404);
+    }
+    if (supabaseAuth) {
+      const handled = await handleSupabaseIdentity(c.req.raw, path, {
+        auth,
+        prisma,
+        config: supabaseAuth,
+        signupsEnabled: env.signupsEnabled,
+        signupAllowlist: env.signupAllowlist,
+        getSession: async (request) => {
+          const session = await auth.api.getSession({ headers: sessionHeaders(request) });
+          if (!session?.user) return null;
+          return {
+            user: {
+              id: session.user.id,
+              email: session.user.email,
+              name: session.user.name,
+              image: session.user.image,
+            },
+            session: { id: session.session.id },
+          };
+        },
+      });
+      if (handled) return handled;
     }
     return auth.handler(c.req.raw);
   });

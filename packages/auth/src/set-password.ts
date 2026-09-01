@@ -1,5 +1,5 @@
 import type { PrismaClient } from "@rakazo/db";
-import { hashPassword } from "better-auth/crypto";
+import { hashPassword, verifyPassword } from "better-auth/crypto";
 
 const MIN_PASSWORD_LENGTH = 8;
 
@@ -7,10 +7,11 @@ export function normalizeAccountEmail(email: string) {
   return email.trim().toLowerCase();
 }
 
-export async function setCredentialPassword(
+export async function upsertCredentialPassword(
   prisma: PrismaClient,
   email: string,
   password: string,
+  options: { revokeSessions?: boolean } = {},
 ): Promise<{ userId: string }> {
   if (password.length < MIN_PASSWORD_LENGTH) {
     throw new Error(`Password must be at least ${MIN_PASSWORD_LENGTH} characters`);
@@ -45,8 +46,39 @@ export async function setCredentialPassword(
       },
     });
   }
-  await prisma.session.deleteMany({ where: { userId: user.id } });
+  if (options.revokeSessions) {
+    await prisma.session.deleteMany({ where: { userId: user.id } });
+  }
   return { userId: user.id };
+}
+
+export async function setCredentialPassword(
+  prisma: PrismaClient,
+  email: string,
+  password: string,
+): Promise<{ userId: string }> {
+  return upsertCredentialPassword(prisma, email, password, { revokeSessions: true });
+}
+
+export async function verifyLocalCredential(
+  prisma: PrismaClient,
+  email: string,
+  password: string,
+): Promise<{ userId: string } | null> {
+  const normalized = normalizeAccountEmail(email);
+  if (!normalized || password.length < MIN_PASSWORD_LENGTH) return null;
+  const user = await prisma.user.findFirst({
+    where: { email: { equals: normalized, mode: "insensitive" } },
+    select: { id: true },
+  });
+  if (!user) return null;
+  const account = await prisma.account.findFirst({
+    where: { userId: user.id, providerId: "credential" },
+    select: { password: true },
+  });
+  if (!account?.password) return null;
+  const valid = await verifyPassword({ hash: account.password, password });
+  return valid ? { userId: user.id } : null;
 }
 
 export function parseSetPasswordArgs(argv: string[]) {

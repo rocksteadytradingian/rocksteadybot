@@ -12,6 +12,19 @@ If you forget the local account password, set a new one on the host:
 pnpm auth:set-password --email you@example.com --password 'your-new-password'
 ```
 
+### Optional: Supabase Auth
+
+Set both values to let a Supabase project own email/password sign-in, sign-up, Forgot password, and the user profile (name / avatar in `user_metadata`, plus `public.profiles` when that table exists). Local Postgres still stores bots, workspaces, and the session cookie.
+
+```env
+SUPABASE_URL=https://your-project.supabase.co
+SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
+```
+
+In the Supabase dashboard, add `WEB_ORIGIN` and `WEB_ORIGIN/reset-password` to Auth redirect URLs (for local: `http://127.0.0.1:5173` and `http://127.0.0.1:5173/reset-password`). Leave the variables empty to keep the built-in local accounts.
+
+The set-password CLI updates the local replica and, when those variables are set, the Supabase user too.
+
 ## Docker Compose (single machine)
 
 1. Copy `.env.example` to `.env` and set `BETTER_AUTH_SECRET` and `ENCRYPTION_KEY` to long random strings. Rakazo refuses placeholder or missing secrets outside `development` / `test` (or when `RAKAZO_ALLOW_DEV_SECRETS=1` is set).

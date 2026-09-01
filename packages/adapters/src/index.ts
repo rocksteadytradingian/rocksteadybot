@@ -60,7 +60,7 @@ export * from "./scripted-runtime.js";
 export * from "./scripted-voice.js";
 export * from "./secrets.js";
 export * from "./skill-tools.js";
-export { SupermemoryMemoryProvider } from "./supermemory-memory-provider.js";
+export * from "./supabase-auth.js";
 export * from "./teaching-session.js";
 export * from "./third-party-connector-emulator.js";
 export * from "./voice-factory.js";

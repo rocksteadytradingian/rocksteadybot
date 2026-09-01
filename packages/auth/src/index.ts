@@ -6,9 +6,17 @@ import { APIError } from "better-auth/api";
 import { bearer, organization } from "better-auth/plugins";
 
 export {
+  createSignedInResponse,
+  ensureLocalUser,
+  type LocalAuthHost,
+  type LocalAuthUser,
+} from "./local-identity.js";
+export {
   normalizeAccountEmail,
   parseSetPasswordArgs,
   setCredentialPassword,
+  upsertCredentialPassword,
+  verifyLocalCredential,
 } from "./set-password.js";
 
 export type SendResetPassword = (

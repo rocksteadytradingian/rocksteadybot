@@ -5,6 +5,7 @@ import {
   normalizeAccountEmail,
   parseSetPasswordArgs,
   setCredentialPassword,
+  upsertCredentialPassword,
 } from "./set-password.js";
 
 describe("parseSetPasswordArgs", () => {
@@ -69,5 +70,21 @@ describe("setCredentialPassword", () => {
     await expect(
       setCredentialPassword(prisma, "missing@example.com", "long-enough"),
     ).rejects.toThrow(/No account/);
+  });
+
+  it("can update a password without revoking sessions", async () => {
+    const deleteMany = vi.fn(async () => ({ count: 1 }));
+    const prisma = {
+      user: { findFirst: vi.fn(async () => ({ id: "user-1" })) },
+      account: {
+        findFirst: vi.fn(async () => ({ id: "acc-1" })),
+        update: vi.fn(async () => ({ id: "acc-1" })),
+        create: vi.fn(),
+      },
+      session: { deleteMany },
+    } as unknown as PrismaClient;
+
+    await upsertCredentialPassword(prisma, "ada@example.com", "new-password-12");
+    expect(deleteMany).not.toHaveBeenCalled();
   });
 });
