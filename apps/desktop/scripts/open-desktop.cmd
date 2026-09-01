@@ -73,6 +73,7 @@ if errorlevel 1 (
 echo Copying the current sign-in page into Docker...
 "%DOCKER%" compose !COMPOSE_ENV! -f "%COMPOSE_FILE%" -f "%DESKTOP_COMPOSE%" cp "apps/web/src/." "web:/app/apps/web/src/" >nul 2>&1
 "%DOCKER%" compose !COMPOSE_ENV! -f "%COMPOSE_FILE%" -f "%DESKTOP_COMPOSE%" cp "apps/web/index.html" "web:/app/apps/web/index.html" >nul 2>&1
+"%DOCKER%" compose !COMPOSE_ENV! -f "%COMPOSE_FILE%" -f "%DESKTOP_COMPOSE%" cp "apps/web/vite.config.ts" "web:/app/apps/web/vite.config.ts" >nul 2>&1
 "%DOCKER%" compose !COMPOSE_ENV! -f "%COMPOSE_FILE%" -f "%DESKTOP_COMPOSE%" cp "apps/desktop/scripts/inject-forgot-password-fallback.mjs" "web:/tmp/inject-forgot-password-fallback.mjs" >nul 2>&1
 "%DOCKER%" compose !COMPOSE_ENV! -f "%COMPOSE_FILE%" -f "%DESKTOP_COMPOSE%" exec -T -u root web chown -R node:node /app/apps/web >nul 2>&1
 "%DOCKER%" compose !COMPOSE_ENV! -f "%COMPOSE_FILE%" -f "%DESKTOP_COMPOSE%" exec -T -u root web node /tmp/inject-forgot-password-fallback.mjs >nul 2>&1
@@ -82,12 +83,15 @@ echo Copying the current sign-in page into Docker...
 set /a _wait=0
 :wait_health
 set "CODE="
-for /f %%C in ('curl.exe -s -o NUL -w "%%{http_code}" "http://127.0.0.1:5173/"') do set "CODE=%%C"
+for /f %%C in ('curl.exe -s -o NUL -w "%%{http_code}" -X POST "http://127.0.0.1:5173/rpc/health" -H "content-type: application/json" -d "{\"json\":{}}"') do set "CODE=%%C"
 if "!CODE!"=="200" goto healthy
 timeout /t 2 /nobreak >nul
 set /a _wait+=1
 if !_wait! LSS 90 goto wait_health
-echo The local stack did not become ready. Check Docker Desktop, then try again.
+echo Sign-in cannot reach the API through http://127.0.0.1:5173.
+"%DOCKER%" compose !COMPOSE_ENV! -f "%COMPOSE_FILE%" -f "%DESKTOP_COMPOSE%" ps
+"%DOCKER%" compose !COMPOSE_ENV! -f "%COMPOSE_FILE%" -f "%DESKTOP_COMPOSE%" logs --tail 40 api
+echo Start Docker Desktop, then open this shortcut again.
 exit /b 1
 
 :healthy

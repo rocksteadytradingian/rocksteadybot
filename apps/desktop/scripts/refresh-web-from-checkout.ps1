@@ -31,6 +31,7 @@ function Copy-Checkout([string]$HostPath, [string]$Destination) {
 Write-Host "Copying the current sign-in page into Docker..."
 $copied = Copy-Checkout "apps/web/src/." "web:/app/apps/web/src/"
 [void](Copy-Checkout "apps/web/index.html" "web:/app/apps/web/index.html")
+[void](Copy-Checkout "apps/web/vite.config.ts" "web:/app/apps/web/vite.config.ts")
 [void](Copy-Checkout "apps/desktop/scripts/inject-forgot-password-fallback.mjs" "web:/tmp/inject-forgot-password-fallback.mjs")
 foreach ($copy in @(
     @("apps/api/src/.", "api:/app/apps/api/src/"),

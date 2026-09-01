@@ -403,6 +403,7 @@ describe("ensureLocalStack", () => {
       ),
     ).toBe(true);
     expect(WEB_CHECKOUT_COPIES[0]?.hostPath).toBe("apps/web/src/.");
+    expect(WEB_CHECKOUT_COPIES.map((copy) => copy.hostPath)).toContain("apps/web/vite.config.ts");
   });
 
   it("stops a leftover API from this checkout, then starts Compose", async () => {
@@ -572,7 +573,12 @@ describe("launcher files", () => {
     expect(cmd).toContain("Forgot password?");
     expect(cmd).toContain("RAKAZO_DISABLE_LOCAL_STACK=1");
     expect(cmd).toContain("RAKAZO_PERFORMANCE_CLEAR_CACHE=1");
+    expect(cmd).toContain("apps/web/vite.config.ts");
+    expect(cmd).toContain("/rpc/health");
     expect(cmd).not.toContain("refresh-web-from-checkout.ps1");
+    const viteConfig = await readFile(path.join(root, "apps/web/vite.config.ts"), "utf8");
+    expect(viteConfig).toContain("resolveApiProxyTarget");
+    expect(viteConfig).toContain("previewAllowedHosts");
     const freePorts = await readFile(
       path.join(root, "apps/desktop/scripts/free-own-ports.ps1"),
       "utf8",

@@ -236,6 +236,7 @@ export function composeBuildWebArgs(envFileExists: boolean): string[] {
 export const WEB_CHECKOUT_COPIES: Array<{ hostPath: string; destination: string }> = [
   { hostPath: "apps/web/src/.", destination: "web:/app/apps/web/src/" },
   { hostPath: "apps/web/index.html", destination: "web:/app/apps/web/index.html" },
+  { hostPath: "apps/web/vite.config.ts", destination: "web:/app/apps/web/vite.config.ts" },
   {
     hostPath: "apps/desktop/scripts/inject-forgot-password-fallback.mjs",
     destination: "web:/tmp/inject-forgot-password-fallback.mjs",

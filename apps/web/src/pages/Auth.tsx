@@ -2,6 +2,7 @@ import { Trans, useLingui } from "@lingui/react/macro";
 import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { authClient } from "../lib/auth";
+import { authErrorMessage } from "../lib/auth-error";
 import { passwordResetProofFromLocation, resetPasswordBody } from "../lib/reset-password";
 
 export type AuthMode = "in" | "up" | "forgot" | "reset";
@@ -37,77 +38,86 @@ export function AuthPage({ mode }: { mode: AuthMode }) {
       <Trans>Choose a new password</Trans>
     );
 
+  function showAuthError(error: { message?: string | null } | null | undefined) {
+    setError(authErrorMessage(error, t`Could not continue`, t`Can't reach the server`));
+  }
+
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     setPending(true);
     setError(null);
     setNotice(null);
-    if (mode === "forgot") {
-      const redirectTo = `${window.location.origin}/reset-password`;
-      const result = await authClient.requestPasswordReset({
-        email,
-        redirectTo,
-      });
-      setPending(false);
-      if (result.error) {
-        setError(
-          /isn't enabled|not configured|RESET_PASSWORD_DISABLED/i.test(result.error.message ?? "")
-            ? t`Password reset is not configured`
-            : (result.error.message ?? t`Could not continue`),
-        );
-        return;
-      }
-      setNotice(t`If that account exists, a reset link was sent.`);
-      return;
-    }
-    if (mode === "reset") {
-      if (!resetProof) {
-        setPending(false);
-        setError(t`This reset link is missing or invalid`);
-        return;
-      }
-      if (resetProof.method === "better-auth") {
-        const result = await authClient.resetPassword({
-          newPassword: password,
-          token: resetProof.token,
+    try {
+      if (mode === "forgot") {
+        const redirectTo = `${window.location.origin}/reset-password`;
+        const result = await authClient.requestPasswordReset({
+          email,
+          redirectTo,
         });
         setPending(false);
         if (result.error) {
-          setError(result.error.message ?? t`Could not continue`);
+          setError(
+            /isn't enabled|not configured|RESET_PASSWORD_DISABLED/i.test(result.error.message ?? "")
+              ? t`Password reset is not configured`
+              : authErrorMessage(result.error, t`Could not continue`, t`Can't reach the server`),
+          );
+          return;
+        }
+        setNotice(t`If that account exists, a reset link was sent.`);
+        return;
+      }
+      if (mode === "reset") {
+        if (!resetProof) {
+          setPending(false);
+          setError(t`This reset link is missing or invalid`);
+          return;
+        }
+        if (resetProof.method === "better-auth") {
+          const result = await authClient.resetPassword({
+            newPassword: password,
+            token: resetProof.token,
+          });
+          setPending(false);
+          if (result.error) {
+            showAuthError(result.error);
+            return;
+          }
+          navigate("/sign-in");
+          return;
+        }
+        const response = await fetch("/api/auth/reset-password", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          credentials: "include",
+          body: JSON.stringify(resetPasswordBody(resetProof, password)),
+        });
+        const payload = (await response.json().catch(() => ({}))) as { message?: string };
+        setPending(false);
+        if (!response.ok) {
+          showAuthError(payload);
           return;
         }
         navigate("/sign-in");
         return;
       }
-      const response = await fetch("/api/auth/reset-password", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify(resetPasswordBody(resetProof, password)),
-      });
-      const payload = (await response.json().catch(() => ({}))) as { message?: string };
+      const result =
+        mode === "up"
+          ? await authClient.signUp.email({
+              email,
+              password,
+              name: name || email.split("@")[0] || "User",
+            })
+          : await authClient.signIn.email({ email, password });
       setPending(false);
-      if (!response.ok) {
-        setError(payload.message ?? t`Could not continue`);
+      if (result.error) {
+        showAuthError(result.error);
         return;
       }
-      navigate("/sign-in");
-      return;
+      navigate(mode === "up" ? "/onboarding" : "/app");
+    } catch (error) {
+      setPending(false);
+      showAuthError({ message: error instanceof Error ? error.message : String(error) });
     }
-    const result =
-      mode === "up"
-        ? await authClient.signUp.email({
-            email,
-            password,
-            name: name || email.split("@")[0] || "User",
-          })
-        : await authClient.signIn.email({ email, password });
-    setPending(false);
-    if (result.error) {
-      setError(result.error.message ?? t`Could not continue`);
-      return;
-    }
-    navigate(mode === "up" ? "/onboarding" : "/app");
   }
 
   return (
