@@ -125,7 +125,10 @@ export async function ensureLocalUser(
   return created;
 }
 
-export async function createSignedInResponse(auth: LocalAuthHost, user: LocalAuthUser) {
+export async function createSignedInResponse(
+  auth: LocalAuthHost,
+  user: LocalAuthUser,
+): Promise<Response> {
   const ctx = await auth.$context;
   const session = await ctx.internalAdapter.createSession(user.id);
   if (!session?.token) {
