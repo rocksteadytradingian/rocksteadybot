@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   DEFAULT_LOCAL_WEB_URL,
+  isManagedLocalWebUrl,
   isRakazoHealth,
   normalizeServerUrl,
   parseSetupInput,
@@ -174,6 +175,15 @@ describe("Rakazo health response", () => {
     expect(isRakazoHealth({ json: { ok: true, version: "0.1.0" } })).toBe(true);
     expect(isRakazoHealth({ json: { ok: true } })).toBe(false);
     expect(isRakazoHealth({ ok: true, version: "0.1.0" })).toBe(false);
+  });
+});
+
+describe("managed local stack URL", () => {
+  it("matches the loopback web origin the desktop app can start", () => {
+    expect(isManagedLocalWebUrl("http://127.0.0.1:5173")).toBe(true);
+    expect(isManagedLocalWebUrl("localhost:5173")).toBe(true);
+    expect(isManagedLocalWebUrl("http://127.0.0.1:3100")).toBe(false);
+    expect(isManagedLocalWebUrl("https://rakazo.example.com")).toBe(false);
   });
 });
 

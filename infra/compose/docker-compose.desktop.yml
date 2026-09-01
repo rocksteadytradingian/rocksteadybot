@@ -1,0 +1,9 @@
+# Desktop launches this stack so a leftover host process on :3100 cannot block
+# Compose. The shell talks to the web origin on loopback :5173; the API stays on
+# the Compose network.
+services:
+  api:
+    ports: !override []
+  web:
+    ports: !override
+      - "127.0.0.1:5173:5173"

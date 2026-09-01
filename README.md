@@ -81,7 +81,13 @@ provider selection, backups, and upgrades, see the [self-hosting guide](./docs/s
 
 The Electron and Expo apps are clients of the same Rakazo API used by the web app.
 
-With the development stack running, launch Electron with:
+On Windows, double-click the **RocksteadyBot** desktop shortcut (or
+`apps/desktop/scripts/open-desktop.cmd`). That starts Docker Compose for the local stack and opens
+the desktop app — no separate `pnpm` or Compose command. The first launch also writes that shortcut
+onto the desktop. Later launches start the stack if it is down, and stop leftover RocksteadyBot
+processes on ports 3100 and 5173 without touching Docker or unrelated apps.
+
+To pack or run Electron from a terminal while the stack is already up:
 
 ```bash
 pnpm --filter @rakazo/desktop dev

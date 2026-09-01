@@ -4,7 +4,12 @@ The signed-in product is a long-running API, a Graphile Worker, Postgres, and a 
 
 ## Local (source checkout)
 
-Same as the README quick start: `.env` from `.env.example`, Postgres via Compose, `pnpm sandbox:build`, `pnpm dev`, then [http://127.0.0.1:5173](http://127.0.0.1:5173). Electron: `pnpm --filter @rakazo/desktop dev` while that stack is up.
+Same as the README quick start: `.env` from `.env.example`, Postgres via Compose, `pnpm sandbox:build`, `pnpm dev`, then [http://127.0.0.1:5173](http://127.0.0.1:5173).
+
+On Windows, the desktop shortcut (`apps/desktop/scripts/open-desktop.cmd`, also written to the
+desktop on first launch) starts Compose and opens Electron. Host port 3100 is not required for that
+path; the shell uses [http://127.0.0.1:5173](http://127.0.0.1:5173). To run Electron from a
+terminal while that stack is already up: `pnpm --filter @rakazo/desktop dev`.
 
 If you forget the local account password, set a new one on the host:
 
@@ -37,7 +42,7 @@ On Windows, if an older clone with `core.autocrlf=true` leaves the computer pane
 
 Compose runs Postgres, the sandbox supervisor (Docker socket), API, worker, and a Vite preview of the web app. Bot computers are sibling containers (`rakazo/computer:local`). The API process does not get an unrestricted Docker socket; the supervisor owns the lifecycle.
 
-Postgres is published on **loopback only** (`127.0.0.1:5433` on the host). Do not expose that port on a public VPS. Change `POSTGRES_PASSWORD` and keep Postgres on an internal network when you deploy remotely.
+Postgres is published on **loopback only** (`127.0.0.1:5433` on the host). The API (`127.0.0.1:3100`) and web (`127.0.0.1:5173`) host ports are loopback too. Do not expose those ports on a public VPS. Change `POSTGRES_PASSWORD` and keep Postgres on an internal network when you deploy remotely.
 
 The Docker supervisor is not published. It is authenticated and stays on the internal Compose network because access to it is equivalent to control of the Docker host. It uses `BETTER_AUTH_SECRET` as its shared service credential by default; advanced deployments can set the same independent `SANDBOX_SUPERVISOR_TOKEN` value on the API, worker, and supervisor.
 

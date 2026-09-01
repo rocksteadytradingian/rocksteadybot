@@ -8,6 +8,12 @@ import {
   type ElectronAutoUpdater,
   LAUNCH_CHECK_DELAY_MS,
 } from "./auto-update.js";
+import {
+  createNodeLocalStackHost,
+  ensureLocalStack,
+  localStackAutoConnectOnFirstRun,
+  localStackAutoStartEnabled,
+} from "./local-stack.js";
 import { oauthCallbackFrom } from "./oauth-callback.js";
 import {
   bundledRendererCandidates,
@@ -611,6 +617,34 @@ async function probeServer(rawUrl: string): Promise<DesktopReachability> {
   const url = normalizeServerUrl(rawUrl);
   if (url === null) return { ok: false, error: "Enter a valid http:// or https:// address." };
 
+  if (localStackAutoStartEnabled(process.env)) {
+    const started = await ensureLocalStack({
+      targetUrl: url,
+      searchFrom: [
+        process.env.RAKAZO_REPO_ROOT,
+        process.cwd(),
+        app.getAppPath(),
+        import.meta.dirname,
+      ],
+      host: createNodeLocalStackHost({
+        homedir: app.getPath("home"),
+        writeShortcut: (filePath, details) => {
+          const operation = existsSync(filePath) ? "update" : "create";
+          const icon =
+            details.icon !== undefined && existsSync(details.icon) ? details.icon : undefined;
+          shell.writeShortcutLink(filePath, operation, {
+            target: details.target,
+            cwd: details.cwd,
+            args: details.args,
+            description: details.description,
+            ...(icon === undefined ? {} : { icon, iconIndex: details.iconIndex }),
+          });
+        },
+      }),
+    });
+    if (!started.ok) return { ok: false, url, error: started.error };
+  }
+
   try {
     const response = await net.fetch(`${url}/rpc/health`, {
       method: "POST",
@@ -1015,7 +1049,28 @@ app.whenReady().then(async () => {
   });
 
   if (target.kind === "setup") {
-    showSetupWindow();
+    if (localStackAutoConnectOnFirstRun(process.env)) {
+      const reachability = await probeServer(DEFAULT_LOCAL_WEB_URL);
+      if (reachability.ok) {
+        const setup = { mode: "new" as const, serverUrl: DEFAULT_LOCAL_WEB_URL };
+        currentSetup = setup;
+        if (await openApp(setup.serverUrl)) {
+          try {
+            await writeSetup(userDataDir, setup);
+            commitPendingAppSwitch();
+            destroySetupWindow();
+          } catch {
+            showSetupWindow(
+              "Connected, but could not save setup for the next launch. Try Continue again.",
+            );
+          }
+        }
+      } else {
+        showSetupWindow(reachability.error ?? null);
+      }
+    } else {
+      showSetupWindow();
+    }
   } else if (target.source === "saved") {
     const reachability = await probeServer(target.url);
     if (reachability.ok) {

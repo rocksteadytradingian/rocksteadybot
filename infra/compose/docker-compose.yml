@@ -64,7 +64,7 @@ services:
       SANDBOX_PROVIDER: docker
       AGENT_RUNTIME: pi
     ports:
-      - "3100:3100"
+      - "127.0.0.1:3100:3100"
     volumes:
       - ../../data:/data
     depends_on:
@@ -105,7 +105,7 @@ services:
       BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:-}
       RAKAZO_HOST: ${RAKAZO_HOST:-localhost}
     ports:
-      - "5173:5173"
+      - "127.0.0.1:5173:5173"
     depends_on:
       - api
 
