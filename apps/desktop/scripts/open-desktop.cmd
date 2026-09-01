@@ -32,14 +32,19 @@ if errorlevel 1 (
 )
 
 :docker_ready
+powershell -NoProfile -ExecutionPolicy Bypass -File "%SCRIPT_DIR%free-own-ports.ps1" >nul 2>&1
+
 set "COMPOSE_ENV="
 if exist "%ROOT%\.env" set "COMPOSE_ENV=--env-file .env"
 
 echo Starting RocksteadyBot...
-"%DOCKER%" compose !COMPOSE_ENV! -f "%COMPOSE_FILE%" -f "%DESKTOP_COMPOSE%" up -d
+"%DOCKER%" compose !COMPOSE_ENV! -f "%COMPOSE_FILE%" -f "%DESKTOP_COMPOSE%" up -d --remove-orphans
 if errorlevel 1 (
-  echo Docker Compose could not start. Close whatever is using port 5173, then try again.
-  exit /b 1
+  curl.exe -s -o NUL -w "%%{http_code}" "http://127.0.0.1:5173/" | findstr /x "200" >nul
+  if errorlevel 1 (
+    echo Docker Compose could not start. Close whatever is using port 5173, then try again.
+    exit /b 1
+  )
 )
 
 set /a _wait=0
@@ -54,9 +59,19 @@ echo The local stack did not become ready. Check Docker Desktop, then try again.
 exit /b 1
 
 :healthy
-set "ELECTRON=%ROOT%\node_modules\electron\dist\electron.exe"
-if exist "%ELECTRON%" if exist "%ROOT%\apps\desktop\dist\main.js" (
-  start "" /D "%ROOT%\apps\desktop" "%ELECTRON%" .
+set "ELECTRON="
+if exist "%ROOT%\node_modules\electron\dist\electron.exe" set "ELECTRON=%ROOT%\node_modules\electron\dist\electron.exe"
+if not defined ELECTRON if exist "%ROOT%\apps\desktop\node_modules\electron\dist\electron.exe" (
+  set "ELECTRON=%ROOT%\apps\desktop\node_modules\electron\dist\electron.exe"
+)
+
+if defined ELECTRON if not exist "%ROOT%\apps\desktop\dist\main.js" (
+  echo Building the desktop app...
+  npx --yes pnpm@9.15.0 --config.engine-strict=false --filter @rakazo/desktop build >nul 2>&1
+)
+
+if defined ELECTRON if exist "%ROOT%\apps\desktop\dist\main.js" (
+  start "" /D "%ROOT%\apps\desktop" "!ELECTRON!" .
 ) else (
   start "" "http://127.0.0.1:5173"
 )

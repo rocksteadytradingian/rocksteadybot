@@ -169,6 +169,7 @@ describe("compose and shortcut", () => {
       "infra/compose/docker-compose.desktop.yml",
       "up",
       "-d",
+      "--remove-orphans",
     ]);
     expect(composeUpArgs(false)[1]).toBe("-f");
   });
@@ -402,5 +403,13 @@ describe("launcher files", () => {
     expect(cmd).toContain("electron.exe");
     expect(cmd).toContain("http://127.0.0.1:5173");
     expect(cmd).toContain("install-desktop-shortcut.ps1");
+    expect(cmd).toContain("free-own-ports.ps1");
+    expect(cmd).toContain("--remove-orphans");
+    const freePorts = await readFile(
+      path.join(root, "apps/desktop/scripts/free-own-ports.ps1"),
+      "utf8",
+    );
+    expect(freePorts).toContain("Test-OwnStackProcess");
+    expect(freePorts).toContain("taskkill");
   });
 });

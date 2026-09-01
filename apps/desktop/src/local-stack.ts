@@ -171,7 +171,7 @@ export function isOwnStackProcess(commandLine: string): boolean {
 export function composeUpArgs(envFileExists: boolean): string[] {
   const args = ["compose"];
   if (envFileExists) args.push("--env-file", ".env");
-  args.push("-f", COMPOSE_FILE, "-f", COMPOSE_DESKTOP_FILE, "up", "-d");
+  args.push("-f", COMPOSE_FILE, "-f", COMPOSE_DESKTOP_FILE, "up", "-d", "--remove-orphans");
   return args;
 }
 
