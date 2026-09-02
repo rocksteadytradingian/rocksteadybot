@@ -12,7 +12,11 @@ services:
       - ../../apps/api/src:/app/apps/api/src:ro
       - ../../packages/auth/src:/app/packages/auth/src:ro
       - ../../packages/adapters/src:/app/packages/adapters/src:ro
+  # Image dist/ is root-owned from the Dockerfile build. Vite empties it before
+  # rebuilding from the bind-mounted checkout; run as root so unlink works
+  # without rebuilding the image.
   web:
+    user: "0:0"
     ports: !override
       - "127.0.0.1:5173:5173"
     volumes:
@@ -24,5 +28,7 @@ services:
       - -lc
       - |
         set -euo pipefail
+        mkdir -p /app/apps/web/dist /app/apps/web/node_modules/.vite-temp
+        chown -R node:node /app/apps/web/dist /app/apps/web/node_modules/.vite-temp
         RAKAZO_ALLOW_DEV_SECRETS=1 pnpm --filter @rakazo/web build
         exec pnpm --filter @rakazo/web preview --host 0.0.0.0 --port 5173

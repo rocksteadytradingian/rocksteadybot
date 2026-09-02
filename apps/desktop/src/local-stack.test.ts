@@ -500,6 +500,10 @@ describe("launcher files", () => {
     expect(desktop).toContain("../../packages/adapters/src:/app/packages/adapters/src:ro");
     expect(desktop).toContain("pnpm --filter @rakazo/web build");
     expect(desktop).toContain("set -euo pipefail");
+    expect(desktop).toContain('user: "0:0"');
+    expect(desktop).toContain("chown -R node:node /app/apps/web/dist");
+    const dockerfile = await readFile(path.join(root, "infra/compose/Dockerfile"), "utf8");
+    expect(dockerfile).toContain("chown -R node:node /app/apps/web/dist");
   });
 
   it("points the Windows launcher at Compose then Electron", async () => {
