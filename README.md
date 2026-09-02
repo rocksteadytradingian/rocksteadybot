@@ -2,7 +2,7 @@
 
 [![GitHub stars](https://img.shields.io/github/stars/rocksteadytradingian/RCKBOT?labelColor=black&style=for-the-badge&color=2563EB)](https://github.com/rocksteadytradingian/RCKBOT/stargazers)
 
-![RocksteadyBot — AI teammates you actually own](./docs/readme-hero.png)
+![RocksteadyBot — AI teammates you actually own](./docs/readme-hero.svg)
 
 RocksteadyBot is an open-source platform for running persistent AI teammates. It runs on the web,
 as an Electron desktop app (Windows and macOS), and through an Expo mobile app. Bring your own
