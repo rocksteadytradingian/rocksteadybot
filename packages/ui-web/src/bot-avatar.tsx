@@ -1,4 +1,9 @@
-import { ACTIVE_RUN_STATUSES, avatarIdentitySeed, organicAvatarPath } from "@rakazo/core";
+import {
+  ACTIVE_RUN_STATUSES,
+  avatarIdentitySeed,
+  organicAvatarPath,
+  PRODUCT_NAME,
+} from "@rakazo/core";
 import { type CSSProperties, memo, useId, useSyncExternalStore } from "react";
 import { type AvatarStyle, useAvatarStyle } from "./avatar-style.js";
 import { cn } from "./lib/utils.js";
@@ -293,7 +298,7 @@ export function Wordmark({ className }: { className?: string }) {
         <span className="h-4 w-[7px] rounded-full bg-[#F7F7F4]" />
       </div>
       <span className="font-[Aeonik,ui-sans-serif] text-[28px] tracking-tight text-[#1B1B1E]">
-        Rakazo
+        {PRODUCT_NAME}
       </span>
     </div>
   );

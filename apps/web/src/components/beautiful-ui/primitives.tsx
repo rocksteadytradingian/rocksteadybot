@@ -78,6 +78,15 @@ function DefaultLoadingState({ label, startedAt }: { label: string; startedAt?: 
   );
 }
 
+function ElapsedText({ startedAt }: { startedAt?: number }) {
+  const elapsed = useElapsed(startedAt);
+  return (
+    <span className="font-mono text-[12px] tabular-nums" style={{ color: "var(--bui-ink-3)" }}>
+      {elapsed}
+    </span>
+  );
+}
+
 export function LoadingState({
   indicator,
   label = "working",
@@ -93,6 +102,7 @@ export function LoadingState({
       <span role="status" className="flex w-fit items-center gap-2.5">
         <span className="sr-only">{label}</span>
         {indicator}
+        <ElapsedText startedAt={startedAt} />
       </span>
     );
   }

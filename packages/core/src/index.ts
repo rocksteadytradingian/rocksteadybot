@@ -1,3 +1,4 @@
+export { PRODUCT_NAME } from "@rakazo/contracts";
 export * from "./action-approval.js";
 export * from "./agent-skill.js";
 export * from "./answerable-ask.js";
@@ -17,6 +18,8 @@ export * from "./group-mentions.js";
 export * from "./mcp.js";
 export * from "./message-pages.js";
 export * from "./model-oauth.js";
+export * from "./pending-approvals.js";
+export * from "./plugin-catalog.js";
 export * from "./run-state.js";
 export * from "./sandbox-command.js";
 export * from "./screen-lease.js";

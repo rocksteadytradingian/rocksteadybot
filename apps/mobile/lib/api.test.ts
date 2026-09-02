@@ -7,6 +7,7 @@ import {
   type MobileSnapshot,
   mergeMobileSnapshot,
   prependMobileMessagePage,
+  requestPasswordReset,
   rpc,
   shouldApplyMobileThreadRefresh,
   signIn,
@@ -57,6 +58,36 @@ describe("mobile API authentication", () => {
 
     await expect(signIn("ada@example.com", "wrong")).rejects.toThrow("Invalid credentials");
     expect(SecureStore.setItemAsync).not.toHaveBeenCalled();
+  });
+
+  it("requests a password reset against the current API origin", async () => {
+    const fetchMock = vi.fn(async () => jsonResponse({ status: true }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await requestPasswordReset("ada@example.com");
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "http://127.0.0.1:3100/api/auth/request-password-reset",
+      expect.objectContaining({
+        method: "POST",
+        headers: { "content-type": "application/json", origin: "rakazo://" },
+        body: JSON.stringify({
+          email: "ada@example.com",
+          redirectTo: "http://127.0.0.1:3100/reset-password",
+        }),
+      }),
+    );
+  });
+
+  it("maps a disabled reset endpoint to a local-recovery error", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => jsonResponse({ message: "Reset password isn't enabled" }, { status: 400 })),
+    );
+
+    await expect(requestPasswordReset("ada@example.com")).rejects.toThrow(
+      "Password reset is not configured",
+    );
   });
 
   it("clears the local session even when the sign-out request fails", async () => {

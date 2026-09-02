@@ -21,6 +21,7 @@ import {
   isPipedreamEnabled,
   LocalAgentHomeStore,
   LocalArtifactStore,
+  loadUserComposioApiKey,
   McpConnector,
   McpOAuthBroker,
   PiAgentRuntime,
@@ -86,11 +87,15 @@ async function main() {
   const pipedream = isPipedreamEnabled(pipedreamConfig)
     ? new PipedreamConnector(pipedreamConfig)
     : undefined;
-  const stack = createConnectorStack(isComposioEnabled(process.env.COMPOSIO_API_KEY), undefined, [
-    new InstalledConnectorProvider(prisma, secrets),
-    ...(pipedream ? [pipedream] : []),
-    mcp,
-  ]);
+  const stack = createConnectorStack(
+    isComposioEnabled(process.env.COMPOSIO_API_KEY),
+    undefined,
+    [new InstalledConnectorProvider(prisma, secrets), ...(pipedream ? [pipedream] : []), mcp],
+    {
+      envApiKey: process.env.COMPOSIO_API_KEY,
+      resolveUserApiKey: (userId) => loadUserComposioApiKey(prisma, secrets, userId),
+    },
+  );
   const connector = stack.destination;
   await connector.start();
   const memoryProviders = new WorkspaceMemoryProviderResolver(prisma, secrets);

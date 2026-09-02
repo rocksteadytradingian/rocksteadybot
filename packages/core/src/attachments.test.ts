@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   AttachmentValidationError,
+  attachmentExtensionForMimeType,
   attachmentsForBot,
   blocksToAgentHistoryText,
   decodeAttachmentBase64,
@@ -11,8 +12,15 @@ import {
 } from "./attachments.js";
 
 describe("attachment helpers", () => {
-  it("rejects unsupported mime types and empty payloads", () => {
-    expect(() => validateAttachmentMimeType("application/zip")).toThrow(AttachmentValidationError);
+  it("rejects malformed mime types and empty payloads", () => {
+    expect(() => validateAttachmentMimeType("not-a-type")).toThrow(AttachmentValidationError);
+    expect(() => validateAttachmentMimeType("")).toThrow(AttachmentValidationError);
+    expect(() => validateAttachmentMimeType("application/zip")).not.toThrow();
+    expect(() =>
+      validateAttachmentMimeType(
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      ),
+    ).not.toThrow();
     expect(() => decodeAttachmentBase64("")).toThrow(AttachmentValidationError);
     expect(() => decodeAttachmentBase64("aGVsbG8=trailing-junk")).toThrow(
       AttachmentValidationError,
@@ -52,7 +60,20 @@ describe("attachment helpers", () => {
     expect(inferAttachmentMimeType("notes.md", "")).toBe("text/markdown");
     expect(inferAttachmentMimeType("notes.markdown", "text/plain")).toBe("text/markdown");
     expect(inferAttachmentMimeType("notes.md", "application/pdf")).toBe("application/pdf");
-    expect(inferAttachmentMimeType("archive.zip", "")).toBeNull();
+    expect(inferAttachmentMimeType("archive.zip", "")).toBe("application/zip");
+    expect(inferAttachmentMimeType("Makefile", "")).toBe("application/octet-stream");
+    expect(inferAttachmentMimeType("", "image/png")).toBe("image/png");
+    expect(inferAttachmentMimeType("", "image/jpg")).toBe("image/jpeg");
+    expect(inferAttachmentMimeType("", "")).toBeNull();
+  });
+
+  it("derives file extensions from mime type or original name", () => {
+    expect(attachmentExtensionForMimeType("application/pdf")).toBe(".pdf");
+    expect(attachmentExtensionForMimeType("application/zip", "archive.zip")).toBe(".zip");
+    expect(attachmentExtensionForMimeType("application/octet-stream", "Makefile")).toBe(".bin");
+    expect(attachmentExtensionForMimeType("application/x-custom", "notes.customext")).toBe(
+      ".customext",
+    );
   });
 
   it("scopes current-turn images to user-triggered runs", () => {

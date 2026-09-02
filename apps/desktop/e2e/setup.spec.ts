@@ -61,7 +61,11 @@ test.afterEach(async () => {
 });
 
 function launch(extraEnv: Record<string, string> = {}) {
-  const env = { ...process.env, RAKAZO_PERFORMANCE_USER_DATA: userData };
+  const env = {
+    ...process.env,
+    RAKAZO_PERFORMANCE_USER_DATA: userData,
+    RAKAZO_DISABLE_LOCAL_STACK: "1",
+  };
   // A stale RAKAZO_WEB_URL from the developer's shell would bypass setup entirely.
   delete env.RAKAZO_WEB_URL;
   return electron.launch({

@@ -97,6 +97,7 @@ describe("mobile custom server UI", () => {
     const signIn = readFileSync(path.join(dir, "../app/sign-in.tsx"), "utf8");
     const api = readFileSync(path.join(dir, "api.ts"), "utf8");
     expect(signIn).toContain("Use a custom server");
+    expect(signIn).toContain("Forgot password?");
     expect(signIn).toContain("saveApiBase");
     expect(signIn).toContain("probeApiBase");
     expect(api).toContain("currentApiBase()");

@@ -73,7 +73,7 @@ export function BotContextMenu({
       <div
         role="menu"
         aria-label={t`Actions for ${bot.name}`}
-        className="fixed w-[264px] rounded-[18px] border border-[#343438] bg-[#1A1A1D] p-2 shadow-[0_24px_60px_rgba(0,0,0,.62)]"
+        className="fixed w-[264px] rounded-[18px] border border-[var(--rk-hairline-strong)] bg-[var(--rk-surface-2)] p-2 shadow-[var(--rk-shadow)]"
         style={{ left: safeLeft, top: safeTop }}
       >
         <MenuItem
@@ -106,7 +106,7 @@ export function BotContextMenu({
         <div
           role="menu"
           aria-label={t`Move ${bot.name} to section`}
-          className="fixed max-h-[min(420px,calc(100vh-16px))] w-[264px] overflow-y-auto rounded-[18px] border border-[#343438] bg-[#1A1A1D] p-2 shadow-[0_24px_60px_rgba(0,0,0,.62)]"
+          className="fixed max-h-[min(420px,calc(100vh-16px))] w-[264px] overflow-y-auto rounded-[18px] border border-[var(--rk-hairline-strong)] bg-[var(--rk-surface-2)] p-2 shadow-[var(--rk-shadow)]"
           style={{ left: Math.max(margin, sectionLeft), top: safeTop }}
         >
           {sections.map((section) => (

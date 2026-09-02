@@ -1,5 +1,6 @@
-export const OPENAI_COMPATIBLE_BASE_URL_HINT =
-  "Paste the OpenAI-compatible address from your server. Rakazo adds /v1 if needed.";
+import { PRODUCT_NAME } from "./brand.js";
+
+export const OPENAI_COMPATIBLE_BASE_URL_HINT = `Paste the OpenAI-compatible address from your server. ${PRODUCT_NAME} adds /v1 if needed.`;
 
 export function openAiCompatibleConnectReady(input: {
   baseUrl: string;

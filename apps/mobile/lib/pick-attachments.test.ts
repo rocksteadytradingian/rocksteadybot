@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { filterPickedAttachments } from "./pick-attachments-filter.js";
 
 describe("filterPickedAttachments", () => {
-  it("skips unsupported mime types and oversize files", () => {
+  it("skips files without a mime type and oversize files, but accepts any valid type", () => {
     const result = filterPickedAttachments(0, [
       {
         name: "notes.txt",
@@ -11,7 +11,13 @@ describe("filterPickedAttachments", () => {
         contentBase64: "aGVsbG8=",
       },
       {
-        name: "evil.zip",
+        name: "notes.zip",
+        mimeType: "application/zip",
+        size: 12,
+        contentBase64: "aGVsbG8=",
+      },
+      {
+        name: "unknown.bin",
         mimeType: null,
         size: 12,
         contentBase64: "aGVsbG8=",
@@ -23,9 +29,8 @@ describe("filterPickedAttachments", () => {
         contentBase64: "aGVsbG8=",
       },
     ]);
-    expect(result.attachments).toHaveLength(1);
-    expect(result.attachments[0]?.name).toBe("notes.txt");
-    expect(result.skipped.map((item) => item.name)).toEqual(["evil.zip", "big.bin"]);
+    expect(result.attachments.map((item) => item.name)).toEqual(["notes.txt", "notes.zip"]);
+    expect(result.skipped.map((item) => item.name)).toEqual(["unknown.bin", "big.bin"]);
   });
 
   it("assigns distinct ids to duplicate files", () => {

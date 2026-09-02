@@ -200,7 +200,7 @@ export default function Account() {
           style={({ pressed }) => [styles.settingsButton, pressed && styles.pressed]}
         >
           <View>
-            <Text style={styles.settingsTitle}>Integrations</Text>
+            <Text style={styles.settingsTitle}>Plugins</Text>
             <Text style={styles.settingsExplanation}>Connect apps.</Text>
           </View>
           <Text style={styles.chevron}>›</Text>

@@ -1,19 +1,70 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-theme="claude">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="description" content="Your team of always-on agents." />
-    <meta name="theme-color" content="#050506" />
-    <meta name="apple-mobile-web-app-title" content="Rakazo" />
+    <meta name="theme-color" content="#F4EFE6" />
+    <meta name="rakazo-web" content="auth-origin" />
+    <meta name="apple-mobile-web-app-title" content="RocksteadyBot" />
     <link rel="icon" href="/favicon.ico" sizes="any" />
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
     <link rel="manifest" href="/site.webmanifest" />
-    <title>Rakazo</title>
+    <title>RocksteadyBot</title>
+    <script>
+      (() => {
+        try {
+          const aliases = {
+            light: "claude",
+            midnight: "grok",
+            slate: "chatgpt",
+            sand: "claude",
+            moss: "gemini",
+          };
+          let theme = localStorage.getItem("rakazo.uiTheme");
+          if (theme && aliases[theme]) theme = aliases[theme];
+          if (
+            theme === "grok" ||
+            theme === "chatgpt" ||
+            theme === "claude" ||
+            theme === "gemini" ||
+            theme === "perplexity" ||
+            theme === "copilot"
+          ) {
+            document.documentElement.setAttribute("data-theme", theme);
+          }
+        } catch {
+          /* private mode / blocked storage */
+        }
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>
+    <p
+      id="rk-forgot-password"
+      hidden
+      style="position:fixed;left:0;right:0;bottom:16%;z-index:2147483647;margin:0;text-align:center;font:500 17px/1.4 system-ui,sans-serif"
+    >
+      <a href="/forgot-password" style="color: inherit">Forgot password?</a>
+    </p>
+    <script>
+      (() => {
+        const el = document.getElementById("rk-forgot-password");
+        if (!el) return;
+        const sync = () => {
+          const onSignIn = /\/sign-in\/?$/.test(location.pathname);
+          const hasLink = Boolean(document.querySelector('#root a[href="/forgot-password"]'));
+          el.hidden = !onSignIn || hasLink;
+        };
+        setInterval(sync, 400);
+        if (document.readyState === "loading") {
+          document.addEventListener("DOMContentLoaded", sync);
+        }
+        sync();
+      })();
+    </script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

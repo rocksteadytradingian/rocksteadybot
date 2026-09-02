@@ -1,0 +1,34 @@
+# Desktop launches this stack so a leftover host process on :3100 cannot block
+# Compose. The shell talks to the web origin on loopback :5173; the API stays on
+# the Compose network. Checkout sources are bind-mounted so Electron and sign-in
+# use this tree instead of a baked image.
+services:
+  api:
+    ports: !override []
+    environment:
+      BETTER_AUTH_URL: http://127.0.0.1:5173
+      WEB_ORIGIN: http://127.0.0.1:5173
+    volumes:
+      - ../../apps/api/src:/app/apps/api/src:ro
+      - ../../packages/auth/src:/app/packages/auth/src:ro
+      - ../../packages/adapters/src:/app/packages/adapters/src:ro
+  # Image dist/ is root-owned from the Dockerfile build. Vite empties it before
+  # rebuilding from the bind-mounted checkout; run as root so unlink works
+  # without rebuilding the image.
+  web:
+    user: "0:0"
+    ports: !override
+      - "127.0.0.1:5173:5173"
+    volumes:
+      - ../../apps/web/src:/app/apps/web/src:ro
+      - ../../apps/web/index.html:/app/apps/web/index.html:ro
+      - ../../apps/web/vite.config.ts:/app/apps/web/vite.config.ts:ro
+    command:
+      - bash
+      - -lc
+      - |
+        set -euo pipefail
+        mkdir -p /app/apps/web/dist /app/apps/web/node_modules/.vite-temp
+        chown -R node:node /app/apps/web/dist /app/apps/web/node_modules/.vite-temp
+        RAKAZO_ALLOW_DEV_SECRETS=1 pnpm --filter @rakazo/web build
+        exec pnpm --filter @rakazo/web preview --host 0.0.0.0 --port 5173

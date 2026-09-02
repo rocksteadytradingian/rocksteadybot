@@ -150,18 +150,23 @@ describeWithDatabase("API authorization and resource isolation", () => {
       ["connections/begin", connectionInput("Unauthenticated")],
       ["connections/complete", { connectionId: "missing-connection" }],
       ["connections/revoke", { connectionId: "missing-connection" }],
+      ["connections/projectKey"],
+      ["connections/setProjectKey", { apiKey: "not-a-real-key" }],
+      ["connections/clearProjectKey"],
       ["approvalRules/list"],
       [
         "approvalRules/set",
         { effect: "require_approval", matchKind: "category", matchValue: "email" },
       ],
       ["approvalRules/remove", { id: "missing-rule" }],
+      ["approvals/list"],
       ["artifacts/list", { botId: "missing-bot" }],
       ["usage/list"],
       ["usage/summary"],
       ["export/bot", { botId: "missing-bot" }],
       ["notifications/registerPush", { token: "ExponentPushToken[not-real]" }],
       ["search/query", { q: "anything" }],
+      ["runs/list", { filter: "active" }],
       ["voice/catalog"],
       ["voice/status"],
       ["voice/credentials"],
@@ -169,6 +174,11 @@ describeWithDatabase("API authorization and resource isolation", () => {
       ["voice/setVoice", { voiceId: "missing-voice" }],
       ["voice/voices", {}],
       ["voice/prepare", { text: "Nope" }],
+      ["workspaces/list"],
+      ["workspaces/create", { name: "Nope" }],
+      ["workspaces/switch", { workspaceId: "missing-workspace" }],
+      ["workspaces/update", { workspaceId: "missing-workspace", name: "Nope" }],
+      ["workspaces/remove", { workspaceId: "missing-workspace" }],
     ]);
 
     const results = await Promise.all(
@@ -764,6 +774,47 @@ describeWithDatabase("API authorization and resource isolation", () => {
       await handles.prisma.deploymentSettings.findUniqueOrThrow({ where: { id: "default" } }),
     ).toMatchObject({ signupsEnabled: true, signupAllowlist: "" });
   });
+
+  it("keeps bots private to the active workspace", async () => {
+    const cookie = await signup(app, `workspace-bots-${stamp}@rakazo.test`, "Workspace Owner");
+    const personal = await rpc<Me>(app, cookie, "me");
+    expect(personal.workspaceName).toBe("Personal");
+    expect(personal.workspaces).toEqual([
+      expect.objectContaining({ id: personal.workspaceId, name: "Personal" }),
+    ]);
+    const personalBot = await rpc<Bot>(app, cookie, "bots/create", botInput("Personal Bot"));
+
+    const work = await rpc<Me>(app, cookie, "workspaces/create", { name: "Work" });
+    expect(work.workspaceName).toBe("Work");
+    expect(work.workspaceId).not.toBe(personal.workspaceId);
+    expect(await rpc<Bot[]>(app, cookie, "bots/list")).toEqual([]);
+    const workBot = await rpc<Bot>(app, cookie, "bots/create", botInput("Work Bot"));
+    expect((await rpc<Bot[]>(app, cookie, "bots/list")).map((bot) => bot.id)).toEqual([workBot.id]);
+
+    const switched = await rpc<Me>(app, cookie, "workspaces/switch", {
+      workspaceId: personal.workspaceId,
+    });
+    expect(switched.workspaceId).toBe(personal.workspaceId);
+    expect((await rpc<Bot[]>(app, cookie, "bots/list")).map((bot) => bot.id)).toEqual([
+      personalBot.id,
+    ]);
+
+    const intruder = await signup(app, `workspace-intruder-${stamp}@rakazo.test`, "Intruder");
+    await expectDenied(app, intruder, "workspaces/switch", { workspaceId: work.workspaceId });
+    await expectDenied(app, intruder, "workspaces/update", {
+      workspaceId: work.workspaceId,
+      name: "Stolen",
+    });
+    await expectDenied(app, intruder, "workspaces/remove", { workspaceId: work.workspaceId });
+
+    await rpc(app, cookie, "workspaces/switch", { workspaceId: work.workspaceId });
+    const afterDelete = await rpc<Me>(app, cookie, "workspaces/remove", {
+      workspaceId: work.workspaceId,
+    });
+    expect(afterDelete.workspaceId).toBe(personal.workspaceId);
+    expect(afterDelete.workspaces).toHaveLength(1);
+    await expectDenied(app, cookie, "workspaces/remove", { workspaceId: personal.workspaceId });
+  });
 });
 
 function botInput(name: string) {
@@ -859,6 +910,8 @@ interface Actor {
 }
 
 interface Me extends Actor {
+  workspaceName: string;
+  workspaces: Array<{ id: string; name: string }>;
   defaultProvider: string | null;
   defaultModel: string | null;
 }

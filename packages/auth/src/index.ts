@@ -1,10 +1,28 @@
-import { randomBytes } from "node:crypto";
-import { emailAllowed, parseAllowlist, signupsOpen } from "@rakazo/core";
-import type { PrismaClient } from "@rakazo/db";
+import { emailAllowed, PRODUCT_NAME, parseAllowlist, signupsOpen } from "@rakazo/core";
+import { createWorkspace, type PrismaClient } from "@rakazo/db";
 import { betterAuth } from "better-auth";
 import { prismaAdapter } from "better-auth/adapters/prisma";
 import { APIError } from "better-auth/api";
 import { bearer, organization } from "better-auth/plugins";
+
+export {
+  createSignedInResponse,
+  ensureLocalUser,
+  type LocalAuthHost,
+  type LocalAuthUser,
+} from "./local-identity.js";
+export {
+  normalizeAccountEmail,
+  parseSetPasswordArgs,
+  setCredentialPassword,
+  upsertCredentialPassword,
+  verifyLocalCredential,
+} from "./set-password.js";
+
+export type SendResetPassword = (
+  data: { user: { id: string; email: string; name: string }; url: string; token: string },
+  request?: Request,
+) => Promise<void>;
 
 export interface AuthEnv {
   secret: string;
@@ -13,23 +31,25 @@ export interface AuthEnv {
   signupsEnabled: string | undefined;
   signupAllowlist: string | undefined;
   extraOrigins?: string[];
+  sendResetPassword?: SendResetPassword;
   beforeDeleteUser?: (userId: string) => Promise<void>;
-}
-
-function newId(): string {
-  return randomBytes(16).toString("hex");
 }
 
 export function createAuth(prisma: PrismaClient, env: AuthEnv) {
   return betterAuth({
-    appName: "Rakazo",
+    appName: PRODUCT_NAME,
     secret: env.secret,
     baseURL: env.baseURL,
     trustedOrigins: [env.webOrigin, env.baseURL, ...(env.extraOrigins ?? [])],
+    advanced: {
+      useSecureCookies: env.webOrigin.startsWith("https://"),
+    },
     database: prismaAdapter(prisma, { provider: "postgresql" }),
     emailAndPassword: {
       enabled: true,
       disableSignUp: !signupsOpen(env.signupsEnabled),
+      revokeSessionsOnPasswordReset: true,
+      ...(env.sendResetPassword ? { sendResetPassword: env.sendResetPassword } : {}),
     },
     user: {
       deleteUser: {
@@ -86,23 +106,10 @@ export function createAuth(prisma: PrismaClient, env: AuthEnv) {
       user: {
         create: {
           after: async (user) => {
-            const orgId = newId();
-            await prisma.organization.create({
-              data: {
-                id: orgId,
-                name: "Personal",
-                slug: `user-${user.id.slice(0, 12)}`,
-                createdAt: new Date(),
-              },
-            });
-            await prisma.member.create({
-              data: {
-                id: newId(),
-                organizationId: orgId,
-                userId: user.id,
-                role: "owner",
-                createdAt: new Date(),
-              },
+            await createWorkspace(prisma, {
+              userId: user.id,
+              name: "Personal",
+              slug: `user-${user.id.slice(0, 12)}`,
             });
             const existing = await prisma.deploymentSettings.findUnique({
               where: { id: "default" },
@@ -117,21 +124,6 @@ export function createAuth(prisma: PrismaClient, env: AuthEnv) {
                 data: { ownerUserId: user.id },
               });
             }
-            await prisma.memoryDocument.create({
-              data: {
-                workspaceId: orgId,
-                userId: user.id,
-                scope: "user",
-                path: "MEMORY.md",
-                content: "# User memory\n\nAccount-wide preferences live here.\n",
-              },
-            });
-            await prisma.notificationPreference.create({
-              data: {
-                workspaceId: orgId,
-                userId: user.id,
-              },
-            });
           },
         },
       },

@@ -377,8 +377,16 @@ export const ConnectionCatalogItemSchema = z.object({
   logo: z.string().nullable(),
   connected: z.boolean(),
   noAuth: z.boolean(),
+  description: z.string().optional(),
+  categories: z.array(z.string()).optional(),
 });
 export type ConnectionCatalogItem = z.infer<typeof ConnectionCatalogItemSchema>;
+
+export const ComposioProjectKeyStatusSchema = z.object({
+  configured: z.boolean(),
+  source: z.enum(["user", "server", "none"]),
+});
+export type ComposioProjectKeyStatus = z.infer<typeof ComposioProjectKeyStatusSchema>;
 
 export const ActionApprovalRuleSchema = z.object({
   id: Id,
@@ -784,11 +792,19 @@ export const ServerUpdateCheckSchema = z.object({
 });
 export type ServerUpdateCheck = z.infer<typeof ServerUpdateCheckSchema>;
 
+export const WorkspaceSchema = z.object({
+  id: Id,
+  name: z.string().min(1),
+});
+export type Workspace = z.infer<typeof WorkspaceSchema>;
+
 export const MeSchema = z.object({
   userId: Id,
   email: z.string().email(),
   name: z.string(),
   workspaceId: Id,
+  workspaceName: z.string().min(1),
+  workspaces: z.array(WorkspaceSchema),
   isDeploymentOwner: z.boolean(),
   needsModel: z.boolean(),
   defaultProvider: z.string().nullable(),

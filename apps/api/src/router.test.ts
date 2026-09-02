@@ -16,6 +16,11 @@ describe("account preferences", () => {
           avatarStyle,
         }),
       },
+      member: {
+        findMany: vi
+          .fn()
+          .mockResolvedValue([{ organization: { id: "workspace-1", name: "Personal" } }]),
+      },
       userModelCredential: { findFirst: vi.fn().mockResolvedValue(null) },
       deploymentSettings: { findUnique: vi.fn().mockResolvedValue(null) },
     } as unknown as PrismaClient;

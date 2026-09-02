@@ -1,0 +1,164 @@
+@echo off
+setlocal EnableExtensions EnableDelayedExpansion
+set "SCRIPT_DIR=%~dp0"
+for %%I in ("%SCRIPT_DIR%..\..\..") do set "ROOT=%%~fI"
+cd /d "%ROOT%" || (
+  echo Could not open the RocksteadyBot checkout.
+  exit /b 1
+)
+
+set "COMPOSE_FILE=infra\compose\docker-compose.yml"
+set "DESKTOP_COMPOSE=infra\compose\docker-compose.desktop.yml"
+set "LOG=%ROOT%\apps\desktop\desktop-launch.log"
+set "DOCKER=docker"
+if exist "%ProgramFiles%\Docker\Docker\resources\bin\docker.exe" (
+  set "DOCKER=%ProgramFiles%\Docker\Docker\resources\bin\docker.exe"
+)
+
+echo ===== %DATE% %TIME% =====>> "%LOG%"
+echo Checkout %ROOT%>> "%LOG%"
+
+"%DOCKER%" info >nul 2>&1
+if errorlevel 1 (
+  if exist "%ProgramFiles%\Docker\Docker\Docker Desktop.exe" (
+    echo Starting Docker Desktop...
+    echo Starting Docker Desktop...>> "%LOG%"
+    start "" "%ProgramFiles%\Docker\Docker\Docker Desktop.exe"
+    set /a _tries=0
+    :wait_docker
+    timeout /t 2 /nobreak >nul
+    "%DOCKER%" info >nul 2>&1
+    if not errorlevel 1 goto docker_ready
+    set /a _tries+=1
+    if !_tries! LSS 45 goto wait_docker
+  )
+  echo Docker Desktop is not running. Start it, then open this shortcut again.
+  echo Docker Desktop is not running.>> "%LOG%"
+  goto fail
+)
+
+:docker_ready
+findstr /C:"Forgot password?" "apps\web\src\pages\Auth.tsx" >nul
+if errorlevel 1 (
+  echo This checkout does not contain Forgot password.
+  echo In PowerShell run:
+  echo   git fetch origin
+  echo   git reset --hard origin/feat/themes-approvals-workspaces
+  echo Then open this shortcut again.
+  pause
+  exit /b 1
+)
+findstr /C:"auth-origin" "apps\web\index.html" >nul
+if errorlevel 1 (
+  echo This checkout is missing the current sign-in page.
+  echo In PowerShell run:
+  echo   git fetch origin
+  echo   git reset --hard origin/feat/themes-approvals-workspaces
+  echo Then open this shortcut again.
+  pause
+  exit /b 1
+)
+
+rem PowerShell is optional. Windows Smart App Control often blocks it; Docker is enough.
+powershell -NoProfile -ExecutionPolicy Bypass -File "%SCRIPT_DIR%free-own-ports.ps1" >nul 2>&1
+
+set "COMPOSE_ENV="
+if exist "%ROOT%\.env" set "COMPOSE_ENV=--env-file .env"
+
+echo Starting RocksteadyBot...
+"%DOCKER%" compose !COMPOSE_ENV! -f "%COMPOSE_FILE%" -f "%DESKTOP_COMPOSE%" up -d --remove-orphans
+if errorlevel 1 (
+  curl.exe -s -o NUL -w "%%{http_code}" "http://127.0.0.1:5173/" | findstr /x "200" >nul
+  if errorlevel 1 (
+    echo Docker Compose could not start. Close whatever is using port 5173, then try again.
+    goto fail
+  )
+)
+
+echo Rebuilding the sign-in page from this checkout. This can take a few minutes...
+"%DOCKER%" compose !COMPOSE_ENV! -f "%COMPOSE_FILE%" -f "%DESKTOP_COMPOSE%" up -d --force-recreate --no-deps web
+if errorlevel 1 (
+  echo Docker could not rebuild the sign-in page.
+  "%DOCKER%" compose !COMPOSE_ENV! -f "%COMPOSE_FILE%" -f "%DESKTOP_COMPOSE%" logs --tail 80 web
+  goto fail
+)
+"%DOCKER%" compose !COMPOSE_ENV! -f "%COMPOSE_FILE%" -f "%DESKTOP_COMPOSE%" up -d --force-recreate --no-deps api
+
+echo Preparing the desktop app. Sign-in can keep rebuilding in Docker while this runs...
+call "%SCRIPT_DIR%ensure-desktop.cmd" "%ROOT%"
+if errorlevel 1 goto fail
+
+set "ELECTRON="
+if exist "%ROOT%\node_modules\electron\dist\electron.exe" set "ELECTRON=%ROOT%\node_modules\electron\dist\electron.exe"
+if not defined ELECTRON if exist "%ROOT%\apps\desktop\node_modules\electron\dist\electron.exe" (
+  set "ELECTRON=%ROOT%\apps\desktop\node_modules\electron\dist\electron.exe"
+)
+if not defined ELECTRON (
+  echo The desktop app is not installed. Install Node.js LTS from https://nodejs.org then open this shortcut again.
+  goto fail
+)
+if not exist "%ROOT%\apps\desktop\dist\main.js" (
+  echo The desktop app did not build. Check the output above.
+  goto fail
+)
+echo Using Electron at !ELECTRON!>> "%LOG%"
+
+set "RAKAZO_WEB_URL=http://127.0.0.1:5173/sign-in"
+set "RAKAZO_REPO_ROOT=%ROOT%"
+set "RAKAZO_DISABLE_LOCAL_STACK=1"
+set "RAKAZO_PERFORMANCE_CLEAR_CACHE=1"
+set "ELECTRON_ENABLE_LOGGING=1"
+
+set /a _wait=0
+:wait_health
+set "CODE="
+for /f %%C in ('curl.exe -s -o NUL -w "%%{http_code}" "http://127.0.0.1:5173/rpc/health"') do set "CODE=%%C"
+if "!CODE!"=="200" goto healthy
+for /f %%C in ('curl.exe -s -o NUL -w "%%{http_code}" -X POST "http://127.0.0.1:5173/rpc/health" -H "content-type: application/json" -d "{\"json\":{}}"') do set "CODE=%%C"
+if "!CODE!"=="200" goto healthy
+set /a _wait+=1
+if !_wait! EQU 1 echo Waiting for sign-in at http://127.0.0.1:5173 ...
+set /a _show=_wait %% 5
+if !_wait! GEQ 5 if !_show! EQU 0 echo Still waiting !_wait! of 90. Last HTTP was !CODE!.
+timeout /t 2 /nobreak >nul
+if !_wait! LSS 90 goto wait_health
+echo Sign-in cannot reach the API through http://127.0.0.1:5173.
+"%DOCKER%" compose !COMPOSE_ENV! -f "%COMPOSE_FILE%" -f "%DESKTOP_COMPOSE%" ps
+"%DOCKER%" compose !COMPOSE_ENV! -f "%COMPOSE_FILE%" -f "%DESKTOP_COMPOSE%" logs --tail 40 api
+"%DOCKER%" compose !COMPOSE_ENV! -f "%COMPOSE_FILE%" -f "%DESKTOP_COMPOSE%" logs --tail 40 web
+echo Opening the desktop window anyway. If it is blank, copy this window's text.
+goto launch
+
+:healthy
+curl.exe -s "http://127.0.0.1:5173/sign-in" | findstr /C:"auth-origin" >nul
+if errorlevel 1 (
+  echo Warning: sign-in page may still be rebuilding.
+)
+"%DOCKER%" compose !COMPOSE_ENV! -f "%COMPOSE_FILE%" -f "%DESKTOP_COMPOSE%" exec -T web grep -R "Can't reach the server." /app/apps/web/dist >nul
+echo Sign-in is reachable.>> "%LOG%"
+
+:launch
+cscript //nologo "%SCRIPT_DIR%install-desktop-shortcut.vbs" "%ROOT%" >nul 2>&1
+powershell -NoProfile -ExecutionPolicy Bypass -File "%SCRIPT_DIR%install-desktop-shortcut.ps1" -RepoRoot "%ROOT%" >nul 2>&1
+
+echo Opening the desktop window...
+echo Leave this window open while you use the app.
+echo Launching !ELECTRON!>> "%LOG%"
+cd /d "%ROOT%\apps\desktop" || goto fail
+"!ELECTRON!" .
+set "ERR=!ERRORLEVEL!"
+cd /d "%ROOT%"
+echo Electron exited !ERR!>> "%LOG%"
+if not "!ERR!"=="0" (
+  echo The desktop window closed with error !ERR!.
+  echo See apps\desktop\desktop-launch.log
+  goto fail
+)
+exit /b 0
+
+:fail
+echo.
+echo If the desktop window never appeared, copy the text in this window.
+echo A log is at apps\desktop\desktop-launch.log
+pause
+exit /b 1

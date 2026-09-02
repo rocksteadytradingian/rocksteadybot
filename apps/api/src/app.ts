@@ -37,15 +37,18 @@ import {
   pushTokenPath,
   type RemoteConnectorDependencies,
   ScriptedAgentRuntime,
+  supabaseAuthConfigFromEnv,
   WorkspaceMemoryProviderResolver,
 } from "@rakazo/adapters";
-import { blockedAuthPaths, createAuth } from "@rakazo/auth";
+import { blockedAuthPaths, createAuth, type SendResetPassword } from "@rakazo/auth";
 import { createDb, createThreadEvents, type PrismaClient, requireMembership } from "@rakazo/db";
 import { MarkdownMemoryStore } from "@rakazo/memory";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
+import { loadUserComposioApiKey } from "./composio-project-key.js";
 import { type AppEnv, loadEnv } from "./env.js";
 import { createRouter } from "./router.js";
+import { handleSupabaseIdentity } from "./supabase-identity.js";
 import { mountVoiceHttpRoutes } from "./voice.js";
 
 export interface AppHandles {
@@ -67,6 +70,7 @@ export async function createApp(
     composio?: ComposioProvider;
     pipedream?: ManagedConnectorProvider;
     remoteConnectors?: RemoteConnectorDependencies;
+    sendResetPassword?: SendResetPassword;
   } = {},
 ): Promise<AppHandles> {
   const {
@@ -75,6 +79,7 @@ export async function createApp(
     composio: composioOverride,
     pipedream: pipedreamOverride,
     remoteConnectors,
+    sendResetPassword,
     ...envOverrides
   } = overrides;
   const env = { ...loadEnv(process.env), ...envOverrides };
@@ -137,11 +142,15 @@ export async function createApp(
     pipedreamOverride ??
     (isPipedreamEnabled(pipedreamConfig) ? new PipedreamConnector(pipedreamConfig) : undefined);
   const installed = new InstalledConnectorProvider(prisma, secrets, remoteConnectors);
-  const stack = createConnectorStack(isComposioEnabled(env.composioApiKey), composioOverride, [
-    installed,
-    ...(pipedream ? [pipedream] : []),
-    mcp,
-  ]);
+  const stack = createConnectorStack(
+    isComposioEnabled(env.composioApiKey),
+    composioOverride,
+    [installed, ...(pipedream ? [pipedream] : []), mcp],
+    {
+      envApiKey: env.composioApiKey,
+      resolveUserApiKey: (userId) => loadUserComposioApiKey(prisma, secrets, userId),
+    },
+  );
   const connector = stack.destination;
   await connector.start();
   void stack.composio?.warmDirectory().catch(() => undefined);
@@ -155,7 +164,10 @@ export async function createApp(
     webOrigin: env.webOrigin,
     signupsEnabled: env.signupsEnabled,
     signupAllowlist: env.signupAllowlist,
+    sendResetPassword,
     extraOrigins: [
+      "http://127.0.0.1:5173",
+      "http://localhost:5173",
       "rakazo://",
       "exp://",
       "exp://*",
@@ -252,6 +264,7 @@ export async function createApp(
       webOrigin: env.webOrigin,
       screenProxySecret: env.authSecret,
       sandboxProvider: env.sandboxProvider,
+      composioApiKey: env.composioApiKey,
     },
   });
   const rpc = new RPCHandler(router);
@@ -266,21 +279,62 @@ export async function createApp(
       credentials: true,
     }),
   );
+  const supabaseAuth = supabaseAuthConfigFromEnv(
+    {
+      SUPABASE_URL: env.supabaseUrl,
+      SUPABASE_SERVICE_ROLE_KEY: env.supabaseServiceRoleKey,
+    },
+    `${env.webOrigin}/reset-password`,
+  );
   app.on(["GET", "POST"], "/api/auth/*", async (c) => {
     const path = new URL(c.req.url).pathname.replace("/api/auth", "");
     if (blockedAuthPaths.some((blocked) => path.startsWith(blocked))) {
       return c.json({ error: "Not available in version 1" }, 404);
     }
+    if (supabaseAuth) {
+      const handled = await handleSupabaseIdentity(c.req.raw, path, {
+        auth,
+        prisma,
+        config: supabaseAuth,
+        signupsEnabled: env.signupsEnabled,
+        signupAllowlist: env.signupAllowlist,
+        getSession: async (request) => {
+          const session = await auth.api.getSession({ headers: sessionHeaders(request) });
+          if (!session?.user) return null;
+          return {
+            user: {
+              id: session.user.id,
+              email: session.user.email,
+              name: session.user.name,
+              image: session.user.image,
+            },
+            session: { id: session.session.id },
+          };
+        },
+      });
+      if (handled) return handled;
+    }
     return auth.handler(c.req.raw);
   });
   app.use("/rpc/*", async (c, next) => {
+    if (c.req.method === "GET" && new URL(c.req.url).pathname === "/rpc/health") {
+      return c.json({ json: { ok: true, version: "0.1.0" } });
+    }
     const session = await auth.api.getSession({ headers: sessionHeaders(c.req.raw) });
     const actor = session?.user
-      ? await requireMembership(prisma, session.user.id).catch(() => null)
+      ? await requireMembership(
+          prisma,
+          session.user.id,
+          session.session.activeOrganizationId,
+        ).catch(() => null)
       : null;
     const { matched, response } = await rpc.handle(c.req.raw, {
       prefix: "/rpc",
-      context: { actor, signal: c.req.raw.signal },
+      context: {
+        actor,
+        signal: c.req.raw.signal,
+        sessionId: session?.session.id ?? null,
+      },
     });
     if (matched) return c.newResponse(response.body, response);
     await next();
@@ -288,14 +342,16 @@ export async function createApp(
   mountVoiceHttpRoutes(app, { prisma, secrets }, async (c) => {
     const session = await auth.api.getSession({ headers: sessionHeaders(c.req.raw) });
     if (!session?.user) return null;
-    return requireMembership(prisma, session.user.id).catch(() => null);
+    return requireMembership(prisma, session.user.id, session.session.activeOrganizationId).catch(
+      () => null,
+    );
   });
   app.get("/health", (c) =>
     c.json({
       ok: true,
       runtime: env.agentRuntime,
       sandbox: env.sandboxProvider,
-      composio: Boolean(stack.composio),
+      composio: Boolean(composioOverride) || isComposioEnabled(env.composioApiKey),
       pipedream: Boolean(pipedream),
       jobs: jobKind,
       realtime: realtime.describe().id,

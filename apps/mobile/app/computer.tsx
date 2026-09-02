@@ -204,6 +204,31 @@ export default function Computer() {
           onPress={() => void openComputer()}
           style={{ position: "absolute", top: 0, right: 0, bottom: 0, left: 0 }}
         />
+        {computerOpen ? null : (
+          <Pressable
+            accessibilityLabel="Enlarge computer"
+            onPress={() => void openComputer()}
+            hitSlop={8}
+            style={{
+              position: "absolute",
+              top: 10,
+              right: 10,
+              width: 36,
+              height: 36,
+              borderRadius: 10,
+              backgroundColor: "rgba(4,4,5,0.72)",
+              alignItems: "center",
+              justifyContent: "center",
+            }}
+          >
+            <NativeSymbol
+              ios="arrow.up.left.and.arrow.down.right"
+              android="expand-outline"
+              size={16}
+              color="#ECECEE"
+            />
+          </Pressable>
+        )}
       </View>
       <View
         style={{

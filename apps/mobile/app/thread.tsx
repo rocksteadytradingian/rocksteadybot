@@ -14,6 +14,7 @@ import {
   isApprovalAskBlock,
   isRunTerminalEvent,
   isSecretAskBlock,
+  isWorking,
   latestAnswerableAskMessageId,
   mentionChipKey,
   resolveComposerSendPlan,
@@ -24,9 +25,20 @@ import {
 } from "@rakazo/core";
 import { Link, useFocusEffect, useLocalSearchParams, useNavigation, useRouter } from "expo-router";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { Alert, AppState, Image, Pressable, ScrollView, Text, TextInput, View } from "react-native";
+import {
+  ActivityIndicator,
+  Alert,
+  AppState,
+  Image,
+  Pressable,
+  ScrollView,
+  Text,
+  TextInput,
+  View,
+} from "react-native";
 import { AppConnectCard } from "../components/AppConnectCard";
 import { AskActions } from "../components/AskActions";
+import { BotAvatar } from "../components/bot-avatar";
 import {
   MarkdownArtifactPreview,
   type MarkdownArtifactPreviewTarget,
@@ -782,6 +794,17 @@ export default function Thread() {
   }
 
   const answerableAskMessageId = latestAnswerableAskMessageId(snap);
+  const currentRuns = snap?.activeRuns ?? (snap?.run ? [snap.run] : []);
+  const transcriptWorking =
+    currentRuns.some((run) => isWorking(run.status)) ||
+    (snap?.computer?.controlHolder === "bot" && Boolean(snap.computer.busyBotName));
+  const workingMember =
+    snap?.members?.find((member) => member.status && isWorking(member.status)) ??
+    snap?.members?.find((member) => member.name === snap.computer?.busyBotName);
+  const workingColor =
+    mentionBots.find((bot) => bot.id === botId)?.color ?? workingMember?.color ?? "#8B5CF6";
+  const workingStatus =
+    currentRuns.find((run) => isWorking(run.status))?.status ?? workingMember?.status ?? "running";
 
   return (
     <View style={{ flex: 1, backgroundColor: "#000", paddingHorizontal: 20, paddingBottom: 24 }}>
@@ -881,6 +904,36 @@ export default function Thread() {
             </View>
           </View>
         ))}
+        {transcriptWorking ? (
+          <View
+            accessible
+            accessibilityLabel="Working"
+            accessibilityLiveRegion="polite"
+            style={{
+              marginTop: 12,
+              width: "100%",
+              flexDirection: "row",
+              alignItems: "flex-end",
+              gap: 10,
+            }}
+          >
+            <BotAvatar color={workingColor} size={32} status={workingStatus} />
+            <View
+              style={{
+                flexDirection: "row",
+                alignItems: "center",
+                gap: 10,
+                backgroundColor: "#1A1A1D",
+                paddingHorizontal: 16,
+                paddingVertical: 12,
+                borderRadius: 20,
+              }}
+            >
+              <ActivityIndicator color="#ECECEE" size="small" />
+              <Text style={{ color: "#C9C9CE", fontSize: 15 }}>working</Text>
+            </View>
+          </View>
+        ) : null}
       </ScrollView>
       {replyTarget ? (
         <View
