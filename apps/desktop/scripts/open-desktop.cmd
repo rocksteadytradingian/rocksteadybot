@@ -103,7 +103,7 @@ if not exist "%ROOT%\apps\desktop\dist\main.js" (
 )
 echo Using Electron at !ELECTRON!>> "%LOG%"
 
-set "RAKAZO_WEB_URL=http://127.0.0.1:5173"
+set "RAKAZO_WEB_URL=http://127.0.0.1:5173/sign-in"
 set "RAKAZO_REPO_ROOT=%ROOT%"
 set "RAKAZO_DISABLE_LOCAL_STACK=1"
 set "RAKAZO_PERFORMANCE_CLEAR_CACHE=1"

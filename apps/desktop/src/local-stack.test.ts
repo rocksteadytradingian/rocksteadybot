@@ -520,7 +520,7 @@ describe("launcher files", () => {
     expect(cmd).toContain("desktop-launch.log");
     expect(cmd).toContain("git fetch origin");
     expect(cmd).not.toContain("git pull");
-    expect(cmd).toContain("http://127.0.0.1:5173");
+    expect(cmd).toContain("http://127.0.0.1:5173/sign-in");
     expect(cmd).toContain("install-desktop-shortcut.vbs");
     expect(cmd).toContain("free-own-ports.ps1");
     expect(cmd).toContain("Forgot password?");
@@ -567,6 +567,8 @@ describe("launcher files", () => {
     expect(ensureDesktop).toContain("--filter @rakazo/desktop");
     expect(ensureDesktop).toContain("OpenJS.NodeJS.LTS");
     expect(ensureDesktop).toContain("electron.exe");
+    expect(ensureDesktop).toContain("setup.html");
+    expect(ensureDesktop).toContain("Updating the desktop app from this checkout");
   });
 
   it("injects a Forgot password fallback into baked preview HTML", async () => {
