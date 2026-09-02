@@ -506,6 +506,10 @@ describe("launcher files", () => {
     const cmd = await readFile(path.join(root, "apps/desktop/scripts/open-desktop.cmd"), "utf8");
     expect(cmd).toContain("docker-compose.desktop.yml");
     expect(cmd).toContain("electron.exe");
+    expect(cmd).toContain("--app=");
+    expect(cmd).toContain("Opening RocksteadyBot");
+    expect(cmd).toContain("goto fail");
+    expect(cmd).not.toMatch(/if defined ELECTRON if exist[\s\S]*else \(/);
     expect(cmd).toContain("http://127.0.0.1:5173");
     expect(cmd).toContain("install-desktop-shortcut.vbs");
     expect(cmd).toContain("free-own-ports.ps1");
