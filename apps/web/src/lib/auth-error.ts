@@ -1,3 +1,7 @@
+export const AUTH_UNREACHABLE = "Can't reach the server.";
+export const AUTH_INVALID_CREDENTIALS = "Invalid email or password";
+export const AUTH_FALLBACK = "Could not continue";
+
 const LINGUI_ID = /^[A-Za-z0-9+/]{6}$/;
 const ENGLISH_WORD = /^[A-Z][a-z]{5}$/;
 
@@ -26,21 +30,40 @@ function isInvalidCredentials(
 
 export function authErrorMessage(
   error: { message?: string | null; code?: string | null } | null | undefined,
-  fallback: string,
-  unreachable: string,
-  invalidCredentials = "Invalid email or password",
+  fallback = AUTH_FALLBACK,
+  unreachable = AUTH_UNREACHABLE,
+  invalidCredentials = AUTH_INVALID_CREDENTIALS,
 ): string {
   const message = error?.message?.trim() ?? "";
   if (isUnreachable(message)) {
-    return readableCopy(unreachable) ?? readableCopy(fallback) ?? "Can't reach the server.";
+    return readableCopy(unreachable) ?? readableCopy(fallback) ?? AUTH_UNREACHABLE;
   }
   if (isInvalidCredentials(error)) {
-    return readableCopy(invalidCredentials) ?? "Invalid email or password";
+    return readableCopy(invalidCredentials) ?? AUTH_INVALID_CREDENTIALS;
   }
   return (
     readableCopy(message) ??
     readableCopy(error?.code ?? undefined) ??
     readableCopy(fallback) ??
-    "Could not continue"
+    AUTH_FALLBACK
   );
+}
+
+export async function probeSameOriginApi(fetchImpl: typeof fetch = fetch): Promise<boolean> {
+  try {
+    const get = await fetchImpl("/rpc/health", { method: "GET" });
+    if (get.ok) return true;
+  } catch {
+    // Fall through to the POST contract used by older API images.
+  }
+  try {
+    const post = await fetchImpl("/rpc/health", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ json: {} }),
+    });
+    return post.ok;
+  } catch {
+    return false;
+  }
 }

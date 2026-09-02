@@ -1,10 +1,24 @@
 # Desktop launches this stack so a leftover host process on :3100 cannot block
 # Compose. The shell talks to the web origin on loopback :5173; the API stays on
-# the Compose network. The shortcut copies checkout sources into the running
-# containers instead of bind-mounting them.
+# the Compose network. Web source is bind-mounted and rebuilt on start so Electron
+# loads this checkout instead of a baked preview.
 services:
   api:
     ports: !override []
+    environment:
+      BETTER_AUTH_URL: http://127.0.0.1:5173
+      WEB_ORIGIN: http://127.0.0.1:5173
   web:
     ports: !override
       - "127.0.0.1:5173:5173"
+    volumes:
+      - ../../apps/web/src:/app/apps/web/src:ro
+      - ../../apps/web/index.html:/app/apps/web/index.html:ro
+      - ../../apps/web/vite.config.ts:/app/apps/web/vite.config.ts:ro
+    command:
+      - bash
+      - -lc
+      - |
+        set -euo pipefail
+        RAKAZO_ALLOW_DEV_SECRETS=1 pnpm --filter @rakazo/web build
+        exec pnpm --filter @rakazo/web preview --host 0.0.0.0 --port 5173

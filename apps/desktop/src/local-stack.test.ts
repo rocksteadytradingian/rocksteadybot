@@ -5,10 +5,8 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import {
-  composeBuildWebArgs,
-  composeCpArgs,
   composeForceRecreateWebArgs,
-  composeImageGrepArgs,
+  composeRecreateWebArgs,
   composeRestartArgs,
   composeUpArgs,
   desktopShortcutDetails,
@@ -26,8 +24,6 @@ import {
   localStackAutoStartEnabled,
   looksLikeRepoRoot,
   resolveDockerBin,
-  shouldRefreshWebFromCheckout,
-  WEB_CHECKOUT_COPIES,
   whichOnPath,
 } from "./local-stack.js";
 import { isManagedLocalWebUrl } from "./setup-config.js";
@@ -198,7 +194,7 @@ describe("compose and shortcut", () => {
       "web",
       "api",
     ]);
-    expect(composeCpArgs(true, "apps/web/src/.", "web:/app/apps/web/src/")).toEqual([
+    expect(composeRecreateWebArgs(true)).toEqual([
       "compose",
       "--env-file",
       ".env",
@@ -206,9 +202,11 @@ describe("compose and shortcut", () => {
       "infra/compose/docker-compose.yml",
       "-f",
       "infra/compose/docker-compose.desktop.yml",
-      "cp",
-      "apps/web/src/.",
-      "web:/app/apps/web/src/",
+      "up",
+      "-d",
+      "--force-recreate",
+      "--no-deps",
+      "web",
     ]);
     expect(composeRestartArgs(false, "web")).toEqual([
       "compose",
@@ -217,33 +215,6 @@ describe("compose and shortcut", () => {
       "-f",
       "infra/compose/docker-compose.desktop.yml",
       "restart",
-      "web",
-    ]);
-    expect(composeImageGrepArgs(false)).toEqual([
-      "compose",
-      "-f",
-      "infra/compose/docker-compose.yml",
-      "-f",
-      "infra/compose/docker-compose.desktop.yml",
-      "run",
-      "--rm",
-      "--no-deps",
-      "--no-build",
-      "--entrypoint",
-      "grep",
-      "web",
-      "Forgot password?",
-      "/app/apps/web/dist/index.html",
-    ]);
-    expect(composeBuildWebArgs(true)).toEqual([
-      "compose",
-      "--env-file",
-      ".env",
-      "-f",
-      "infra/compose/docker-compose.yml",
-      "-f",
-      "infra/compose/docker-compose.desktop.yml",
-      "build",
       "web",
     ]);
   });
@@ -337,7 +308,7 @@ describe("ensureLocalStack", () => {
     expect(host.commands.some((command) => command.args.includes("cp"))).toBe(false);
   });
 
-  it("rebuilds the web image when the baked preview lacks Forgot password", async () => {
+  it("recreates the web container when checkout source is present", async () => {
     const webSrc = path.join(repo, "apps", "web", "src");
     const host = fakeHost({
       files: [...repoFiles(), webSrc],
@@ -345,65 +316,19 @@ describe("ensureLocalStack", () => {
         status: 200,
         json: { json: { ok: true, version: "0.1.0" } },
       }),
-      run: async (file, args) => {
-        if (file.endsWith("docker") && args[0] === "info") {
-          return { code: 0, stdout: "", stderr: "" };
-        }
-        if (file.endsWith("docker") && args.includes("grep")) {
-          return { code: 1, stdout: "", stderr: "" };
-        }
-        if (file.endsWith("docker") && args[0] === "compose") {
-          return { code: 0, stdout: "ok", stderr: "" };
-        }
-        return { code: 0, stdout: "", stderr: "" };
-      },
     });
     await expect(
       ensureLocalStack({ targetUrl: "http://127.0.0.1:5173", searchFrom: [repo], host }),
     ).resolves.toEqual({ ok: true, repoRoot: repo });
     expect(
       host.commands.some(
-        (command) => command.args.includes("build") && command.args.includes("web"),
+        (command) =>
+          command.args.includes("--force-recreate") &&
+          command.args.includes("web") &&
+          !command.args.includes("api"),
       ),
     ).toBe(true);
-  });
-
-  it("copies the checkout's web source into Docker and rebuilds preview", async () => {
-    const webSrc = path.join(repo, "apps", "web", "src");
-    const indexHtml = path.join(repo, "apps", "web", "index.html");
-    const inject = path.join(
-      repo,
-      "apps",
-      "desktop",
-      "scripts",
-      "inject-forgot-password-fallback.mjs",
-    );
-    expect(shouldRefreshWebFromCheckout(repo, (file) => file === webSrc)).toBe(true);
-    const host = fakeHost({
-      files: [...repoFiles(), webSrc, indexHtml, inject],
-      fetchJson: async () => ({
-        status: 200,
-        json: { json: { ok: true, version: "0.1.0" } },
-      }),
-    });
-    await expect(
-      ensureLocalStack({ targetUrl: "http://127.0.0.1:5173", searchFrom: [repo], host }),
-    ).resolves.toEqual({ ok: true, repoRoot: repo });
-    expect(host.commands.some((command) => command.args.includes("cp"))).toBe(true);
-    expect(
-      host.commands.some((command) =>
-        command.args.some(
-          (arg) => String(arg).includes("@rakazo/web") && String(arg).includes("build"),
-        ),
-      ),
-    ).toBe(true);
-    expect(
-      host.commands.some(
-        (command) => command.args.includes("restart") && command.args.includes("web"),
-      ),
-    ).toBe(true);
-    expect(WEB_CHECKOUT_COPIES[0]?.hostPath).toBe("apps/web/src/.");
-    expect(WEB_CHECKOUT_COPIES.map((copy) => copy.hostPath)).toContain("apps/web/vite.config.ts");
+    expect(host.commands.some((command) => command.args.includes("cp"))).toBe(false);
   });
 
   it("stops a leftover API from this checkout, then starts Compose", async () => {
@@ -560,6 +485,11 @@ describe("launcher files", () => {
     expect(compose).toContain('preview", "--host"');
     expect(desktop).toContain("ports: !override []");
     expect(desktop).toContain("127.0.0.1:5173:5173");
+    expect(desktop).toContain("../../apps/web/src:/app/apps/web/src:ro");
+    expect(desktop).toContain("../../apps/web/vite.config.ts:/app/apps/web/vite.config.ts:ro");
+    expect(desktop).toContain("BETTER_AUTH_URL: http://127.0.0.1:5173");
+    expect(desktop).toContain("pnpm --filter @rakazo/web build");
+    expect(desktop).toContain("set -euo pipefail");
   });
 
   it("points the Windows launcher at Compose then Electron", async () => {
@@ -569,14 +499,15 @@ describe("launcher files", () => {
     expect(cmd).toContain("http://127.0.0.1:5173");
     expect(cmd).toContain("install-desktop-shortcut.vbs");
     expect(cmd).toContain("free-own-ports.ps1");
-    expect(cmd).toContain("build web");
     expect(cmd).toContain("Forgot password?");
+    expect(cmd).toContain("auth-origin");
     expect(cmd).toContain("RAKAZO_DISABLE_LOCAL_STACK=1");
     expect(cmd).toContain("RAKAZO_PERFORMANCE_CLEAR_CACHE=1");
-    expect(cmd).toContain("apps/web/vite.config.ts");
+    expect(cmd).toContain("--force-recreate --no-deps web");
     expect(cmd).toContain("/rpc/health");
     expect(cmd).toContain('"http://127.0.0.1:5173/rpc/health"');
     expect(cmd).toContain("-X POST");
+    expect(cmd).not.toContain("apps/web/vite.config.ts");
     const apiApp = await readFile(path.join(root, "apps/api/src/app.ts"), "utf8");
     expect(apiApp).toContain('c.req.method === "GET"');
     expect(apiApp).toContain('pathname === "/rpc/health"');

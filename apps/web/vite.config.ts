@@ -161,8 +161,8 @@ export default defineConfig(({ mode }) => {
       strictPort: true,
       ...(process.env.VITE_DEV_HOST ? { allowedHosts: true as const } : {}),
       proxy: {
-        "/api": { target: api, changeOrigin: true },
-        "/rpc": { target: api, changeOrigin: true },
+        "/api": { target: api, changeOrigin: true, xfwd: true },
+        "/rpc": { target: api, changeOrigin: true, xfwd: true },
       },
     },
     preview: {
@@ -170,8 +170,8 @@ export default defineConfig(({ mode }) => {
       port: Number(process.env.WEB_PORT ?? 5173),
       allowedHosts: previewAllowedHosts(previewHost),
       proxy: {
-        "/api": { target: api, changeOrigin: true },
-        "/rpc": { target: api, changeOrigin: true },
+        "/api": { target: api, changeOrigin: true, xfwd: true },
+        "/rpc": { target: api, changeOrigin: true, xfwd: true },
       },
     },
   };

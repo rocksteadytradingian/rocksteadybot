@@ -2,7 +2,7 @@ import { Trans, useLingui } from "@lingui/react/macro";
 import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { authClient } from "../lib/auth";
-import { authErrorMessage } from "../lib/auth-error";
+import { AUTH_UNREACHABLE, authErrorMessage, probeSameOriginApi } from "../lib/auth-error";
 import { passwordResetProofFromLocation, resetPasswordBody } from "../lib/reset-password";
 
 export type AuthMode = "in" | "up" | "forgot" | "reset";
@@ -41,14 +41,7 @@ export function AuthPage({ mode }: { mode: AuthMode }) {
   function showAuthError(
     error: { message?: string | null; code?: string | null } | null | undefined,
   ) {
-    setError(
-      authErrorMessage(
-        error,
-        t`Could not continue`,
-        t`Can't reach the server.`,
-        t`Invalid email or password`,
-      ),
-    );
+    setError(authErrorMessage(error));
   }
 
   async function submit(e: React.FormEvent) {
@@ -57,6 +50,11 @@ export function AuthPage({ mode }: { mode: AuthMode }) {
     setError(null);
     setNotice(null);
     try {
+      if (!(await probeSameOriginApi())) {
+        setPending(false);
+        setError(AUTH_UNREACHABLE);
+        return;
+      }
       if (mode === "forgot") {
         const redirectTo = `${window.location.origin}/reset-password`;
         const result = await authClient.requestPasswordReset({
@@ -68,12 +66,7 @@ export function AuthPage({ mode }: { mode: AuthMode }) {
           setError(
             /isn't enabled|not configured|RESET_PASSWORD_DISABLED/i.test(result.error.message ?? "")
               ? t`Password reset is not configured`
-              : authErrorMessage(
-                  result.error,
-                  t`Could not continue`,
-                  t`Can't reach the server.`,
-                  t`Invalid email or password`,
-                ),
+              : authErrorMessage(result.error),
           );
           return;
         }

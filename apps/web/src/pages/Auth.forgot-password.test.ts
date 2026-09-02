@@ -10,11 +10,12 @@ describe("sign-in Forgot password control", () => {
     expect(source).toMatch(/Forgot password\?[\s\S]*Don’t have an account\?/);
   });
 
-  it("uses the cataloged unreachable-server copy so production Lingui does not show ROjpWW", async () => {
+  it("uses plain unreachable-server copy so production Lingui does not show ROjpWW", async () => {
     const source = await readFile(path.join(import.meta.dirname, "Auth.tsx"), "utf8");
-    expect(source).toContain("Can't reach the server.");
-    expect(source).not.toMatch(/Can't reach the server`/);
-    expect(source).toContain("Invalid email or password");
+    expect(source).toContain("AUTH_UNREACHABLE");
+    expect(source).toContain("authErrorMessage(");
+    expect(source).not.toMatch(/t`Can't reach the server/);
+    expect(source).toContain("probeSameOriginApi");
   });
 
   it("keeps a document fallback if the preview JS is still stale", async () => {
@@ -22,5 +23,6 @@ describe("sign-in Forgot password control", () => {
     expect(html).toContain('id="rk-forgot-password"');
     expect(html).toContain('href="/forgot-password"');
     expect(html).toContain("Forgot password?");
+    expect(html).toContain('content="auth-origin"');
   });
 });

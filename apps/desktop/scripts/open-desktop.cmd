@@ -42,23 +42,22 @@ if errorlevel 1 (
   pause
   exit /b 1
 )
+findstr /C:"auth-origin" "apps\web\index.html" >nul
+if errorlevel 1 (
+  echo This checkout is missing the current sign-in page.
+  echo In PowerShell run:
+  echo   cd /d "%ROOT%"
+  echo   git pull
+  echo Then open this shortcut again.
+  pause
+  exit /b 1
+)
 
 rem PowerShell is optional. Windows Smart App Control often blocks it; Docker is enough.
 powershell -NoProfile -ExecutionPolicy Bypass -File "%SCRIPT_DIR%free-own-ports.ps1" >nul 2>&1
 
 set "COMPOSE_ENV="
 if exist "%ROOT%\.env" set "COMPOSE_ENV=--env-file .env"
-
-echo Checking the Docker web image...
-"%DOCKER%" compose !COMPOSE_ENV! -f "%COMPOSE_FILE%" -f "%DESKTOP_COMPOSE%" run --rm --no-deps --no-build --entrypoint grep web "Forgot password?" /app/apps/web/dist/index.html >nul 2>&1
-if errorlevel 1 (
-  echo Rebuilding the web image from this checkout. This can take several minutes...
-  "%DOCKER%" compose !COMPOSE_ENV! -f "%COMPOSE_FILE%" -f "%DESKTOP_COMPOSE%" build web
-  if errorlevel 1 (
-    echo Docker could not rebuild the web app from this checkout.
-    exit /b 1
-  )
-)
 
 echo Starting RocksteadyBot...
 "%DOCKER%" compose !COMPOSE_ENV! -f "%COMPOSE_FILE%" -f "%DESKTOP_COMPOSE%" up -d --remove-orphans
@@ -70,15 +69,13 @@ if errorlevel 1 (
   )
 )
 
-echo Copying the current sign-in page into Docker...
-"%DOCKER%" compose !COMPOSE_ENV! -f "%COMPOSE_FILE%" -f "%DESKTOP_COMPOSE%" cp "apps/web/src/." "web:/app/apps/web/src/" >nul 2>&1
-"%DOCKER%" compose !COMPOSE_ENV! -f "%COMPOSE_FILE%" -f "%DESKTOP_COMPOSE%" cp "apps/web/index.html" "web:/app/apps/web/index.html" >nul 2>&1
-"%DOCKER%" compose !COMPOSE_ENV! -f "%COMPOSE_FILE%" -f "%DESKTOP_COMPOSE%" cp "apps/web/vite.config.ts" "web:/app/apps/web/vite.config.ts" >nul 2>&1
-"%DOCKER%" compose !COMPOSE_ENV! -f "%COMPOSE_FILE%" -f "%DESKTOP_COMPOSE%" cp "apps/desktop/scripts/inject-forgot-password-fallback.mjs" "web:/tmp/inject-forgot-password-fallback.mjs" >nul 2>&1
-"%DOCKER%" compose !COMPOSE_ENV! -f "%COMPOSE_FILE%" -f "%DESKTOP_COMPOSE%" exec -T -u root web chown -R node:node /app/apps/web >nul 2>&1
-"%DOCKER%" compose !COMPOSE_ENV! -f "%COMPOSE_FILE%" -f "%DESKTOP_COMPOSE%" exec -T -u root web node /tmp/inject-forgot-password-fallback.mjs >nul 2>&1
-"%DOCKER%" compose !COMPOSE_ENV! -f "%COMPOSE_FILE%" -f "%DESKTOP_COMPOSE%" exec -T -u node web bash -lc "RAKAZO_ALLOW_DEV_SECRETS=1 pnpm --filter @rakazo/web build" >nul 2>&1
-"%DOCKER%" compose !COMPOSE_ENV! -f "%COMPOSE_FILE%" -f "%DESKTOP_COMPOSE%" restart web >nul 2>&1
+echo Rebuilding the sign-in page from this checkout. This can take a few minutes...
+"%DOCKER%" compose !COMPOSE_ENV! -f "%COMPOSE_FILE%" -f "%DESKTOP_COMPOSE%" up -d --force-recreate --no-deps web
+if errorlevel 1 (
+  echo Docker could not rebuild the sign-in page.
+  "%DOCKER%" compose !COMPOSE_ENV! -f "%COMPOSE_FILE%" -f "%DESKTOP_COMPOSE%" logs --tail 80 web
+  exit /b 1
+)
 
 set /a _wait=0
 :wait_health
@@ -93,16 +90,22 @@ if !_wait! LSS 90 goto wait_health
 echo Sign-in cannot reach the API through http://127.0.0.1:5173.
 "%DOCKER%" compose !COMPOSE_ENV! -f "%COMPOSE_FILE%" -f "%DESKTOP_COMPOSE%" ps
 "%DOCKER%" compose !COMPOSE_ENV! -f "%COMPOSE_FILE%" -f "%DESKTOP_COMPOSE%" logs --tail 40 api
+"%DOCKER%" compose !COMPOSE_ENV! -f "%COMPOSE_FILE%" -f "%DESKTOP_COMPOSE%" logs --tail 40 web
 echo Start Docker Desktop, then open this shortcut again.
 exit /b 1
 
 :healthy
-curl.exe -s "http://127.0.0.1:5173/sign-in" | findstr /C:"Forgot password" >nul
+curl.exe -s "http://127.0.0.1:5173/sign-in" | findstr /C:"auth-origin" >nul
 if errorlevel 1 (
-  echo Sign-in is still the old page. Rebuilding the web image...
-  "%DOCKER%" compose !COMPOSE_ENV! -f "%COMPOSE_FILE%" -f "%DESKTOP_COMPOSE%" build web
-  "%DOCKER%" compose !COMPOSE_ENV! -f "%COMPOSE_FILE%" -f "%DESKTOP_COMPOSE%" up -d --no-deps web
-  timeout /t 3 /nobreak >nul
+  echo Sign-in is still the old page. Web logs:
+  "%DOCKER%" compose !COMPOSE_ENV! -f "%COMPOSE_FILE%" -f "%DESKTOP_COMPOSE%" logs --tail 80 web
+  exit /b 1
+)
+"%DOCKER%" compose !COMPOSE_ENV! -f "%COMPOSE_FILE%" -f "%DESKTOP_COMPOSE%" exec -T web grep -R "Can't reach the server." /app/apps/web/dist >nul
+if errorlevel 1 (
+  echo Sign-in still has the old error text. Web logs:
+  "%DOCKER%" compose !COMPOSE_ENV! -f "%COMPOSE_FILE%" -f "%DESKTOP_COMPOSE%" logs --tail 80 web
+  exit /b 1
 )
 
 set "ELECTRON="

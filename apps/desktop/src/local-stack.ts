@@ -202,52 +202,13 @@ export function composeForceRecreateWebArgs(envFileExists: boolean): string[] {
   ];
 }
 
-export function composeCpArgs(
-  envFileExists: boolean,
-  hostPath: string,
-  containerPath: string,
-): string[] {
-  return [...composeFileFlags(envFileExists), "cp", hostPath, containerPath];
+export function composeRecreateWebArgs(envFileExists: boolean): string[] {
+  return [...composeFileFlags(envFileExists), "up", "-d", "--force-recreate", "--no-deps", "web"];
 }
 
 export function composeRestartArgs(envFileExists: boolean, service: string): string[] {
   return [...composeFileFlags(envFileExists), "restart", service];
 }
-
-export function composeImageGrepArgs(envFileExists: boolean): string[] {
-  return [
-    ...composeFileFlags(envFileExists),
-    "run",
-    "--rm",
-    "--no-deps",
-    "--no-build",
-    "--entrypoint",
-    "grep",
-    "web",
-    "Forgot password?",
-    "/app/apps/web/dist/index.html",
-  ];
-}
-
-export function composeBuildWebArgs(envFileExists: boolean): string[] {
-  return [...composeFileFlags(envFileExists), "build", "web"];
-}
-
-export const WEB_CHECKOUT_COPIES: Array<{ hostPath: string; destination: string }> = [
-  { hostPath: "apps/web/src/.", destination: "web:/app/apps/web/src/" },
-  { hostPath: "apps/web/index.html", destination: "web:/app/apps/web/index.html" },
-  { hostPath: "apps/web/vite.config.ts", destination: "web:/app/apps/web/vite.config.ts" },
-  {
-    hostPath: "apps/desktop/scripts/inject-forgot-password-fallback.mjs",
-    destination: "web:/tmp/inject-forgot-password-fallback.mjs",
-  },
-];
-
-export const API_CHECKOUT_COPIES: Array<{ hostPath: string; destination: string }> = [
-  { hostPath: "apps/api/src/.", destination: "api:/app/apps/api/src/" },
-  { hostPath: "packages/auth/src/.", destination: "api:/app/packages/auth/src/" },
-  { hostPath: "packages/adapters/src/.", destination: "api:/app/packages/adapters/src/" },
-];
 
 export function checkoutCopyExists(
   repoRoot: string,
@@ -333,9 +294,7 @@ export function windowsDockerDesktopPath(exists: (filePath: string) => boolean):
 
 const FETCH_TIMEOUT_MS = 4_000;
 const COMPOSE_TIMEOUT_MS = 180_000;
-const COPY_TIMEOUT_MS = 60_000;
 const WEB_BUILD_TIMEOUT_MS = 360_000;
-const IMAGE_BUILD_TIMEOUT_MS = 600_000;
 const DOCKER_INFO_TIMEOUT_MS = 20_000;
 const DOCKER_DESKTOP_WAIT_MS = 90_000;
 const HEALTH_WAIT_MS = 180_000;
@@ -408,7 +367,6 @@ export async function ensureLocalStack(input: {
     }
   }
 
-  await rebuildWebImageIfStale(host, docker, repoRoot, envFile);
   await refreshWebFromCheckout(host, docker, repoRoot, envFile);
 
   const ready = await waitForWebHealth(host, target);
@@ -470,6 +428,11 @@ async function dockerInfoOk(host: LocalStackHost, docker: string): Promise<boole
 }
 
 async function webIsHealthy(host: LocalStackHost, origin: string): Promise<boolean> {
+  const get = await host.fetchJson(`${origin}${WEB_HEALTH_PATH}`, {
+    method: "GET",
+    timeoutMs: FETCH_TIMEOUT_MS,
+  });
+  if (!("error" in get) && get.status < 300 && isRakazoHealth(get.json)) return true;
   const response = await host.fetchJson(`${origin}${WEB_HEALTH_PATH}`, {
     method: "POST",
     headers: { "content-type": "application/json" },
@@ -480,29 +443,6 @@ async function webIsHealthy(host: LocalStackHost, origin: string): Promise<boole
   return response.status < 300 && isRakazoHealth(response.json);
 }
 
-async function rebuildWebImageIfStale(
-  host: LocalStackHost,
-  docker: string,
-  repoRoot: string,
-  envFileExists: boolean,
-): Promise<void> {
-  if (!shouldRefreshWebFromCheckout(repoRoot, (file) => host.exists(file))) return;
-  const grep = await host.run(docker, composeImageGrepArgs(envFileExists), {
-    cwd: repoRoot,
-    timeoutMs: COPY_TIMEOUT_MS,
-  });
-  if (grep.code === 0) return;
-  const built = await host.run(docker, composeBuildWebArgs(envFileExists), {
-    cwd: repoRoot,
-    timeoutMs: IMAGE_BUILD_TIMEOUT_MS,
-  });
-  if (built.code !== 0) return;
-  await host.run(docker, composeUpArgs(envFileExists), {
-    cwd: repoRoot,
-    timeoutMs: COMPOSE_TIMEOUT_MS,
-  });
-}
-
 export async function refreshWebFromCheckout(
   host: LocalStackHost,
   docker: string,
@@ -510,82 +450,10 @@ export async function refreshWebFromCheckout(
   envFileExists: boolean,
 ): Promise<void> {
   if (!shouldRefreshWebFromCheckout(repoRoot, (file) => host.exists(file))) return;
-
-  const runCompose = (args: string[], timeoutMs: number) =>
-    host.run(docker, args, { cwd: repoRoot, timeoutMs });
-
-  for (const copy of WEB_CHECKOUT_COPIES) {
-    if (!checkoutCopyExists(repoRoot, copy.hostPath, (file) => host.exists(file))) continue;
-    await runCompose(
-      composeCpArgs(envFileExists, copy.hostPath, copy.destination),
-      COPY_TIMEOUT_MS,
-    );
-  }
-  for (const copy of API_CHECKOUT_COPIES) {
-    if (!checkoutCopyExists(repoRoot, copy.hostPath, (file) => host.exists(file))) continue;
-    try {
-      await runCompose(
-        composeCpArgs(envFileExists, copy.hostPath, copy.destination),
-        COPY_TIMEOUT_MS,
-      );
-    } catch {
-      // Password reset can still work against the image API; the sign-in link does not need it.
-    }
-  }
-
-  await runCompose(
-    [
-      ...composeFileFlags(envFileExists),
-      "exec",
-      "-T",
-      "-u",
-      "root",
-      "web",
-      "chown",
-      "-R",
-      "node:node",
-      "/app/apps/web",
-    ],
-    COPY_TIMEOUT_MS,
-  );
-  if (
-    checkoutCopyExists(
-      repoRoot,
-      "apps/desktop/scripts/inject-forgot-password-fallback.mjs",
-      (file) => host.exists(file),
-    )
-  ) {
-    await runCompose(
-      [
-        ...composeFileFlags(envFileExists),
-        "exec",
-        "-T",
-        "-u",
-        "root",
-        "web",
-        "node",
-        "/tmp/inject-forgot-password-fallback.mjs",
-      ],
-      COPY_TIMEOUT_MS,
-    );
-  }
-
-  await runCompose(
-    [
-      ...composeFileFlags(envFileExists),
-      "exec",
-      "-T",
-      "-u",
-      "node",
-      "web",
-      "bash",
-      "-lc",
-      "RAKAZO_ALLOW_DEV_SECRETS=1 pnpm --filter @rakazo/web build",
-    ],
-    WEB_BUILD_TIMEOUT_MS,
-  );
-  await runCompose(composeRestartArgs(envFileExists, "web"), COPY_TIMEOUT_MS);
-  await runCompose(composeRestartArgs(envFileExists, "api"), COPY_TIMEOUT_MS);
+  await host.run(docker, composeRecreateWebArgs(envFileExists), {
+    cwd: repoRoot,
+    timeoutMs: WEB_BUILD_TIMEOUT_MS,
+  });
 }
 
 async function waitForWebHealth(host: LocalStackHost, origin: string): Promise<boolean> {
