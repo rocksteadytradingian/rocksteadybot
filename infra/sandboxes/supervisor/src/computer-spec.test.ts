@@ -99,6 +99,11 @@ describe("graphical computer spec", () => {
     expect(dockerfile).toMatch(/chromium/);
     expect(start).toMatch(/rakazo-browser/);
     expect(start).toMatch(/x11vnc .* -viewonly /);
+    expect(dockerfile).toMatch(/autocutsel/);
+    expect(dockerfile).toMatch(/host-clipboard\.js/);
+    expect(start).toMatch(/autocutsel -display :1 -selection CLIPBOARD/);
+    const embed = readFileSync(path.join(root, "embed.html"), "utf8");
+    expect(embed).toMatch(/attachHostClipboard/);
     expect(browser).toMatch(/\.browser-profiles\/chromium/);
     expect(start).not.toMatch(/windowsize 1280 800/);
   });

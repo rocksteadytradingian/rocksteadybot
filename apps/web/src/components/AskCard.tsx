@@ -62,12 +62,12 @@ export function AskCard({
   }
 
   return (
-    <div className="max-w-[74%] rounded-[20px] border border-[#242428] bg-[#141417] px-5 py-[17px]">
-      <div className="text-[15.5px] leading-[1.5] text-[#ECECEE]">
+    <div className="max-w-[74%] rounded-[20px] border border-[var(--rk-hairline-strong)] bg-[var(--rk-surface)] px-5 py-[17px]">
+      <div className="text-[15.5px] leading-[1.5] text-[var(--rk-ink)]">
         <ChatMarkdown>{block.text}</ChatMarkdown>
       </div>
       {block.detail ? (
-        <pre className="mt-3 max-h-72 overflow-auto whitespace-pre-wrap break-words rounded-xl bg-[#0E0E10] px-3.5 py-3 font-mono text-[12.5px] leading-[1.7] text-[#85858A]">
+        <pre className="mt-3 max-h-72 overflow-auto whitespace-pre-wrap break-words rounded-xl bg-[var(--rk-input)] px-3.5 py-3 font-mono text-[12.5px] leading-[1.7] text-[var(--rk-muted)]">
           {block.detail}
         </pre>
       ) : null}
@@ -76,7 +76,7 @@ export function AskCard({
           {formatAnsweredState(block.answer, Boolean(approvalActions), secretInput)}
         </div>
       ) : !canAnswer ? (
-        <div className="mt-3.5 text-[13.5px] font-medium text-[#85858A]">
+        <div className="mt-3.5 text-[13.5px] font-medium text-[var(--rk-muted)]">
           <Trans>No longer active</Trans>
         </div>
       ) : approvalActions ? (
@@ -90,7 +90,7 @@ export function AskCard({
               className={
                 action.id === "allow"
                   ? "rounded-[11px] bg-[#F1F1EF] px-[17px] py-2 text-[14.5px] font-medium text-[#17171A] disabled:opacity-50"
-                  : "rounded-[11px] border border-[#26262A] px-[17px] py-2 text-[14.5px] text-[#C9C9CE] disabled:opacity-50"
+                  : "rounded-[11px] border border-[var(--rk-hairline-strong)] px-[17px] py-2 text-[14.5px] text-[var(--rk-body)] disabled:opacity-50"
               }
             >
               {pendingAction === action.id ? (
@@ -116,7 +116,7 @@ export function AskCard({
             value={answer}
             onChange={(event) => setAnswer(event.target.value)}
             placeholder={t`Code`}
-            className="rounded-[11px] border border-[#303035] bg-[#0E0E10] px-3.5 py-2.5 text-[14.5px] text-[#ECECEE] outline-none focus:border-[#66666D]"
+            className="rounded-[11px] border border-[var(--rk-hairline-strong)] bg-[var(--rk-input)] px-3.5 py-2.5 text-[14.5px] text-[var(--rk-ink)] outline-none focus:border-[var(--rk-muted)]"
           />
           <button
             type="submit"
@@ -139,7 +139,7 @@ export function AskCard({
             value={answer}
             onChange={(event) => setAnswer(event.target.value)}
             placeholder={t`Type your answer`}
-            className="rounded-[11px] border border-[#303035] bg-[#0E0E10] px-3.5 py-2.5 text-[14.5px] text-[#ECECEE] outline-none focus:border-[#66666D]"
+            className="rounded-[11px] border border-[var(--rk-hairline-strong)] bg-[var(--rk-input)] px-3.5 py-2.5 text-[14.5px] text-[var(--rk-ink)] outline-none focus:border-[var(--rk-muted)]"
           />
           <div className="flex gap-2">
             <button
@@ -156,7 +156,7 @@ export function AskCard({
                 setAnswer("");
                 setEditing(false);
               }}
-              className="rounded-[11px] border border-[#26262A] px-[17px] py-2 text-[14.5px] text-[#C9C9CE] disabled:opacity-50"
+              className="rounded-[11px] border border-[var(--rk-hairline-strong)] px-[17px] py-2 text-[14.5px] text-[var(--rk-body)] disabled:opacity-50"
             >
               <Trans>Cancel</Trans>
             </button>
@@ -176,7 +176,7 @@ export function AskCard({
             type="button"
             disabled={submitting}
             onClick={() => setEditing(true)}
-            className="rounded-[11px] border border-[#26262A] px-[17px] py-2 text-[14.5px] text-[#C9C9CE] disabled:opacity-50"
+            className="rounded-[11px] border border-[var(--rk-hairline-strong)] px-[17px] py-2 text-[14.5px] text-[var(--rk-body)] disabled:opacity-50"
           >
             <Trans>Edit first</Trans>
           </button>

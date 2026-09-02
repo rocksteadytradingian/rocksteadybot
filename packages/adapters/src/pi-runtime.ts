@@ -384,6 +384,8 @@ export function describeToolActivity(toolName: string, args: unknown): string {
   if (toolName === "computer_act") return "Operating the computer";
   if (toolName === "run_subagent") return `Delegating to helper: ${detail(record.name)}`;
   if (toolName === "remember") return "Saving a note to memory";
+  if (toolName === "read_memory") return `Reading memory ${detail(record.path)}`;
+  if (toolName === "search_memory") return `Searching memory: ${detail(record.query)}`;
   if (toolName === "skill_read") return `Reading skill: ${detail(record.name)}`;
   if (toolName === "skill_create") return `Creating skill: ${detail(record.name ?? "skill")}`;
   if (toolName === "skill_update")
@@ -469,6 +471,18 @@ function toAgentTool(tool: ConnectorTool, host: ToolHost, exposedName: string): 
       }
       if (tool.name === "remember") {
         return { content: String(raw.content ?? ""), path: String(raw.path ?? "MEMORY.md") };
+      }
+      if (tool.name === "read_memory") {
+        return {
+          path: String(raw.path ?? "MEMORY.md"),
+          ...(raw.scope !== undefined ? { scope: String(raw.scope) } : {}),
+        };
+      }
+      if (tool.name === "search_memory") {
+        return {
+          query: String(raw.query ?? ""),
+          ...(raw.scope !== undefined ? { scope: String(raw.scope) } : {}),
+        };
       }
       if (tool.name === "request_takeover") {
         return { reason: String(raw.reason ?? "I need you on the screen.") };

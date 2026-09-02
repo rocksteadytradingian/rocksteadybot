@@ -43,6 +43,7 @@ export interface RakazoDesktop {
     minimize: () => Promise<void>;
     toggleMaximize: () => Promise<void>;
     state: () => Promise<{ minimized: boolean; maximized: boolean; fullScreen: boolean }>;
+    setTitleBarOverlay: (overlay: { color: string; symbolColor: string }) => Promise<void>;
   };
   update: RakazoDesktopUpdate;
   oauth: {

@@ -6,6 +6,7 @@ import {
   type UiThemeId,
   uiThemeById,
 } from "@rakazo/ui-tokens";
+import { desktopBridge } from "./desktop";
 
 export const UI_THEME_STORAGE_KEY = "rakazo.uiTheme";
 
@@ -63,8 +64,23 @@ export function applyUiTheme(
   if (typeof document !== "undefined") {
     const meta = document.querySelector('meta[name="theme-color"]');
     if (meta) meta.setAttribute("content", spec.swatch);
+    syncDesktopTitleBarOverlay();
   }
   return spec.id;
+}
+
+function syncDesktopTitleBarOverlay() {
+  const setOverlay = desktopBridge()?.window.setTitleBarOverlay;
+  if (!setOverlay) return;
+  const apply = () => {
+    const styles = getComputedStyle(document.documentElement);
+    const color = styles.getPropertyValue("--rk-page").trim();
+    const symbolColor = styles.getPropertyValue("--rk-ink").trim();
+    if (!color || !symbolColor) return;
+    void setOverlay({ color, symbolColor });
+  };
+  apply();
+  requestAnimationFrame(apply);
 }
 
 export function setUiTheme(theme: UiThemeId): UiThemeId {

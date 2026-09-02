@@ -34,12 +34,27 @@ body,
   background: var(--rk-hairline-strong);
 }
 
+.rk-transcript-scroll {
+  overflow-anchor: none;
+}
+
 .app-drag {
   -webkit-app-region: drag;
 }
 
 .app-no-drag {
   -webkit-app-region: no-drag;
+}
+
+.rk-desktop-titlebar {
+  height: env(titlebar-area-height, var(--rk-titlebar-height, 0px));
+  flex: none;
+  -webkit-app-region: drag;
+}
+
+.rk-desktop-caption-gap {
+  width: max(0px, calc(100vw - env(titlebar-area-x, 0px) - env(titlebar-area-width, 100vw)));
+  flex: none;
 }
 
 .rk-schedule-select {
@@ -61,6 +76,17 @@ body,
 
 [dir="rtl"] .rk-schedule-select {
   background-position: left 8px center;
+}
+
+.rakazo-group-avatar {
+  isolation: isolate;
+}
+
+.rk-chat-markdown code,
+.rk-chat-markdown pre {
+  background: var(--rk-input) !important;
+  color: var(--rk-ink) !important;
+  border-color: var(--rk-hairline-strong) !important;
 }
 
 .rk-computer-overlay:fullscreen,

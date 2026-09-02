@@ -27,6 +27,7 @@ function desktop(platform: string): RakazoDesktop {
       minimize: async () => undefined,
       toggleMaximize: async () => undefined,
       state: async () => ({ minimized: false, maximized: false, fullScreen: false }),
+      setTitleBarOverlay: async () => undefined,
     },
     update: {
       state: async () => updateState,
@@ -47,8 +48,11 @@ describe("window chrome", () => {
     expect(windowChromeKind(desktop("darwin"))).toBe("darwin");
   });
 
-  it("uses real window-control buttons on Windows and Linux", () => {
-    expect(windowChromeKind(desktop("win32"))).toBe("controls");
+  it("leaves Windows caption buttons to the native overlay", () => {
+    expect(windowChromeKind(desktop("win32"))).toBe("overlay");
+  });
+
+  it("uses real window-control buttons on Linux", () => {
     expect(windowChromeKind(desktop("linux"))).toBe("controls");
   });
 

@@ -9,6 +9,7 @@ import {
   probeSameOriginApi,
 } from "../lib/auth-error";
 import { passwordResetProofFromLocation, resetPasswordBody } from "../lib/reset-password";
+import { WindowChrome } from "./WindowChrome";
 
 export type AuthMode = "in" | "up" | "forgot" | "reset";
 
@@ -138,7 +139,11 @@ export function AuthPage({ mode }: { mode: AuthMode }) {
   }
 
   return (
-    <div className="flex min-h-full items-center justify-center bg-[var(--rk-page)] px-6 py-16 text-[var(--rk-ink)]">
+    <div className="flex min-h-full flex-col bg-[var(--rk-page)] text-[var(--rk-ink)]">
+      <div className="app-drag flex px-5 py-3">
+        <WindowChrome />
+      </div>
+      <div className="flex flex-1 items-center justify-center px-6 py-8">
       <form onSubmit={submit} className="flex w-[460px] flex-col items-center">
         <div className="flex h-[74px] w-[74px] items-center justify-center gap-[11px] rounded-full bg-[var(--rk-mark)]">
           <span className="h-5 w-[9px] rounded-full bg-[var(--rk-mark-dot)]" />
@@ -246,6 +251,7 @@ export function AuthPage({ mode }: { mode: AuthMode }) {
           )}
         </p>
       </form>
+      </div>
     </div>
   );
 }

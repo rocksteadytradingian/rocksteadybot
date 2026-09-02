@@ -246,7 +246,7 @@ export const builtinAgentTools: ConnectorTool[] = [
   },
   {
     name: "remember",
-    description: "Store a durable fact in this bot's explicit memory.",
+    description: "Store a durable fact in this bot's explicit Markdown memory.",
     inputSchema: {
       type: "object",
       properties: {
@@ -254,6 +254,43 @@ export const builtinAgentTools: ConnectorTool[] = [
         path: { type: "string" },
       },
       required: ["content"],
+    },
+  },
+  {
+    name: "read_memory",
+    description:
+      "Read an explicit durable Markdown memory document by scope and path. Use when the always-on memory block lists a document in the index.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        scope: {
+          type: "string",
+          enum: ["bot", "user"],
+          description: "bot for this bot's memory, user for account-wide memory. Defaults to bot.",
+        },
+        path: {
+          type: "string",
+          description: "Document path, e.g. MEMORY.md.",
+        },
+      },
+      required: ["path"],
+    },
+  },
+  {
+    name: "search_memory",
+    description:
+      "Search explicit durable Markdown memory by substring. This is not semantic recall of compacted conversations.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        query: { type: "string" },
+        scope: {
+          type: "string",
+          enum: ["bot", "user", "all"],
+          description: "Defaults to all.",
+        },
+      },
+      required: ["query"],
     },
   },
   // Semantic-memory tools: exposed by selectMemoryTools() only when a

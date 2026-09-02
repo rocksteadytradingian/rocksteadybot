@@ -23,6 +23,9 @@ services:
       - ../../apps/web/src:/app/apps/web/src:ro
       - ../../apps/web/index.html:/app/apps/web/index.html:ro
       - ../../apps/web/vite.config.ts:/app/apps/web/vite.config.ts:ro
+      - ../../packages/ui-tokens/src:/app/packages/ui-tokens/src:ro
+      - ../../packages/ui-web/src:/app/packages/ui-web/src:ro
+      - ../../packages/chat-ui/src:/app/packages/chat-ui/src:ro
     command:
       - bash
       - -lc

@@ -32,6 +32,11 @@ if command -v dbus-launch >/dev/null 2>&1; then
   eval "$(dbus-launch --sh-syntax)"
 fi
 
+if command -v autocutsel >/dev/null 2>&1; then
+  autocutsel -display :1 -selection CLIPBOARD -fork || true
+  autocutsel -display :1 -selection PRIMARY -fork || true
+fi
+
 xsetroot -solid "#111113" >/dev/null 2>&1 || true
 mkdir -p /tmp/fluxbox-home/.fluxbox
 cp /etc/rakazo/fluxbox/init /tmp/fluxbox-home/.fluxbox/init
@@ -73,6 +78,10 @@ if [[ ! -d "$NOVNC_ROOT" ]]; then
 fi
 if [[ ! -f "$NOVNC_ROOT/embed.html" ]]; then
   echo "noVNC embed.html is missing from the computer image" >&2
+  exit 1
+fi
+if [[ ! -f "$NOVNC_ROOT/host-clipboard.js" ]]; then
+  echo "noVNC host-clipboard.js is missing from the computer image" >&2
   exit 1
 fi
 websockify --heartbeat=30 --web="$NOVNC_ROOT" 0.0.0.0:6080 127.0.0.1:5900 >/tmp/rakazo/novnc.log 2>&1 &

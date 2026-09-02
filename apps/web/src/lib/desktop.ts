@@ -51,8 +51,11 @@ export function onDesktopOAuthCallback(
   });
 }
 
-export function windowChromeKind(desktop?: RakazoDesktop): "spacer" | "darwin" | "controls" {
+export function windowChromeKind(
+  desktop?: RakazoDesktop,
+): "spacer" | "darwin" | "overlay" | "controls" {
   if (!desktop) return "spacer";
   if (desktop.platform === "darwin") return "darwin";
+  if (desktop.platform === "win32") return "overlay";
   return "controls";
 }

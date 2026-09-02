@@ -1,3 +1,4 @@
+import fs from "node:fs";
 import http from "node:http";
 import https from "node:https";
 import net from "node:net";
@@ -10,6 +11,7 @@ import { defineConfig, loadEnv, type PreviewServer, type ViteDevServer } from "v
 import { resolveAuthSecret } from "../../packages/core/src/secrets-guard.ts";
 import { previewAllowedHosts, resolveApiProxyTarget } from "./src/lib/api-proxy-target.ts";
 import {
+  localComputerViewerPage,
   resolveNovncTarget,
   safeProxyHeaders,
   safeProxyResponseHeaders,
@@ -17,6 +19,24 @@ import {
 } from "./src/screen-proxy.js";
 
 const webPort = Number(process.env.WEB_PORT ?? 5173);
+const computerViewerRoot = path.resolve(import.meta.dirname, "../../infra/sandboxes/computer");
+
+function serveLocalComputerViewer(res: http.ServerResponse, upstreamPath: string) {
+  const page = localComputerViewerPage(upstreamPath);
+  if (!page) return false;
+  const file = path.join(computerViewerRoot, path.basename(page));
+  if (!fs.existsSync(file)) return false;
+  const body = fs.readFileSync(file);
+  res.writeHead(200, {
+    "content-type": page.endsWith(".js")
+      ? "text/javascript; charset=utf-8"
+      : "text/html; charset=utf-8",
+    "cache-control": "no-store",
+    "access-control-allow-origin": "*",
+  });
+  res.end(body);
+  return true;
+}
 
 function attachNovncProxy(server: ViteDevServer | PreviewServer, secret: string) {
   server.middlewares.use((req, res, next) => {
@@ -30,6 +50,7 @@ function attachNovncProxy(server: ViteDevServer | PreviewServer, secret: string)
       res.end("Invalid or expired screen capability");
       return;
     }
+    if (serveLocalComputerViewer(res, target.path)) return;
     const headers = {
       ...safeProxyHeaders(req.headers),
       host: `${target.hostname}:${target.port}`,

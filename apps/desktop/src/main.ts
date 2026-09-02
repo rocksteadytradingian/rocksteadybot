@@ -36,7 +36,7 @@ import {
   sessionPartitionForServerUrl,
 } from "./setup-config.js";
 import { clearSetup, readSetup, writeSetup } from "./setup-store.js";
-import { browserWindowOptions, setupWindowOptions, warmWindowTtlMs } from "./window-options.js";
+import { browserWindowOptions, setupWindowOptions, TITLEBAR_OVERLAY_HEIGHT, warmWindowTtlMs } from "./window-options.js";
 
 const PERFORMANCE_USER_DATA = process.env.RAKAZO_PERFORMANCE_USER_DATA;
 const PROBE_TIMEOUT_MS = 8_000;
@@ -934,6 +934,24 @@ app.whenReady().then(async () => {
         maximized: win?.isMaximized() ?? false,
         fullScreen: win?.isFullScreen() ?? false,
       };
+    });
+    ipcMain.handle("desktop.window.setTitleBarOverlay", (event, overlay) => {
+      if (process.platform !== "win32") return;
+      const win = windowFrom(event);
+      if (!win || win.isDestroyed()) return;
+      if (
+        typeof overlay !== "object" ||
+        overlay === null ||
+        typeof overlay.color !== "string" ||
+        typeof overlay.symbolColor !== "string"
+      ) {
+        return;
+      }
+      win.setTitleBarOverlay({
+        color: overlay.color,
+        symbolColor: overlay.symbolColor,
+        height: TITLEBAR_OVERLAY_HEIGHT,
+      });
     });
     ipcMain.handle("desktop.update.state", () => desktopUpdater.state());
     ipcMain.handle("desktop.update.check", (event) =>

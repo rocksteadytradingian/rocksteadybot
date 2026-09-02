@@ -18,6 +18,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     fonts-liberation \
     fonts-dejavu-core \
     dbus-x11 \
+    autocutsel \
   && rm -rf /var/lib/apt/lists/* \
   && mkdir -p /etc/rakazo/fluxbox \
   && printf '%s\n' '#!/bin/sh' 'exec xsetroot -solid "#111113" "$@"' > /usr/bin/fbsetbg \
@@ -32,6 +33,7 @@ COPY fluxbox.init /etc/rakazo/fluxbox/init
 COPY fluxbox.apps /etc/rakazo/fluxbox/apps
 COPY fluxbox.menu /etc/rakazo/fluxbox/menu
 COPY embed.html /usr/share/novnc/embed.html
+COPY host-clipboard.js /usr/share/novnc/host-clipboard.js
 # Strip CR so shebangs work even if the build context came from a CRLF checkout.
 RUN sed -i 's/\r$//' /usr/local/bin/rakazo-computer /usr/local/bin/rakazo-browser \
     /etc/rakazo/fluxbox/init /etc/rakazo/fluxbox/apps /etc/rakazo/fluxbox/menu \

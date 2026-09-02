@@ -98,6 +98,19 @@ rejected.
 
 Do not commit `.env`. Never put `COMPOSIO_API_KEY`, OpenRouter keys, or provider tokens in git, logs, or chat.
 
+## Memory
+
+Rakazo keeps two first-party layers: explicit Markdown memory (bot and user `MEMORY.md` documents in Postgres) and optional semantic recall through the workspace **Supermemory** provider (cloud or loopback). Compacted chat history stays as a local summary for the prompt; when a semantic provider is connected, Rakazo stores the **verbatim** transcript there and injects short snippets on later turns.
+
+Do not replace those layers with a third-party memory product. A local memory MCP such as [MemPalace](https://github.com/mempalace/mempalace) can be attached as an optional sidecar the same way as any other MCP server: enable stdio, allowlist the exact command, then add it in **Settings → MCP**. Official sources are that GitHub repository and the `mempalace` PyPI package. Set the same values on the API and worker:
+
+```env
+MCP_STDIO_ENABLED=true
+MCP_STDIO_ALLOWED_COMMANDS=docker,mempalace
+```
+
+Stdio is off by default. Only allowlist binaries you install and trust. MemPalace is not a Rakazo provider, has no workspace tenancy, and is not available on mobile.
+
 ## Choosing a computer provider
 
 The Electron desktop app is a client of the same API. Docker and E2B still apply. On first launch, Electron asks the deployment owner whether bots should keep using Docker or run on this Mac as you. `SANDBOX_PROVIDER=desktop` is a separate, explicit provider that always runs commands on the service host.

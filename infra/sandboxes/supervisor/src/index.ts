@@ -543,6 +543,7 @@ async function ensureComputerImage() {
             "start.sh",
             "rakazo-browser",
             "embed.html",
+            "host-clipboard.js",
             "fluxbox.init",
             "fluxbox.apps",
             "fluxbox.menu",

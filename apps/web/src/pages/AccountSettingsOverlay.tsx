@@ -146,8 +146,8 @@ export function AccountSettingsOverlay({
           <UiLocalePicker value={locale} onChange={chooseLocale} />
         </section>
 
-        <section className="mt-5 rounded-[14px] border border-[#26262A] bg-[#101012] px-4 py-4">
-          <h3 className="text-[15px] font-medium text-[#ECECEE]">
+        <section className="mt-5 rounded-[14px] border border-[var(--rk-hairline-strong)] bg-[var(--rk-input)] px-4 py-4">
+          <h3 className="text-[15px] font-medium text-[var(--rk-ink)]">
             <Trans>Avatars</Trans>
           </h3>
           <div className="mt-3 grid grid-cols-2 gap-3">
@@ -160,10 +160,10 @@ export function AccountSettingsOverlay({
                   aria-pressed={selected}
                   disabled={avatarPending}
                   onClick={() => void chooseAvatarStyle(style)}
-                  className={`flex items-center gap-3 rounded-[12px] border px-3.5 py-3 text-start text-[14px] text-[#ECECEE] transition-colors disabled:opacity-50 ${
+                  className={`flex items-center gap-3 rounded-[12px] border px-3.5 py-3 text-start text-[14px] text-[var(--rk-ink)] transition-colors disabled:opacity-50 ${
                     selected
-                      ? "border-[#5A5A62] bg-[#1A1A1D]"
-                      : "border-[#26262A] hover:border-[#3A3A40]"
+                      ? "border-[#5A5A62] bg-[var(--rk-surface-2)]"
+                      : "border-[var(--rk-hairline-strong)] hover:border-[var(--rk-muted-2)]"
                   }`}
                 >
                   <BotAvatar
@@ -332,7 +332,7 @@ function UiLocalePicker({
         aria-controls={listboxId}
         aria-expanded={open}
         aria-haspopup="listbox"
-        className="flex w-full items-center justify-between rounded-[11px] border border-[var(--rk-hairline-strong)] bg-[var(--rk-input)] px-3.5 py-3 text-start text-[var(--rk-ink)] outline-none focus-visible:border-[#4A4A50]"
+        className="flex w-full items-center justify-between rounded-[11px] border border-[var(--rk-hairline-strong)] bg-[var(--rk-input)] px-3.5 py-3 text-start text-[var(--rk-ink)] outline-none focus-visible:border-[var(--rk-muted-2)]"
         onClick={() => setOpen((current) => !current)}
         onKeyDown={onTriggerKeyDown}
       >

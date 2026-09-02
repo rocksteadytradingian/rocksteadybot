@@ -235,6 +235,8 @@ describe("sandbox supervisor input containment", () => {
     expect(ensureScreenCommand(1)).toContain("Xvfb :2");
     expect(ensureScreenCommand(1)).toContain("rfbport 5902");
     expect(ensureScreenCommand(1)).toContain("0.0.0.0:6082");
+    expect(ensureScreenCommand(1)).toContain("autocutsel -display :2 -selection CLIPBOARD");
+    expect(stopExtraScreenCommand(1)).toContain("autocutsel -display :2 -selection");
     expect(() => nextScreenIndex(assigned, "overflow", undefined, 1)).toThrow(
       /cannot allocate another screen/,
     );

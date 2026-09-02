@@ -75,7 +75,7 @@ export function ComputerMaintenanceActions({
         ) : null}
       </div>
       {!compact ? (
-        <p className="text-[13px] leading-[1.45] text-[#6C6C70]">
+        <p className="text-[13px] leading-[1.45] text-[var(--rk-muted-2)]">
           <Trans>
             Recover replaces an unreachable computer and keeps files in the saved workspace. Reset
             restores the last saved workspace and loses unsaved work. Update rebuilds with the
@@ -92,13 +92,13 @@ export function ComputerMaintenanceActions({
           aria-labelledby="reset-computer-title"
           aria-describedby="reset-computer-description"
         >
-          <BuiCard className="w-full max-w-[420px] border border-[#232326] p-5">
-            <div id="reset-computer-title" className="text-[16px] font-medium text-[#ECECEE]">
+          <BuiCard className="w-full max-w-[420px] border border-[var(--rk-hairline-strong)] p-5">
+            <div id="reset-computer-title" className="text-[16px] font-medium text-[var(--rk-ink)]">
               <Trans>Reset computer?</Trans>
             </div>
             <p
               id="reset-computer-description"
-              className="mt-2 text-[14px] leading-[1.5] text-[#85858A]"
+              className="mt-2 text-[14px] leading-[1.5] text-[var(--rk-muted)]"
             >
               <Trans>Restore the last saved workspace. Unsaved work on the computer is lost.</Trans>
             </p>

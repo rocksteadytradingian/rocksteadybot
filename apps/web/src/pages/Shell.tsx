@@ -153,7 +153,11 @@ import {
   reduceThreadSnapshot,
   userHoldsComputerControl,
 } from "../lib/thread-events";
-import { transcriptIsNearEnd } from "../lib/transcript-scroll";
+import {
+  scrollTranscriptToEnd,
+  transcriptFollowAfterScroll,
+  transcriptIsNearEnd,
+} from "../lib/transcript-scroll";
 import { speaker } from "../lib/tts";
 import { resolveUiTheme, setUiTheme, uiThemeById } from "../lib/ui-theme";
 import { ActivityList } from "./ActivityList";
@@ -385,6 +389,7 @@ export function ShellPage() {
   const jumpGeneration = useRef(0);
   const initiallyScrolledThread = useRef<string | null>(null);
   const messageScroll = useRef<HTMLDivElement>(null);
+  const followTranscript = useRef(true);
   const pinnedAroundRef = useRef<{
     botId?: string;
     groupId?: string;
@@ -557,7 +562,7 @@ export function ShellPage() {
     ) {
       window.requestAnimationFrame(() => {
         const element = messageScroll.current;
-        if (element) element.scrollTop = element.scrollHeight;
+        if (element) scrollTranscriptToEnd(element);
       });
     }
     return snap;
@@ -596,7 +601,7 @@ export function ShellPage() {
     ) {
       window.requestAnimationFrame(() => {
         const element = messageScroll.current;
-        if (element) element.scrollTop = element.scrollHeight;
+        if (element) scrollTranscriptToEnd(element);
       });
     }
     const [routines, skills] = await Promise.all([
@@ -1390,7 +1395,8 @@ export function ShellPage() {
     }
     const element = messageScroll.current;
     if (!element) return;
-    element.scrollTop = element.scrollHeight;
+    followTranscript.current = true;
+    scrollTranscriptToEnd(element);
     initiallyScrolledThread.current = snapshot.threadId;
   }, [active, groupId, inGroup, snapshot?.botId, snapshot?.groupId, snapshot?.threadId]);
 
@@ -1523,6 +1529,7 @@ export function ShellPage() {
       const groupTarget = plan.rerouteGroupId ?? initialGroupTarget;
       const botTarget = reroutedToGroup ? undefined : initialBotTarget;
       const trimmed = plan.trimmed;
+      followTranscript.current = true;
       setSending(true);
       setSendError(null);
       try {
@@ -1960,7 +1967,7 @@ export function ShellPage() {
         />
       ) : null}
       <aside
-        className={`absolute inset-y-0 start-0 z-40 flex w-[calc(100%-48px)] max-w-[316px] shrink-0 flex-col border-e border-[var(--rk-hairline)] bg-[var(--rk-sidebar)] transition-transform md:static md:z-auto md:w-[316px] md:translate-x-0 ${
+        className={`absolute inset-y-0 start-0 z-40 flex min-h-0 w-[calc(100%-48px)] max-w-[316px] shrink-0 flex-col border-e border-[var(--rk-hairline)] bg-[var(--rk-sidebar)] transition-transform md:static md:z-auto md:w-[316px] md:translate-x-0 ${
           mobileSidebarOpen ? "translate-x-0" : "-translate-x-full rtl:translate-x-full"
         }`}
       >
@@ -2089,7 +2096,7 @@ export function ShellPage() {
               {sidebarGroups.map((group) => (
                 <div key={group.key} data-sidebar-group={group.key}>
                   {group.title ? (
-                    <div className="px-2.5 pb-1 pt-3 text-[12.5px] font-medium text-[var(--rk-muted-2)]">
+                    <div className="px-2.5 pb-1 pt-3 text-[12.5px] font-medium text-[var(--rk-body)]">
                       {group.title}
                     </div>
                   ) : null}
@@ -2272,16 +2279,16 @@ export function ShellPage() {
           onClick={() => setPluginsOpen(true)}
           className="mx-3 mb-1 flex items-center gap-3 rounded-[11px] px-2.5 py-2 hover:bg-[var(--rk-hover)]"
         >
-          <span className="grid h-[30px] w-[30px] place-items-center rounded-full bg-[var(--rk-solid-ink)] text-[var(--rk-muted)]">
+          <span className="grid h-[30px] w-[30px] place-items-center rounded-full bg-[var(--rk-surface)] text-[var(--rk-ink)]">
             <Puzzle size={15} strokeWidth={1.7} />
           </span>
           <span className="text-[14.5px] text-[var(--rk-body)]">
             <Trans>Plugins</Trans>
           </span>
         </button>
-        <div className="relative">
+        <div className="relative z-40">
           {menuOpen ? (
-            <div className="absolute bottom-14 inset-x-3 rounded-2xl border border-[var(--rk-hairline-strong)] bg-[var(--rk-surface-2)] p-2 shadow-[var(--rk-shadow)]">
+            <div className="absolute inset-x-3 bottom-14 z-50 overflow-hidden rounded-2xl border border-[var(--rk-hairline-strong)] bg-[var(--rk-panel)] p-2 shadow-[var(--rk-shadow)]">
               {themePickerOpen ? (
                 <>
                   <button
@@ -2290,7 +2297,7 @@ export function ShellPage() {
                     onClick={() => setThemePickerOpen(false)}
                     className="flex w-full items-center gap-3 rounded-[11px] px-3 py-2.5 hover:bg-[var(--rk-hover)]"
                   >
-                    <ChevronLeft size={16} strokeWidth={1.7} className="text-[var(--rk-muted)]" />
+                    <ChevronLeft size={16} strokeWidth={1.7} className="text-[var(--rk-ink)]" />
                     <span className="flex-1 text-start text-[14.5px] text-[var(--rk-ink)]">
                       <Trans>Themes</Trans>
                     </span>
@@ -2315,7 +2322,7 @@ export function ShellPage() {
                     }}
                     className="flex w-full items-center gap-3 rounded-[11px] px-3 py-2.5 hover:bg-[var(--rk-hover)]"
                   >
-                    <span className="text-[var(--rk-muted)]">⚙</span>
+                    <span className="text-[var(--rk-ink)]">⚙</span>
                     <span className="flex-1 text-start text-[14.5px] text-[var(--rk-ink)]">
                       <Trans>Settings</Trans>
                     </span>
@@ -2328,7 +2335,7 @@ export function ShellPage() {
                     }}
                     className="flex w-full items-center gap-3 rounded-[11px] px-3 py-2.5 hover:bg-[var(--rk-hover)]"
                   >
-                    <Cpu size={16} strokeWidth={1.7} className="text-[var(--rk-muted)]" />
+                    <Cpu size={16} strokeWidth={1.7} className="text-[var(--rk-ink)]" />
                     <span className="flex-1 text-start text-[14.5px] text-[var(--rk-ink)]">
                       <Trans>Models</Trans>
                     </span>
@@ -2341,7 +2348,7 @@ export function ShellPage() {
                     }}
                     className="flex w-full items-center gap-3 rounded-[11px] px-3 py-2.5 hover:bg-[var(--rk-hover)]"
                   >
-                    <span className="text-[var(--rk-muted)]">◇</span>
+                    <span className="text-[var(--rk-ink)]">◇</span>
                     <span className="flex-1 text-start text-[14.5px] text-[var(--rk-ink)]">
                       <Trans>Memory</Trans>
                     </span>
@@ -2354,7 +2361,7 @@ export function ShellPage() {
                     }}
                     className="flex w-full items-center gap-3 rounded-[11px] px-3 py-2.5 hover:bg-[var(--rk-hover)]"
                   >
-                    <Volume2 size={16} strokeWidth={1.7} className="text-[var(--rk-muted)]" />
+                    <Volume2 size={16} strokeWidth={1.7} className="text-[var(--rk-ink)]" />
                     <span className="flex-1 text-start text-[14.5px] text-[var(--rk-ink)]">
                       <Trans>Voice</Trans>
                     </span>
@@ -2366,7 +2373,7 @@ export function ShellPage() {
                       setUsage(await rpc.usage.summary());
                     }}
                   >
-                    <Gauge size={16} strokeWidth={1.7} className="text-[var(--rk-muted)]" />
+                    <Gauge size={16} strokeWidth={1.7} className="text-[var(--rk-ink)]" />
                     <span className="flex-1 text-start text-[14.5px] text-[var(--rk-ink)]">
                       <Trans>Usage</Trans>
                     </span>
@@ -2384,11 +2391,11 @@ export function ShellPage() {
                     onClick={() => setThemePickerOpen(true)}
                     className="flex w-full items-center gap-3 rounded-[11px] px-3 py-2.5 hover:bg-[var(--rk-hover)]"
                   >
-                    <Palette size={16} strokeWidth={1.7} className="text-[var(--rk-muted)]" />
+                    <Palette size={16} strokeWidth={1.7} className="text-[var(--rk-ink)]" />
                     <span className="flex-1 text-start text-[14.5px] text-[var(--rk-ink)]">
                       <Trans>Themes</Trans>
                     </span>
-                    <span className="text-[12.5px] text-[var(--rk-muted)]">
+                    <span className="text-[12.5px] text-[var(--rk-body)]">
                       {uiThemeById(uiTheme).label}
                     </span>
                   </button>
@@ -2397,7 +2404,7 @@ export function ShellPage() {
                     onClick={() => void authClient.signOut().then(() => navigate("/"))}
                     className="flex w-full items-center gap-3 rounded-[11px] px-3 py-2.5 hover:bg-[var(--rk-hover)]"
                   >
-                    <LogOut size={16} strokeWidth={1.7} className="text-[var(--rk-muted)]" />
+                    <LogOut size={16} strokeWidth={1.7} className="text-[var(--rk-ink)]" />
                     <span className="text-[14.5px] text-[var(--rk-ink)]">
                       <Trans>Log out</Trans>
                     </span>
@@ -2426,7 +2433,7 @@ export function ShellPage() {
         </div>
       </aside>
 
-      <main className="flex min-w-0 flex-1 flex-col bg-[var(--rk-main)]">
+      <main className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-[var(--rk-main)]">
         <div className="flex items-center justify-between border-b border-[var(--rk-surface)] px-3 py-[17px] md:px-[22px]">
           <div className="flex min-w-0 items-center gap-2">
             <button
@@ -2473,7 +2480,8 @@ export function ShellPage() {
               </span>
             </button>
           </div>
-          <div className="flex items-center gap-1">
+          <div className="flex items-center">
+          <div className="relative z-10 flex items-center gap-1">
             {!inGroup && active ? (
               <button
                 type="button"
@@ -2496,6 +2504,7 @@ export function ShellPage() {
               <button
                 type="button"
                 title={t`Agent computer`}
+                aria-label={t`Agent computer`}
                 onClick={() => {
                   const next = panel === "computer" ? null : "computer";
                   setPanel(next);
@@ -2504,17 +2513,20 @@ export function ShellPage() {
                     void refreshThread(active.id).catch(() => undefined);
                   }
                 }}
-                className="grid h-[30px] w-[34px] place-items-center rounded-[9px] hover:bg-[var(--rk-hover)]"
-                style={{ background: panel ? "var(--rk-hover)" : "transparent" }}
+                className="grid h-9 w-9 place-items-center rounded-[9px] text-[var(--rk-ink)] hover:bg-[var(--rk-hover)]"
+                style={{ background: panel === "computer" ? "var(--rk-hover)" : "transparent" }}
               >
-                <Monitor size={18} strokeWidth={1.6} className="text-[var(--rk-muted)]" />
+                <Monitor size={18} strokeWidth={1.8} />
               </button>
             ) : null}
+          </div>
+          <div className="rk-desktop-caption-gap" aria-hidden="true" />
           </div>
         </div>
         <Transcript
           key={activeSnapshot?.threadId}
           scrollRef={messageScroll}
+          followRef={followTranscript}
           artifactTarget={transcriptArtifactTarget}
           messages={activeSnapshot?.messages ?? []}
           olderCursor={activeSnapshot?.olderCursor ?? null}
@@ -2727,7 +2739,7 @@ export function ShellPage() {
                   )}
                 </div>
                 <div className="mt-3 flex items-center justify-between gap-3">
-                  <span className="min-w-0 text-[13.5px] text-[var(--rk-muted)]">
+                  <span className="min-w-0 text-[13.5px] text-[var(--rk-body)]">
                     {hasControl
                       ? t`You have control`
                       : computerError
@@ -2746,7 +2758,6 @@ export function ShellPage() {
                   ) : (
                     <Button
                       type="button"
-                      variant="outline"
                       size="sm"
                       disabled={takeoverBlocked}
                       title={takeoverBlocked ? t`Stop the bot first` : undefined}
@@ -2785,7 +2796,7 @@ export function ShellPage() {
                     onView={openApproval}
                     onApprove={(item) => void answerApproval(item)}
                   />
-                  <div className="mt-[30px] mb-3 text-[14px] text-[var(--rk-muted)]">
+                  <div className="mt-[30px] mb-3 text-[14px] text-[var(--rk-body)]">
                     <Trans>Routines</Trans>
                   </div>
                   {activeRoutines.map((routine) => {
@@ -2794,7 +2805,7 @@ export function ShellPage() {
                     return (
                       <div
                         key={routine.id}
-                        className="flex w-full items-center gap-2 rounded-[11px] px-2.5 py-2.5 hover:bg-[#121214]"
+                        className="flex w-full items-center gap-2 rounded-[11px] px-2.5 py-2.5 hover:bg-[var(--rk-hover)]"
                       >
                         <button
                           type="button"
@@ -2839,7 +2850,7 @@ export function ShellPage() {
                       setEditingRoutine(null);
                       setPanel("routine");
                     }}
-                    className="mt-1 flex items-center gap-2.5 px-2.5 py-2.5 text-[14.5px] text-[var(--rk-muted)]"
+                    className="mt-1 flex items-center gap-2.5 px-2.5 py-2.5 text-[14.5px] text-[var(--rk-ink)]"
                   >
                     + <Trans>New routine</Trans>
                   </button>
@@ -3375,7 +3386,6 @@ export function ShellPage() {
               ) : (
                 <Button
                   type="button"
-                  variant="outline"
                   size="sm"
                   disabled={takeoverBlocked}
                   title={takeoverBlocked ? t`Stop the bot first` : undefined}
@@ -3468,6 +3478,7 @@ export function ShellPage() {
 
 const Transcript = memo(function Transcript({
   scrollRef,
+  followRef,
   artifactTarget,
   messages,
   olderCursor,
@@ -3492,6 +3503,7 @@ const Transcript = memo(function Transcript({
   onSpeak,
 }: {
   scrollRef: RefObject<HTMLDivElement | null>;
+  followRef: MutableRefObject<boolean>;
   artifactTarget: ArtifactTarget;
   messages: ThreadMessage[];
   olderCursor: number | null;
@@ -3517,9 +3529,9 @@ const Transcript = memo(function Transcript({
 }) {
   const { t } = useLingui();
   const [atEnd, setAtEnd] = useState(true);
-  const following = useRef(true);
+  const contentRef = useRef<HTMLDivElement>(null);
+  const pinning = useRef(false);
   const autoScrolling = useRef(false);
-  const lastScrollTop = useRef(0);
   const autoScrollTimer = useRef<number | undefined>(undefined);
   const jumpButtonRef = useRef<HTMLButtonElement>(null);
   const messageById = useMemo(
@@ -3534,17 +3546,27 @@ const Transcript = memo(function Transcript({
   const snapToEnd = useCallback(() => {
     const element = scrollRef.current;
     if (!element) return;
-    following.current = true;
-    autoScrolling.current = false;
+    followRef.current = true;
+    pinning.current = true;
     setAtEnd(true);
-    element.scrollTo({ top: element.scrollHeight, behavior: "auto" });
-  }, [scrollRef]);
+    scrollTranscriptToEnd(element);
+    window.requestAnimationFrame(() => {
+      pinning.current = false;
+      if (followRef.current && !transcriptIsNearEnd(element)) {
+        pinning.current = true;
+        scrollTranscriptToEnd(element);
+        window.requestAnimationFrame(() => {
+          pinning.current = false;
+        });
+      }
+    });
+  }, [followRef, scrollRef]);
 
   const jumpToLatest = useCallback(() => {
     const element = scrollRef.current;
     if (!element) return;
     const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    following.current = true;
+    followRef.current = true;
     autoScrolling.current = !reducedMotion;
     setAtEnd(true);
     element.scrollTo({
@@ -3559,11 +3581,11 @@ const Transcript = memo(function Transcript({
       },
       reducedMotion ? 0 : 2_000,
     );
-  }, [scrollRef]);
+  }, [followRef, scrollRef]);
 
   useLayoutEffect(() => {
-    if (following.current) snapToEnd();
-  }, [messages, running, snapToEnd]);
+    if (followRef.current) snapToEnd();
+  }, [followRef, messages, running, snapToEnd]);
 
   useLayoutEffect(() => {
     const button = jumpButtonRef.current;
@@ -3572,22 +3594,39 @@ const Transcript = memo(function Transcript({
     }
   }, [atEnd]);
 
+  useEffect(() => {
+    const element = scrollRef.current;
+    const content = contentRef.current;
+    if (!element || typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(() => {
+      if (!followRef.current) return;
+      pinning.current = true;
+      scrollTranscriptToEnd(element);
+      window.requestAnimationFrame(() => {
+        pinning.current = false;
+      });
+    });
+    observer.observe(element);
+    if (content) observer.observe(content);
+    return () => observer.disconnect();
+  }, [followRef, scrollRef]);
+
   const loadOlder = useCallback(() => {
-    const wasFollowing = following.current;
+    const wasFollowing = followRef.current;
     // Prepend must not race the messages-driven snap-to-end follow path.
-    following.current = false;
+    followRef.current = false;
     autoScrolling.current = false;
     const pending = onLoadOlder();
     if (!pending) return;
     return Promise.resolve(pending).catch((error) => {
       const element = scrollRef.current;
       if (wasFollowing && element && transcriptIsNearEnd(element)) {
-        following.current = true;
+        followRef.current = true;
         setAtEnd(true);
       }
       throw error;
     });
-  }, [onLoadOlder, scrollRef]);
+  }, [followRef, onLoadOlder, scrollRef]);
 
   useEffect(
     () => () => {
@@ -3603,45 +3642,39 @@ const Transcript = memo(function Transcript({
         data-testid="transcript"
         onPointerDown={() => {
           autoScrolling.current = false;
-          following.current = false;
         }}
         onTouchStart={() => {
           autoScrolling.current = false;
-          following.current = false;
         }}
         onWheel={(event) => {
           if (event.deltaY < 0) {
             autoScrolling.current = false;
-            following.current = false;
+            followRef.current = false;
           }
         }}
         onScroll={(event) => {
-          const scrolledDown = event.currentTarget.scrollTop >= lastScrollTop.current;
-          lastScrollTop.current = event.currentTarget.scrollTop;
           const nearEnd = transcriptIsNearEnd(event.currentTarget);
           setAtEnd(nearEnd);
-          if (nearEnd) {
-            if (scrolledDown) following.current = true;
-            if (autoScrolling.current) {
-              autoScrolling.current = false;
-              window.clearTimeout(autoScrollTimer.current);
-            }
-          } else if (!autoScrolling.current) {
-            following.current = false;
+          const programmatic = pinning.current || autoScrolling.current;
+          followRef.current = transcriptFollowAfterScroll({ nearEnd, programmatic });
+          if (nearEnd && autoScrolling.current) {
+            autoScrolling.current = false;
+            window.clearTimeout(autoScrollTimer.current);
           }
         }}
-        className="rk-scroll flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto px-4 py-5 md:px-7 md:py-6"
+        className="rk-scroll rk-transcript-scroll flex min-h-0 flex-1 flex-col overflow-y-auto px-4 py-5 md:px-7 md:py-6"
       >
-        {olderCursor != null ? (
-          <button
-            type="button"
-            disabled={loadingOlder}
-            onClick={() => void loadOlder()}
-            className="self-center rounded-lg px-3 py-1.5 text-[13px] text-[var(--rk-muted)] hover:bg-[var(--rk-surface-2)] hover:text-[var(--rk-body)] disabled:opacity-50"
-          >
-            {loadingOlder ? t`Loading…` : t`Load earlier messages`}
-          </button>
-        ) : null}
+        <div ref={contentRef} className="flex flex-col gap-2">
+          {olderCursor != null ? (
+            <button
+              type="button"
+              disabled={loadingOlder}
+              onClick={() => void loadOlder()}
+              className="self-center rounded-lg px-3 py-1.5 text-[13px] text-[var(--rk-muted)] hover:bg-[var(--rk-surface-2)] hover:text-[var(--rk-body)] disabled:opacity-50"
+            >
+              {loadingOlder ? t`Loading…` : t`Load earlier messages`}
+            </button>
+          ) : null}
         {messages.map((message) => (
           <div
             key={message.id}
@@ -3682,6 +3715,7 @@ const Transcript = memo(function Transcript({
         ) ? (
           <ActiveBotGlyph bots={workingBots} label={workingLabel} startedAt={workingStartedAt} />
         ) : null}
+        </div>
       </div>
       <button
         ref={jumpButtonRef}
@@ -4459,7 +4493,7 @@ const MessageView = memo(function MessageView({
           data-testid="reply-parent-preview"
           aria-label={t`Jump to replied message`}
           onClick={() => onJumpToMessage?.(parentJumpId)}
-          className="mb-2 block max-w-[74%] truncate rounded-[14px] border border-[var(--rk-hairline-strong)] bg-[var(--rk-hover)] px-3 py-2 text-start text-[12.5px] text-[var(--rk-muted)] hover:border-[#34343B] hover:text-[var(--rk-body)]"
+          className="mb-2 block max-w-[74%] truncate rounded-[14px] border border-[var(--rk-hairline-strong)] bg-[var(--rk-hover)] px-3 py-2 text-start text-[12.5px] text-[var(--rk-muted)] hover:border-[var(--rk-hairline-strong)] hover:text-[var(--rk-body)]"
           dir="auto"
         >
           {replyPreview ? previewMessageText(replyPreview) : t`Earlier message`}
@@ -4540,7 +4574,7 @@ const MessageView = memo(function MessageView({
             <CollaborationMarker
               key={i}
               ariaLabel={label}
-              color={peerBot(peerBotId)?.color ?? "#85858A"}
+              color={peerBot(peerBotId)?.color ?? "#6B7280"}
               identity={peerBotId}
               label={label}
               onClick={() => onOpenPeerMessages(peerBotId)}
@@ -4591,7 +4625,7 @@ const MessageView = memo(function MessageView({
           return (
             <div
               key={i}
-              className="w-[min(420px,90%)] rounded-[18px] border border-[#232326] bg-[var(--rk-solid-ink)] px-[18px] py-4"
+              className="w-[min(420px,90%)] rounded-[18px] border border-[var(--rk-hairline-strong)] bg-[var(--rk-solid-ink)] px-[18px] py-4"
             >
               <div className="flex items-center justify-between gap-3">
                 <span className="text-[15px] font-medium text-[var(--rk-ink)]" dir="auto">
@@ -4631,7 +4665,7 @@ const MessageView = memo(function MessageView({
               type="button"
               disabled={removed}
               onClick={() => onOpenBot(block.botId)}
-              className="w-[min(340px,90%)] rounded-[18px] border border-[#232326] bg-[var(--rk-solid-ink)] px-[18px] py-4 text-start disabled:opacity-60"
+              className="w-[min(340px,90%)] rounded-[18px] border border-[var(--rk-hairline-strong)] bg-[var(--rk-solid-ink)] px-[18px] py-4 text-start disabled:opacity-60"
             >
               <div className="flex items-center justify-between">
                 <span className="text-[15px] font-medium text-[var(--rk-ink)]" dir="auto">
@@ -4799,7 +4833,7 @@ const MessageView = memo(function MessageView({
           return (
             <div
               key={i}
-              className="w-[340px] rounded-[18px] border border-[#232326] bg-[var(--rk-solid-ink)] px-[18px] py-4"
+              className="w-[340px] rounded-[18px] border border-[var(--rk-hairline-strong)] bg-[var(--rk-solid-ink)] px-[18px] py-4"
             >
               <div className="flex items-center justify-between">
                 <span className="text-[15px] font-medium text-[var(--rk-ink)]">
@@ -4833,7 +4867,7 @@ function ComputerModePicker({
   const hintId = useId();
   return (
     <div className="mt-4">
-      <div className="text-[14px] text-[var(--rk-muted)]">
+      <div className="text-[14px] text-[var(--rk-body)]">
         <Trans>Computer</Trans>
       </div>
       <div className="mt-2 grid grid-cols-2 gap-2">
@@ -4847,15 +4881,15 @@ function ComputerModePicker({
             onClick={() => onChange(mode)}
             className={`rounded-[11px] border px-3.5 py-3 text-[14px] capitalize disabled:opacity-40 ${
               value === mode
-                ? "border-[var(--rk-muted-2)] bg-[var(--rk-surface-2)] text-[var(--rk-ink)]"
-                : "border-[var(--rk-hairline-strong)] text-[var(--rk-muted)]"
+                ? "border-[var(--rk-ink)] bg-[var(--rk-surface-2)] text-[var(--rk-ink)]"
+                : "border-[var(--rk-ink)] bg-[var(--rk-surface)] text-[var(--rk-ink)]"
             }`}
           >
             {mode === "team" ? <Trans>Team</Trans> : <Trans>Private</Trans>}
           </button>
         ))}
       </div>
-      <p id={hintId} className="mt-2 text-[13px] leading-relaxed text-[var(--rk-muted-2)]">
+      <p id={hintId} className="mt-2 text-[13px] leading-relaxed text-[var(--rk-body)]">
         {value === "dedicated" ? (
           <Trans>Only this bot uses this computer.</Trans>
         ) : (
@@ -5184,7 +5218,7 @@ function BotSettings({
                   onClick={() => setMemoryScope(option.value)}
                   className={`flex-1 rounded-[11px] border px-3 py-2 text-[13px] ${
                     memoryScope === option.value
-                      ? "border-[#4A4A50] bg-[var(--rk-surface-2)] text-[var(--rk-ink)]"
+                      ? "border-[var(--rk-muted-2)] bg-[var(--rk-surface-2)] text-[var(--rk-ink)]"
                       : "border-[var(--rk-hairline-strong)] text-[var(--rk-muted)]"
                   }`}
                 >
@@ -5366,7 +5400,7 @@ function NewBotSectionDialog({
             maxLength={60}
             value={name}
             onChange={(event) => setName(event.target.value)}
-            className="mt-2 w-full rounded-[11px] border border-[var(--rk-hairline-strong)] bg-[var(--rk-input)] px-3.5 py-2.5 text-[14.5px] text-[var(--rk-ink)] outline-none focus:border-[#66666D]"
+            className="mt-2 w-full rounded-[11px] border border-[var(--rk-hairline-strong)] bg-[var(--rk-input)] px-3.5 py-2.5 text-[14.5px] text-[var(--rk-ink)] outline-none focus:border-[var(--rk-muted)]"
           />
         </label>
         {error ? <p className="mt-3 text-[13.5px] text-[#FF5364]">{error}</p> : null}
@@ -5375,7 +5409,7 @@ function NewBotSectionDialog({
             type="button"
             disabled={saving}
             onClick={onCancel}
-            className="rounded-[10px] px-3.5 py-2 text-[14px] text-[var(--rk-body)] hover:bg-[#29292D] disabled:opacity-40"
+            className="rounded-[10px] px-3.5 py-2 text-[14px] text-[var(--rk-body)] hover:bg-[var(--rk-hover)] disabled:opacity-40"
           >
             <Trans>Cancel</Trans>
           </button>
@@ -5447,7 +5481,7 @@ function ClearConversationDialog({
             type="button"
             disabled={clearing}
             onClick={onCancel}
-            className="rounded-[10px] px-3.5 py-2 text-[14px] text-[var(--rk-body)] hover:bg-[#29292D] disabled:opacity-40"
+            className="rounded-[10px] px-3.5 py-2 text-[14px] text-[var(--rk-body)] hover:bg-[var(--rk-hover)] disabled:opacity-40"
           >
             <Trans>Cancel</Trans>
           </button>
@@ -5565,7 +5599,7 @@ function DeleteBotDialog({
             type="button"
             disabled={deleting}
             onClick={onCancel}
-            className="rounded-[10px] px-3.5 py-2 text-[14px] text-[var(--rk-body)] hover:bg-[#29292D] disabled:opacity-40"
+            className="rounded-[10px] px-3.5 py-2 text-[14px] text-[var(--rk-body)] hover:bg-[var(--rk-hover)] disabled:opacity-40"
           >
             <Trans>Cancel</Trans>
           </button>
@@ -5642,7 +5676,7 @@ function DeleteRoutineDialog({
             type="button"
             disabled={deleting}
             onClick={onCancel}
-            className="rounded-[10px] px-3.5 py-2 text-[14px] text-[var(--rk-body)] hover:bg-[#29292D] disabled:opacity-40"
+            className="rounded-[10px] px-3.5 py-2 text-[14px] text-[var(--rk-body)] hover:bg-[var(--rk-hover)] disabled:opacity-40"
           >
             <Trans>Cancel</Trans>
           </button>
@@ -5751,7 +5785,7 @@ function ChoiceCard({
                 type="button"
                 disabled={Boolean(block.answerId) || pending}
                 onClick={() => void choose(option.id)}
-                className={`flex w-full items-center gap-3 rounded-[12px] border border-[var(--rk-hairline-strong)] px-3.5 py-3 text-start disabled:opacity-60 ${block.answerId ? "bg-[#1F1F23]" : "bg-[#161619] hover:bg-[#222226]"}`}
+                className={`flex w-full items-center gap-3 rounded-[12px] border border-[var(--rk-hairline-strong)] px-3.5 py-3 text-start disabled:opacity-60 ${block.answerId ? "bg-[var(--rk-surface-2)]" : "bg-[var(--rk-surface)] hover:bg-[var(--rk-hover)]"}`}
               >
                 <span className="grid h-[24px] w-[24px] place-items-center rounded-[7px] bg-[var(--rk-hover)] text-[12.5px] text-[var(--rk-muted)]">
                   {option.letter}

@@ -100,18 +100,18 @@ export function ScratchpadSection({ botId }: { botId: string }) {
 
   return (
     <div className="mt-6" data-testid="bot-scratchpad">
-      <div className="mb-3 text-[14px] text-[#85858A]">
+      <div className="mb-3 text-[14px] text-[var(--rk-muted)]">
         <Trans>Open work</Trans>
       </div>
       {items.length === 0 ? (
-        <div className="px-2.5 py-1 text-[13.5px] text-[#6C6C70]">
+        <div className="px-2.5 py-1 text-[13.5px] text-[var(--rk-muted-2)]">
           <Trans>None yet</Trans>
         </div>
       ) : (
         items.map((item) => (
           <div
             key={item.id}
-            className="flex w-full items-start gap-2 rounded-[11px] px-2.5 py-2.5 hover:bg-[#121214]"
+            className="flex w-full items-start gap-2 rounded-[11px] px-2.5 py-2.5 hover:bg-[var(--rk-surface)]"
           >
             <button
               type="button"
@@ -124,18 +124,18 @@ export function ScratchpadSection({ botId }: { botId: string }) {
             </button>
             <div className="min-w-0 flex-1">
               <div
-                className={`text-start text-[14.5px] ${item.status === "done" ? "text-[#6C6C70] line-through" : "text-[#ECECEE]"}`}
+                className={`text-start text-[14.5px] ${item.status === "done" ? "text-[var(--rk-muted-2)] line-through" : "text-[var(--rk-ink)]"}`}
                 dir="auto"
               >
                 {item.title}
               </div>
               {item.notes ? (
-                <div className="mt-0.5 text-[12.5px] text-[#6C6C70]" dir="auto">
+                <div className="mt-0.5 text-[12.5px] text-[var(--rk-muted-2)]" dir="auto">
                   {item.notes}
                 </div>
               ) : null}
             </div>
-            <span className="shrink-0 text-[12px] text-[#6C6C70]">{item.status}</span>
+            <span className="shrink-0 text-[12px] text-[var(--rk-muted-2)]">{item.status}</span>
             {item.status === "open" ? (
               <button
                 type="button"
@@ -182,7 +182,7 @@ export function ScratchpadSection({ botId }: { botId: string }) {
           placeholder={t`Add item`}
           aria-label={t`New open-work item`}
           maxLength={200}
-          className="min-w-0 flex-1 rounded-[11px] border border-[#26262A] bg-transparent px-3 py-2 text-[14px] text-[#ECECEE] placeholder:text-[#55555A]"
+          className="min-w-0 flex-1 rounded-[11px] border border-[var(--rk-hairline-strong)] bg-transparent px-3 py-2 text-[14px] text-[var(--rk-ink)] placeholder:text-[var(--rk-muted)]"
         />
         <BuiButton disabled={busy || !draft.trim()} onClick={() => void addItem()}>
           <Trans>Add</Trans>

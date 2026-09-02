@@ -72,6 +72,14 @@ export function screenPolicyPath(requestedPath: string, interactive: boolean) {
   return `${parsed.pathname}${parsed.search}`;
 }
 
+const LOCAL_COMPUTER_VIEWER_PAGES = new Set(["/embed.html", "/host-clipboard.js"]);
+
+/** Pages we serve from the repo so host clipboard works before the image rebuilds. */
+export function localComputerViewerPage(upstreamPath: string) {
+  const pathname = new URL(upstreamPath, "http://screen.invalid").pathname;
+  return LOCAL_COMPUTER_VIEWER_PAGES.has(pathname) ? pathname : null;
+}
+
 function remoteTargetPath(target: URL, requestedPath: string) {
   const requested = new URL(requestedPath, "https://screen.invalid");
   const path = requested.pathname || target.pathname || "/";

@@ -46,7 +46,7 @@ export function McpOAuthCallbackPage() {
   return (
     <div className="grid min-h-screen place-items-center bg-[var(--rk-page)] p-6 text-center">
       <div>
-        <div className="text-lg text-[#F1F1F2]">
+        <div className="text-lg text-[var(--rk-ink)]">
           {error ? (
             <Trans>OAuth connection failed</Trans>
           ) : done ? (
