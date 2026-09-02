@@ -512,8 +512,14 @@ describe("launcher files", () => {
     expect(cmd).toContain("electron.exe");
     expect(cmd).toContain("ensure-desktop.cmd");
     expect(cmd).toContain("Opening the desktop window");
+    expect(cmd).toContain("Leave this window open");
     expect(cmd).toContain("goto fail");
     expect(cmd).not.toContain("--app=");
+    expect(cmd).not.toContain('start "" /D');
+    expect(cmd).toContain("RAKAZO_REPO_ROOT");
+    expect(cmd).toContain("desktop-launch.log");
+    expect(cmd).toContain("git fetch origin");
+    expect(cmd).not.toContain("git pull");
     expect(cmd).toContain("http://127.0.0.1:5173");
     expect(cmd).toContain("install-desktop-shortcut.vbs");
     expect(cmd).toContain("free-own-ports.ps1");

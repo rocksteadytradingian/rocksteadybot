@@ -45,6 +45,8 @@ if not exist "!NPX!" (
 )
 
 echo Using Node at !NODE!
+set "COREPACK_ENABLE_DOWNLOAD_PROMPT=0"
+set "npm_config_engine_strict=false"
 "!NPX!" --yes pnpm@9.15.0 --config.engine-strict=false install --filter @rakazo/desktop...
 if errorlevel 1 (
   echo pnpm install failed. Check the output above.
