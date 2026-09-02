@@ -140,6 +140,7 @@ echo Sign-in is reachable.>> "%LOG%"
 :launch
 cscript //nologo "%SCRIPT_DIR%install-desktop-shortcut.vbs" "%ROOT%" >nul 2>&1
 powershell -NoProfile -ExecutionPolicy Bypass -File "%SCRIPT_DIR%install-desktop-shortcut.ps1" -RepoRoot "%ROOT%" >nul 2>&1
+powershell -NoProfile -ExecutionPolicy Bypass -File "%SCRIPT_DIR%install-launch-shortcut.ps1" -RepoRoot "%ROOT%" >nul 2>&1
 
 echo Opening the desktop window...
 echo Leave this window open while you use the app.
