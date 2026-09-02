@@ -2,7 +2,12 @@ import { Trans, useLingui } from "@lingui/react/macro";
 import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { authClient } from "../lib/auth";
-import { AUTH_UNREACHABLE, authErrorMessage, probeSameOriginApi } from "../lib/auth-error";
+import {
+  AUTH_PASSWORD_TOO_SHORT,
+  AUTH_UNREACHABLE,
+  authErrorMessage,
+  probeSameOriginApi,
+} from "../lib/auth-error";
 import { passwordResetProofFromLocation, resetPasswordBody } from "../lib/reset-password";
 
 export type AuthMode = "in" | "up" | "forgot" | "reset";
@@ -50,6 +55,11 @@ export function AuthPage({ mode }: { mode: AuthMode }) {
     setError(null);
     setNotice(null);
     try {
+      if (mode !== "forgot" && password.length < 8) {
+        setPending(false);
+        setError(AUTH_PASSWORD_TOO_SHORT);
+        return;
+      }
       if (!(await probeSameOriginApi())) {
         setPending(false);
         setError(AUTH_UNREACHABLE);
@@ -179,7 +189,6 @@ export function AuthPage({ mode }: { mode: AuthMode }) {
               placeholder={t`Password`}
               type="password"
               required
-              minLength={8}
               className="mt-2 w-full rounded-[13px] border border-[var(--rk-hairline-strong)] bg-[var(--rk-input)] px-[18px] py-[17px] text-[17px] text-[var(--rk-ink)] outline-none"
             />
           </label>

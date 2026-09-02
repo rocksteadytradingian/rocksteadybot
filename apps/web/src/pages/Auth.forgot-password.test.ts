@@ -13,9 +13,11 @@ describe("sign-in Forgot password control", () => {
   it("uses plain unreachable-server copy so production Lingui does not show ROjpWW", async () => {
     const source = await readFile(path.join(import.meta.dirname, "Auth.tsx"), "utf8");
     expect(source).toContain("AUTH_UNREACHABLE");
+    expect(source).toContain("AUTH_PASSWORD_TOO_SHORT");
     expect(source).toContain("authErrorMessage(");
     expect(source).not.toMatch(/t`Can't reach the server/);
     expect(source).toContain("probeSameOriginApi");
+    expect(source).not.toContain("minLength={8}");
   });
 
   it("keeps a document fallback if the preview JS is still stale", async () => {

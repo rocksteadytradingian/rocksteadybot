@@ -1,6 +1,7 @@
 export const AUTH_UNREACHABLE = "Can't reach the server.";
 export const AUTH_INVALID_CREDENTIALS = "Invalid email or password";
 export const AUTH_FALLBACK = "Could not continue";
+export const AUTH_PASSWORD_TOO_SHORT = "Password must be at least 8 characters";
 
 const LINGUI_ID = /^[A-Za-z0-9+/]{6}$/;
 const ENGLISH_WORD = /^[A-Z][a-z]{5}$/;

@@ -527,6 +527,13 @@ describe("launcher files", () => {
     );
     expect(shortcutVbs).toContain("open-desktop.cmd");
     expect(shortcutVbs).toContain("RocksteadyBot.lnk");
+    const setPassword = await readFile(
+      path.join(root, "apps/desktop/scripts/set-password.cmd"),
+      "utf8",
+    );
+    expect(setPassword).toContain("docker-compose.desktop.yml");
+    expect(setPassword).toContain("auth:set-password");
+    expect(setPassword).toContain("You do not need pnpm on Windows");
   });
 
   it("injects a Forgot password fallback into baked preview HTML", async () => {
