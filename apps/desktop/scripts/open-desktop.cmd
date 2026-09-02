@@ -42,8 +42,8 @@ findstr /C:"Forgot password?" "apps\web\src\pages\Auth.tsx" >nul
 if errorlevel 1 (
   echo This checkout does not contain Forgot password.
   echo In PowerShell run:
-  echo   git fetch origin
-  echo   git reset --hard origin/feat/themes-approvals-workspaces
+  echo   git fetch rckbot
+  echo   git reset --hard rckbot/feat/themes-approvals-workspaces
   echo Then open this shortcut again.
   pause
   exit /b 1
@@ -52,8 +52,8 @@ findstr /C:"auth-origin" "apps\web\index.html" >nul
 if errorlevel 1 (
   echo This checkout is missing the current sign-in page.
   echo In PowerShell run:
-  echo   git fetch origin
-  echo   git reset --hard origin/feat/themes-approvals-workspaces
+  echo   git fetch rckbot
+  echo   git reset --hard rckbot/feat/themes-approvals-workspaces
   echo Then open this shortcut again.
   pause
   exit /b 1
@@ -65,8 +65,8 @@ powershell -NoProfile -ExecutionPolicy Bypass -File "%SCRIPT_DIR%free-own-ports.
 set "COMPOSE_ENV="
 if exist "%ROOT%\.env" set "COMPOSE_ENV=--env-file .env"
 
-echo Starting RocksteadyBot...
-"%DOCKER%" compose !COMPOSE_ENV! -f "%COMPOSE_FILE%" -f "%DESKTOP_COMPOSE%" up -d --remove-orphans
+echo Starting RocksteadyBot (rebuilding images from this checkout if needed)...
+"%DOCKER%" compose !COMPOSE_ENV! -f "%COMPOSE_FILE%" -f "%DESKTOP_COMPOSE%" up -d --build --remove-orphans
 if errorlevel 1 (
   curl.exe -s -o NUL -w "%%{http_code}" "http://127.0.0.1:5173/" | findstr /x "200" >nul
   if errorlevel 1 (
@@ -76,13 +76,13 @@ if errorlevel 1 (
 )
 
 echo Rebuilding the sign-in page from this checkout. This can take a few minutes...
-"%DOCKER%" compose !COMPOSE_ENV! -f "%COMPOSE_FILE%" -f "%DESKTOP_COMPOSE%" up -d --force-recreate --no-deps web
+"%DOCKER%" compose !COMPOSE_ENV! -f "%COMPOSE_FILE%" -f "%DESKTOP_COMPOSE%" up -d --build --force-recreate --no-deps web
 if errorlevel 1 (
   echo Docker could not rebuild the sign-in page.
   "%DOCKER%" compose !COMPOSE_ENV! -f "%COMPOSE_FILE%" -f "%DESKTOP_COMPOSE%" logs --tail 80 web
   goto fail
 )
-"%DOCKER%" compose !COMPOSE_ENV! -f "%COMPOSE_FILE%" -f "%DESKTOP_COMPOSE%" up -d --force-recreate --no-deps api
+"%DOCKER%" compose !COMPOSE_ENV! -f "%COMPOSE_FILE%" -f "%DESKTOP_COMPOSE%" up -d --build --force-recreate --no-deps api
 
 echo Preparing the desktop app. Sign-in can keep rebuilding in Docker while this runs...
 call "%SCRIPT_DIR%ensure-desktop.cmd" "%ROOT%"
