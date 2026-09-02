@@ -1,6 +1,18 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { handleSupabaseIdentity } from "./supabase-identity.js";
 
+vi.mock("@rakazo/auth", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@rakazo/auth")>();
+  return {
+    ...actual,
+    verifyLocalCredential: vi.fn(async (_prisma, email: string, password: string) =>
+      email.toLowerCase().includes("ada") && password === "password12"
+        ? { userId: "local-1" }
+        : null,
+    ),
+  };
+});
+
 const config = {
   url: "https://example.supabase.co",
   serviceRoleKey: "service-role-test",
@@ -134,6 +146,49 @@ describe("handleSupabaseIdentity", () => {
       },
     );
     expect(response?.status).toBe(401);
+  });
+
+  it("signs in locally when Supabase DNS fails", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockRejectedValue(
+        Object.assign(new TypeError("fetch failed"), {
+          cause: Object.assign(new Error("getaddrinfo ENOTFOUND example.supabase.co"), {
+            code: "ENOTFOUND",
+          }),
+        }),
+      ),
+    );
+    const prisma = {
+      user: {
+        findUnique: vi.fn(async () => ({
+          id: "local-1",
+          email: "ada@example.com",
+          name: "Ada",
+          image: null,
+        })),
+      },
+      account: {
+        findFirst: vi.fn(),
+        findMany: vi.fn(),
+        update: vi.fn(),
+        create: vi.fn(),
+      },
+      session: { deleteMany: vi.fn() },
+    };
+    const response = await handleSupabaseIdentity(
+      request("/sign-in/email", { email: "ada@example.com", password: "password12" }),
+      "/sign-in/email",
+      {
+        auth: authHost(),
+        prisma: prisma as never,
+        config,
+        getSession: async () => null,
+      },
+    );
+    expect(response?.status).toBe(200);
+    const body = (await response?.json()) as { user: { email: string } };
+    expect(body.user.email).toBe("ada@example.com");
   });
 
   it("sends a recovery email only when a local user exists", async () => {

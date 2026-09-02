@@ -2,6 +2,7 @@ import {
   adminCreateUser,
   adminDeleteUser,
   adminSetPasswordByEmail,
+  isSupabaseUnreachable,
   readSupabaseProfile,
   type SupabaseAuthConfig,
   type SupabaseIdentity,
@@ -71,13 +72,43 @@ async function signIn(request: Request, deps: SupabaseIdentityDeps) {
   const email = String(body.email ?? "");
   const password = String(body.password ?? "");
   if (!email || !password) return jsonError("Invalid email or password", 401);
+  let supabaseUnreachable = false;
   try {
-    const identity = await resolveSignInIdentity(deps, email, password);
-    if (!identity) return jsonError("Invalid email or password", 401);
-    return finishSignIn(deps, identity, password);
+    const identity = await signInWithPassword(deps.config, email, password);
+    if (identity) {
+      return finishSignIn(deps, await readSupabaseProfile(deps.config, identity), password);
+    }
   } catch (error) {
-    return jsonError(errorMessage(error, "Could not sign in"), 400);
+    if (!isSupabaseUnreachable(error)) {
+      return jsonError(errorMessage(error, "Could not sign in"), 400);
+    }
+    supabaseUnreachable = true;
   }
+  const local = await verifyLocalCredential(deps.prisma, email, password);
+  if (!local) return jsonError("Invalid email or password", 401);
+  if (!supabaseUnreachable) {
+    try {
+      const user = await deps.prisma.user.findUnique({
+        where: { id: local.userId },
+        select: { name: true, image: true, email: true },
+      });
+      const identity = await adminSetPasswordByEmail(deps.config, email, password);
+      return finishSignIn(
+        deps,
+        await readSupabaseProfile(deps.config, {
+          ...identity,
+          name: user?.name || identity.name,
+          image: user?.image ?? identity.image,
+        }),
+        password,
+      );
+    } catch (error) {
+      if (!isSupabaseUnreachable(error)) {
+        return jsonError(errorMessage(error, "Could not sign in"), 400);
+      }
+    }
+  }
+  return finishLocalSignIn(deps, local.userId);
 }
 
 async function signUp(request: Request, deps: SupabaseIdentityDeps) {
@@ -226,27 +257,6 @@ async function changePassword(request: Request, deps: SupabaseIdentityDeps) {
   }
 }
 
-async function resolveSignInIdentity(
-  deps: SupabaseIdentityDeps,
-  email: string,
-  password: string,
-): Promise<SupabaseIdentity | undefined> {
-  const signedIn = await signInWithPassword(deps.config, email, password);
-  if (signedIn) return readSupabaseProfile(deps.config, signedIn);
-  const local = await verifyLocalCredential(deps.prisma, email, password);
-  if (!local) return undefined;
-  const user = await deps.prisma.user.findUnique({
-    where: { id: local.userId },
-    select: { name: true, image: true, email: true },
-  });
-  const identity = await adminSetPasswordByEmail(deps.config, email, password);
-  return readSupabaseProfile(deps.config, {
-    ...identity,
-    name: user?.name || identity.name,
-    image: user?.image ?? identity.image,
-  });
-}
-
 async function finishSignIn(
   deps: SupabaseIdentityDeps,
   identity: SupabaseIdentity,
@@ -255,6 +265,21 @@ async function finishSignIn(
   const user = await ensureLocalUser(deps.auth, identity);
   await upsertCredentialPassword(deps.prisma, user.email, password);
   return createSignedInResponse(deps.auth, user);
+}
+
+async function finishLocalSignIn(deps: SupabaseIdentityDeps, userId: string) {
+  const user = await deps.prisma.user.findUnique({
+    where: { id: userId },
+    select: { id: true, email: true, name: true, image: true },
+  });
+  if (!user) return jsonError("Invalid email or password", 401);
+  return createSignedInResponse(deps.auth, {
+    id: user.id,
+    email: user.email,
+    name: user.name,
+    image: user.image,
+    emailVerified: true,
+  });
 }
 
 async function readJson(request: Request): Promise<Record<string, unknown> | null> {

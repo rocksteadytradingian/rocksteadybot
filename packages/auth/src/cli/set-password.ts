@@ -13,8 +13,14 @@ if (!databaseUrl) {
 const { prisma, pool } = createDb(databaseUrl);
 try {
   const { userId } = await setCredentialPassword(prisma, email, password);
-  await syncSupabasePassword(email, password);
+  let supabaseNote = "";
+  try {
+    await syncSupabasePassword(email, password);
+  } catch (error) {
+    supabaseNote = `Supabase sync skipped: ${error instanceof Error ? error.message : String(error)}`;
+  }
   console.log(`Password updated for ${email.trim().toLowerCase()} (${userId}).`);
+  if (supabaseNote) console.error(supabaseNote);
 } finally {
   await prisma.$disconnect().catch(() => undefined);
   await pool.end().catch(() => undefined);

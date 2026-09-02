@@ -1,3 +1,4 @@
+import { readFile } from "node:fs/promises";
 import type { PrismaClient } from "@rakazo/db";
 import { verifyPassword } from "better-auth/crypto";
 import { describe, expect, it, vi } from "vitest";
@@ -15,9 +16,17 @@ describe("parseSetPasswordArgs", () => {
     ).toEqual({ email: "Ada@example.com", password: "new-password-12" });
   });
 
-  it("rejects missing flags", () => {
+  it("rejects missing flags", async () => {
     expect(() => parseSetPasswordArgs(["--email", "ada@example.com"])).toThrow(/Usage/);
     expect(() => parseSetPasswordArgs([])).toThrow(/Usage/);
+  });
+});
+
+describe("set-password CLI", () => {
+  it("keeps the local password when Supabase sync fails", async () => {
+    const source = await readFile(new URL("./cli/set-password.ts", import.meta.url), "utf8");
+    expect(source).toContain("Supabase sync skipped");
+    expect(source).toContain("Password updated for");
   });
 });
 

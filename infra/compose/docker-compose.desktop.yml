@@ -1,13 +1,17 @@
 # Desktop launches this stack so a leftover host process on :3100 cannot block
 # Compose. The shell talks to the web origin on loopback :5173; the API stays on
-# the Compose network. Web source is bind-mounted and rebuilt on start so Electron
-# loads this checkout instead of a baked preview.
+# the Compose network. Checkout sources are bind-mounted so Electron and sign-in
+# use this tree instead of a baked image.
 services:
   api:
     ports: !override []
     environment:
       BETTER_AUTH_URL: http://127.0.0.1:5173
       WEB_ORIGIN: http://127.0.0.1:5173
+    volumes:
+      - ../../apps/api/src:/app/apps/api/src:ro
+      - ../../packages/auth/src:/app/packages/auth/src:ro
+      - ../../packages/adapters/src:/app/packages/adapters/src:ro
   web:
     ports: !override
       - "127.0.0.1:5173:5173"

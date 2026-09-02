@@ -49,6 +49,25 @@ function asRecord(data: unknown): Record<string, unknown> | undefined {
   return data && typeof data === "object" ? (data as Record<string, unknown>) : undefined;
 }
 
+export function isSupabaseUnreachable(error: unknown): boolean {
+  const parts: string[] = [];
+  let current: unknown = error;
+  for (let depth = 0; depth < 4 && current; depth += 1) {
+    if (current instanceof Error) {
+      parts.push(current.message, current.name);
+      const code = (current as NodeJS.ErrnoException).code;
+      if (code) parts.push(code);
+      current = current.cause;
+      continue;
+    }
+    parts.push(String(current));
+    break;
+  }
+  return /fetch failed|failed to fetch|enotfound|econnrefused|econnreset|etimedout|enetunreach|eai_again|aborted|timeout|networkerror/i.test(
+    parts.join(" "),
+  );
+}
+
 function stringField(...values: unknown[]) {
   for (const value of values) {
     if (typeof value === "string" && value.trim()) return value.trim();

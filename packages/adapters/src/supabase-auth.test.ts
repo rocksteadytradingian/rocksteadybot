@@ -52,6 +52,19 @@ describe("signInWithPassword", () => {
   });
 });
 
+describe("isSupabaseUnreachable", () => {
+  it("detects DNS and fetch failures", async () => {
+    const { isSupabaseUnreachable } = await import("./supabase-auth.js");
+    const nested = Object.assign(new TypeError("fetch failed"), {
+      cause: Object.assign(new Error("getaddrinfo ENOTFOUND example.supabase.co"), {
+        code: "ENOTFOUND",
+      }),
+    });
+    expect(isSupabaseUnreachable(nested)).toBe(true);
+    expect(isSupabaseUnreachable(new Error("Invalid login"))).toBe(false);
+  });
+});
+
 describe("adminCreateUser", () => {
   it("creates a confirmed user with profile metadata", async () => {
     const fetchMock = vi

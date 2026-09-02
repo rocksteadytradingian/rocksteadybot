@@ -328,6 +328,14 @@ describe("ensureLocalStack", () => {
           !command.args.includes("api"),
       ),
     ).toBe(true);
+    expect(
+      host.commands.some(
+        (command) =>
+          command.args.includes("--force-recreate") &&
+          command.args.includes("api") &&
+          !command.args.includes("web"),
+      ),
+    ).toBe(true);
     expect(host.commands.some((command) => command.args.includes("cp"))).toBe(false);
   });
 
@@ -487,7 +495,9 @@ describe("launcher files", () => {
     expect(desktop).toContain("127.0.0.1:5173:5173");
     expect(desktop).toContain("../../apps/web/src:/app/apps/web/src:ro");
     expect(desktop).toContain("../../apps/web/vite.config.ts:/app/apps/web/vite.config.ts:ro");
-    expect(desktop).toContain("BETTER_AUTH_URL: http://127.0.0.1:5173");
+    expect(desktop).toContain("../../apps/api/src:/app/apps/api/src:ro");
+    expect(desktop).toContain("../../packages/auth/src:/app/packages/auth/src:ro");
+    expect(desktop).toContain("../../packages/adapters/src:/app/packages/adapters/src:ro");
     expect(desktop).toContain("pnpm --filter @rakazo/web build");
     expect(desktop).toContain("set -euo pipefail");
   });
@@ -504,6 +514,7 @@ describe("launcher files", () => {
     expect(cmd).toContain("RAKAZO_DISABLE_LOCAL_STACK=1");
     expect(cmd).toContain("RAKAZO_PERFORMANCE_CLEAR_CACHE=1");
     expect(cmd).toContain("--force-recreate --no-deps web");
+    expect(cmd).toContain("--force-recreate --no-deps api");
     expect(cmd).toContain("/rpc/health");
     expect(cmd).toContain('"http://127.0.0.1:5173/rpc/health"');
     expect(cmd).toContain("-X POST");

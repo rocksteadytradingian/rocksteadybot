@@ -206,6 +206,10 @@ export function composeRecreateWebArgs(envFileExists: boolean): string[] {
   return [...composeFileFlags(envFileExists), "up", "-d", "--force-recreate", "--no-deps", "web"];
 }
 
+export function composeRecreateApiArgs(envFileExists: boolean): string[] {
+  return [...composeFileFlags(envFileExists), "up", "-d", "--force-recreate", "--no-deps", "api"];
+}
+
 export function composeRestartArgs(envFileExists: boolean, service: string): string[] {
   return [...composeFileFlags(envFileExists), "restart", service];
 }
@@ -453,6 +457,10 @@ export async function refreshWebFromCheckout(
   await host.run(docker, composeRecreateWebArgs(envFileExists), {
     cwd: repoRoot,
     timeoutMs: WEB_BUILD_TIMEOUT_MS,
+  });
+  await host.run(docker, composeRecreateApiArgs(envFileExists), {
+    cwd: repoRoot,
+    timeoutMs: COMPOSE_TIMEOUT_MS,
   });
 }
 
