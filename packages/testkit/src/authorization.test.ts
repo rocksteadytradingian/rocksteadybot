@@ -63,6 +63,8 @@ describeWithDatabase("API authorization and resource isolation", () => {
       ["models/finishOAuth", { loginId: "missing-login" }],
       ["models/cancelOAuth", { loginId: "missing-login" }],
       ["models/setDefault", { provider: "test", modelId: "test/model" }],
+      ["models/setRouter", { provider: "openai-compatible", fast: "qwen3:8b" }],
+      ["models/probeOpenAiCompatible", { baseUrl: "http://127.0.0.1:1234/v1" }],
       ["bots/list"],
       ["bots/listArchived"],
       ["bots/get", { botId: "missing-bot" }],
@@ -102,6 +104,10 @@ describeWithDatabase("API authorization and resource isolation", () => {
       ["computer/status", { botId: "missing-bot" }],
       ["computer/boot", { botId: "missing-bot" }],
       ["computer/stop", { botId: "missing-bot" }],
+      ["computer/recover", { botId: "missing-bot" }],
+      ["computer/reset", { botId: "missing-bot" }],
+      ["computer/update", { botId: "missing-bot" }],
+      ["computer/restart", { botId: "missing-bot" }],
       ["computer/takeover", { botId: "missing-bot" }],
       ["computer/release", { botId: "missing-bot" }],
       ["computer/input", { botId: "missing-bot", kind: "key", payload: { key: "A" } }],
@@ -160,6 +166,7 @@ describeWithDatabase("API authorization and resource isolation", () => {
       ],
       ["approvalRules/remove", { id: "missing-rule" }],
       ["approvals/list"],
+      ["approvals/repairStack"],
       ["artifacts/list", { botId: "missing-bot" }],
       ["usage/list"],
       ["usage/summary"],
@@ -321,6 +328,10 @@ describeWithDatabase("API authorization and resource isolation", () => {
       ["computer/status", { botId: ownerBot.id }],
       ["computer/boot", { botId: ownerBot.id }],
       ["computer/stop", { botId: ownerBot.id }],
+      ["computer/recover", { botId: ownerBot.id }],
+      ["computer/reset", { botId: ownerBot.id }],
+      ["computer/update", { botId: ownerBot.id }],
+      ["computer/restart", { botId: ownerBot.id }],
       ["computer/takeover", { botId: ownerBot.id }],
       ["computer/release", { botId: ownerBot.id }],
       ["computer/input", { botId: ownerBot.id, kind: "key", payload: { key: "A" } }],
@@ -814,6 +825,72 @@ describeWithDatabase("API authorization and resource isolation", () => {
     expect(afterDelete.workspaceId).toBe(personal.workspaceId);
     expect(afterDelete.workspaces).toHaveLength(1);
     await expectDenied(app, cookie, "workspaces/remove", { workspaceId: personal.workspaceId });
+  });
+
+  it("shares one model secret across workspaces so new-workspace bots stay connected", async () => {
+    const cookie = await signup(app, `shared-model-secret-${stamp}@rakazo.test`, "Shared Secret");
+    const personal = await rpc<Me>(app, cookie, "me");
+    await rpc(app, cookie, "models/connect", {
+      provider: "anthropic",
+      apiKey: "fake-anthropic-personal-key",
+      label: "Claude",
+      modelId: "claude-sonnet-5",
+    });
+    const personalCred = await handles.prisma.userModelCredential.findFirstOrThrow({
+      where: {
+        userId: personal.userId,
+        workspaceId: personal.workspaceId,
+        provider: "anthropic",
+      },
+    });
+
+    const work = await rpc<Me>(app, cookie, "workspaces/create", { name: "Work" });
+    const copied = await handles.prisma.userModelCredential.findFirstOrThrow({
+      where: {
+        userId: personal.userId,
+        workspaceId: work.workspaceId,
+        provider: "anthropic",
+      },
+    });
+    expect(copied.secretId).toBe(personalCred.secretId);
+
+    await rpc(app, cookie, "workspaces/switch", { workspaceId: personal.workspaceId });
+    await rpc(app, cookie, "models/connect", {
+      provider: "anthropic",
+      apiKey: "fake-anthropic-rotated-key",
+      label: "Claude",
+      modelId: "claude-opus-5",
+    });
+    const [personalAfter, workAfter] = await Promise.all([
+      handles.prisma.userModelCredential.findFirstOrThrow({
+        where: {
+          userId: personal.userId,
+          workspaceId: personal.workspaceId,
+          provider: "anthropic",
+        },
+      }),
+      handles.prisma.userModelCredential.findFirstOrThrow({
+        where: {
+          userId: personal.userId,
+          workspaceId: work.workspaceId,
+          provider: "anthropic",
+        },
+      }),
+    ]);
+    expect(workAfter.secretId).toBe(personalAfter.secretId);
+    expect(workAfter.defaultModel).toBe("claude-sonnet-5");
+    expect(
+      await handles.prisma.secret.findUnique({ where: { id: personalCred.secretId } }),
+    ).toBeNull();
+
+    await rpc(app, cookie, "workspaces/switch", { workspaceId: work.workspaceId });
+    const afterDelete = await rpc<Me>(app, cookie, "workspaces/remove", {
+      workspaceId: work.workspaceId,
+    });
+    expect(afterDelete.workspaceId).toBe(personal.workspaceId);
+    expect(
+      await handles.prisma.secret.findUnique({ where: { id: personalAfter.secretId } }),
+    ).not.toBeNull();
   });
 });
 

@@ -224,6 +224,48 @@ describeIntegration("run executor lifecycle", () => {
     ]);
   });
 
+  it("persists a failed run as a thread message so the user is not left with silence", async () => {
+    const seeded = await seedRun("failed-visible", "this will fail", {
+      status: "running",
+      leaseOwner: "fail-worker",
+      leaseFence: 3,
+      leaseExpiresAt: new Date(Date.now() + 60_000),
+      startedAt: new Date(),
+    });
+    const attempt = await handles.prisma.attempt.create({
+      data: { runId: seeded.run.id, fence: 3, status: "running" },
+    });
+    const events = createThreadEvents(handles.prisma);
+    const ok = await events.finalizeRun({
+      workspaceId: seeded.me.workspaceId,
+      threadId: seeded.thread.id,
+      botId: seeded.bot.id,
+      runId: seeded.run.id,
+      taskId: seeded.task.id,
+      attemptId: attempt.id,
+      leaseOwner: "fail-worker",
+      leaseFence: 3,
+      outcome: "failed",
+      error: "You have no credits remaining.",
+    });
+    expect(ok).toBe(true);
+    const [run, messages, terminalEvents] = await Promise.all([
+      handles.prisma.run.findUniqueOrThrow({ where: { id: seeded.run.id } }),
+      handles.prisma.message.findMany({ where: { runId: seeded.run.id, role: "bot" } }),
+      handles.prisma.event.findMany({
+        where: { runId: seeded.run.id, type: { in: ["thread.message.created", "run.failed"] } },
+        orderBy: { seq: "asc" },
+      }),
+    ]);
+    expect(run).toMatchObject({ status: "failed", error: "You have no credits remaining." });
+    expect(messages).toHaveLength(1);
+    expect(messages[0]?.blocks).toEqual([{ kind: "text", text: "You have no credits remaining." }]);
+    expect(terminalEvents.map((event) => event.type)).toEqual([
+      "thread.message.created",
+      "run.failed",
+    ]);
+  });
+
   it("rolls back every terminal write when the atomic commit fails", async () => {
     const seeded = await seedRun("terminal-rollback", "do not partially finish", {
       status: "running",

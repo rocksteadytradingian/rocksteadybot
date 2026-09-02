@@ -78,7 +78,7 @@ export function nextScreenIndex(
   const existing = assigned.get(screenId);
   if (existing) {
     if (existing.releasing) {
-      throw new Error("This Team Computer screen is still being released.");
+      throw new Error("This computer screen is still being released.");
     }
     if (leaseId) {
       if (
@@ -86,7 +86,7 @@ export function nextScreenIndex(
         existing.leaseId !== leaseId &&
         !canTakeScreenLease(existing.leaseId, leaseId)
       ) {
-        throw new Error("This Team Computer screen is owned by a newer execution.");
+        throw new Error("This computer screen is owned by a newer execution.");
       }
       if (canTakeScreenLease(existing.leaseId, leaseId)) existing.leaseId = leaseId;
     }

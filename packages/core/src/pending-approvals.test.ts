@@ -58,6 +58,7 @@ describe("collectPendingApprovals", () => {
     ).toEqual([
       {
         id: "effect-1",
+        kind: "ask",
         runId: "run-1",
         messageId: "msg-1",
         threadId: "thread-1",

@@ -113,17 +113,17 @@ export function VoiceSettingsOverlay({ onClose }: { onClose: () => void }) {
   }
 
   return (
-    <div className="absolute inset-0 z-30 flex items-center justify-center bg-[rgba(4,4,5,.62)] p-4 sm:p-10">
+    <div className="absolute inset-0 z-30 flex items-center justify-center bg-[var(--rk-overlay)] p-4 sm:p-10">
       <div
         data-testid="voice-settings"
-        className="flex h-[min(680px,100%)] w-[920px] max-w-full flex-col overflow-hidden rounded-[26px] border border-[var(--rk-hairline-strong)] bg-[var(--rk-panel)] shadow-[0_40px_90px_rgba(0,0,0,.55)]"
+        className="flex h-[min(680px,100%)] w-[920px] max-w-full flex-col overflow-hidden rounded-[26px] border border-[var(--rk-hairline-strong)] bg-[var(--rk-panel)] shadow-[var(--rk-shadow)]"
       >
         <div className="flex items-start justify-between px-6 pt-6 sm:px-8 sm:pt-7">
           <div>
             <div className="text-2xl font-medium text-[var(--rk-ink)]">
               <Trans>Voice</Trans>
             </div>
-            <p className="mt-1 text-[13.5px] text-[#7A7A80]">
+            <p className="mt-1 text-[13.5px] text-[var(--rk-muted)]">
               {loading ? (
                 <Trans>Loading voice providers…</Trans>
               ) : (
@@ -181,8 +181,10 @@ export function VoiceSettingsOverlay({ onClose }: { onClose: () => void }) {
                       setNotice(null);
                       void refresh(entry.id);
                     }}
-                    className={`flex w-full items-center gap-3 border-b border-[#202023] px-3.5 py-3 text-start last:border-0 ${
-                      entry.id === provider ? "bg-[var(--rk-surface-2)]" : "hover:bg-[var(--rk-hover)]"
+                    className={`flex w-full items-center gap-3 border-b border-[var(--rk-hairline)] px-3.5 py-3 text-start last:border-0 ${
+                      entry.id === provider
+                        ? "bg-[var(--rk-surface-2)]"
+                        : "hover:bg-[var(--rk-hover)]"
                     }`}
                   >
                     <span className="min-w-0 flex-1">
@@ -198,7 +200,7 @@ export function VoiceSettingsOverlay({ onClose }: { onClose: () => void }) {
                       </span>
                     </span>
                     {connected ? (
-                      <span className="text-[12px] text-[#4ECB71]">
+                      <span className="text-[12px] text-[var(--rk-success)]">
                         <Trans>Connected</Trans>
                       </span>
                     ) : null}
@@ -209,11 +211,13 @@ export function VoiceSettingsOverlay({ onClose }: { onClose: () => void }) {
           </div>
 
           <div className="rk-scroll min-h-0 min-w-0 flex-1 overflow-y-auto">
-            {error ? <p className="mb-4 text-sm text-[#C94244]">{error}</p> : null}
-            {notice ? <p className="mb-4 text-sm text-[#4ECB71]">{notice}</p> : null}
+            {error ? <p className="mb-4 text-sm text-[var(--rk-danger)]">{error}</p> : null}
+            {notice ? <p className="mb-4 text-sm text-[var(--rk-success)]">{notice}</p> : null}
             {selected ? (
               <>
-                <p className="text-[13.5px] leading-[1.5] text-[var(--rk-muted)]">{selected.description}</p>
+                <p className="text-[13.5px] leading-[1.5] text-[var(--rk-muted)]">
+                  {selected.description}
+                </p>
                 <div className="mt-5 rounded-[13px] border border-[var(--rk-hairline-strong)] px-4 py-3">
                   <div className="text-[12.5px] uppercase tracking-[0.08em] text-[var(--rk-muted-2)]">
                     <Trans>Personal credential</Trans>

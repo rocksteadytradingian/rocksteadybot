@@ -45,7 +45,7 @@ export function TeachRecordingChrome({
         <div className="text-[12px] text-[var(--rk-muted)]">
           <Trans>{remaining} left · bot is watching, not acting</Trans>
         </div>
-        <div className="text-[12px] text-[#E65707]">
+        <div className="text-[12px] text-[var(--rk-danger)]">
           <Trans>Do not type passwords into the demo. Use Take control for credentials.</Trans>
         </div>
       </div>
@@ -63,7 +63,7 @@ export function TeachRecordingChrome({
       <div className="mt-1 text-[13px] text-[var(--rk-muted)]">
         <Trans>{remaining} left · bot is watching, not acting</Trans>
       </div>
-      <div className="mt-2 text-[13px] text-[#E65707]">
+      <div className="mt-2 text-[13px] text-[var(--rk-danger)]">
         <Trans>Do not type passwords into the demo. Use Take control for credentials.</Trans>
       </div>
       <Button

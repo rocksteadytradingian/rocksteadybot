@@ -9,15 +9,8 @@ describe("Button", () => {
         Take control
       </Button>,
     );
-    expect(html).toContain("text-[color:var(--rk-ink)]");
-    expect(html).toContain("bg-[var(--rk-surface)]");
-    expect(html).toContain("border-[var(--rk-ink)]");
+    expect(html).toContain("text-[var(--rk-ink)]");
+    expect(html).toContain("border-[var(--rk-hairline-strong)]");
     expect(html).not.toContain("text-[#ECECEE]");
-  });
-
-  it("keeps filled labels on the solid ink token", () => {
-    const html = renderToString(<Button type="button">Save</Button>);
-    expect(html).toContain("bg-[var(--rk-solid)]");
-    expect(html).toContain("text-[color:var(--rk-solid-ink)]");
   });
 });

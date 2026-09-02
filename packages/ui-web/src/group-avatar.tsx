@@ -25,7 +25,7 @@ export const GroupAvatar = memo(function GroupAvatar({
     return (
       <div
         className={cn(
-          "rakazo-group-avatar isolate relative flex items-center justify-center rounded-full border border-[var(--rk-hairline-strong)] bg-[var(--rk-surface)] text-[var(--rk-muted)]",
+          "rakazo-group-avatar relative flex items-center justify-center rounded-full border border-[var(--rk-hairline)] bg-[var(--rk-surface-2)] text-[var(--rk-muted)]",
           className,
         )}
         style={{ width: size, height: size, flex: "none" }}
@@ -54,7 +54,6 @@ export const GroupAvatar = memo(function GroupAvatar({
     return (
       <BotAvatar
         color={firstMember.color}
-        identity={firstMember.botId ?? firstMember.name}
         size={size}
         status={firstMember.status}
         className={cn("rakazo-group-avatar", className)}
@@ -78,7 +77,7 @@ export const GroupAvatar = memo(function GroupAvatar({
 
   return (
     <div
-      className={cn("rakazo-group-avatar isolate relative rounded-full select-none", className)}
+      className={cn("rakazo-group-avatar relative isolate rounded-full select-none", className)}
       style={{ width: size, height: size, flex: "none" }}
     >
       {visibleMembers.map((member, index) => (
@@ -91,17 +90,12 @@ export const GroupAvatar = memo(function GroupAvatar({
             boxShadow: "0 0 0 1.5px var(--rk-sidebar)",
           }}
         >
-          <BotAvatar
-            color={member.color}
-            identity={member.botId ?? member.name}
-            size={miniSize}
-            status={member.status}
-          />
+          <BotAvatar color={member.color} size={miniSize} status={member.status} />
         </div>
       ))}
       {members.length > 3 ? (
         <div
-          className="absolute right-0 bottom-0 z-[3] flex items-center justify-center rounded-full bg-[var(--rk-surface-2)] text-[10px] font-semibold text-[var(--rk-ink)]"
+          className="absolute right-0 bottom-0 z-[3] flex items-center justify-center rounded-full bg-[var(--rk-surface)] text-[10px] font-semibold text-[var(--rk-ink)]"
           style={{
             width: miniSize,
             height: miniSize,

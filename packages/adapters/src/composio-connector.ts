@@ -95,6 +95,8 @@ const COMPOSIO_PROJECT_KEY_SHAPE_MESSAGE =
   "Platform project keys start with ak_. Copy one from dashboard.composio.dev → Platform → Settings → API Keys.";
 const COMPOSIO_PROJECT_KEY_REJECTED_MESSAGE =
   "That project key was rejected. Copy a current Platform project key that starts with ak_.";
+export const COMPOSIO_PROJECT_KEY_WRITE_MESSAGE =
+  "This project key is read-only. Create a Platform API key with write access, paste it here, then add Gmail.";
 
 export function normalizeComposioProjectKey(apiKey: string): string {
   return apiKey
@@ -303,13 +305,25 @@ export class ComposioConnector implements ComposioProvider {
   }
 
   async catalog(context: AdapterContext, query?: string): Promise<ConnectorCatalogItem[]> {
-    const [directory, connected] = await Promise.all([
-      this.directory(context.userId),
-      this.listConnectedSlugs(context.userId),
-    ]);
-    return filterCatalog(mergeCatalogWithConnected(directory, connected), query ?? "").map(
-      (item) => ({ ...item, connectorId: "composio" }),
-    );
+    try {
+      const directory = await this.directory(context.userId);
+      let connected: string[] = [];
+      try {
+        connected = await this.listConnectedSlugs(context.userId);
+      } catch {
+        connected = [];
+      }
+      const items = filterCatalog(mergeCatalogWithConnected(directory, connected), query ?? "");
+      if (items.length > 0) {
+        return items.map((item) => ({ ...item, connectorId: "composio" }));
+      }
+    } catch {
+      // Fall through to the curated directory so Gmail stays connectable.
+    }
+    return filterCatalog(
+      mergeCatalogWithConnected([...CURATED_COMPOSIO_TOOLKITS], []),
+      query ?? "",
+    ).map((item) => ({ ...item, connectorId: "composio" }));
   }
 
   async warmDirectory(): Promise<void> {
@@ -329,9 +343,9 @@ export class ComposioConnector implements ComposioProvider {
   }
 
   private async loadDirectory(userId: string): Promise<ToolkitDirectoryEntry[]> {
-    const apiKey = await this.resolveApiKey(userId);
-    if (!apiKey) return [...CURATED_COMPOSIO_TOOLKITS];
     try {
+      const apiKey = await this.resolveApiKey(userId);
+      if (!apiKey) return [...CURATED_COMPOSIO_TOOLKITS];
       const session = await this.sessionFor(userId);
       const toolkits = await collectPages((cursor) => session.toolkits({ limit: 50, cursor }));
       return composioDirectoryOrCurated(
@@ -349,12 +363,16 @@ export class ComposioConnector implements ComposioProvider {
   }
 
   async listConnectedSlugs(userId: string): Promise<string[]> {
-    if (!(await this.resolveApiKey(userId))) return [];
-    const session = await this.sessionFor(userId);
-    const connected = await collectPages((cursor) =>
-      session.toolkits({ isConnected: true, limit: 50, cursor }),
-    );
-    return connected.map((toolkit) => toolkit.slug);
+    try {
+      if (!(await this.resolveApiKey(userId))) return [];
+      const session = await this.sessionFor(userId);
+      const connected = await collectPages((cursor) =>
+        session.toolkits({ isConnected: true, limit: 50, cursor }),
+      );
+      return connected.map((toolkit) => toolkit.slug);
+    } catch {
+      return [];
+    }
   }
 
   async listConnectedExternalIds(context: AdapterContext): Promise<string[]> {
@@ -619,8 +637,18 @@ export function isNoAuthToolkitError(error: unknown): boolean {
 }
 
 export function sanitizeComposioError(error: unknown): string {
-  const message = error instanceof Error ? error.message : String(error);
-  return redactConnectorText(message);
+  const message = redactConnectorText(error instanceof Error ? error.message : String(error));
+  return humanizeComposioError(message);
+}
+
+function humanizeComposioError(message: string): string {
+  if (
+    /APIKey_InsufficientPermissions|session_management/i.test(message) &&
+    /write access|read access/i.test(message)
+  ) {
+    return COMPOSIO_PROJECT_KEY_WRITE_MESSAGE;
+  }
+  return message;
 }
 
 function sanitizePayload(data: unknown): unknown {

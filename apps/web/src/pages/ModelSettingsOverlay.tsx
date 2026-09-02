@@ -1,9 +1,19 @@
 import { Plural, Trans, useLingui } from "@lingui/react/macro";
 import type { Me } from "@rakazo/contracts";
 import {
+  COMPLEXITY_ROUTER_MODEL_ID,
+  complexityRouterActiveSummary,
+  complexityRouterSlotOptions,
+  isComplexityRouterProvider,
+  isProbedModelProvider,
   OPENAI_COMPATIBLE_PROVIDER_ID,
   openAiCompatibleConnectReady,
   openAiCompatibleProbeSuccessMessage,
+  pinActiveModelProviders,
+  selectProviderCredential,
+  TOKENROUTER_BASE_URL,
+  TOKENROUTER_PROVIDER_ID,
+  tokenRouterConnectReady,
 } from "@rakazo/contracts";
 import { Button } from "@rakazo/ui-web";
 import { ChevronDown } from "lucide-react";
@@ -35,14 +45,19 @@ export function ModelSettingsOverlay({ onClose }: { onClose: () => void }) {
   const [probedBaseUrl, setProbedBaseUrl] = useState<string | null>(null);
   const [probing, setProbing] = useState(false);
   const [loading, setLoading] = useState(true);
-  const [pending, setPending] = useState<"connect" | "default" | null>(null);
+  const [pending, setPending] = useState<"connect" | "default" | "router" | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [routerFast, setRouterFast] = useState("");
+  const [routerSmart, setRouterSmart] = useState("");
+  const [routerHeavy, setRouterHeavy] = useState("");
   const detailScrollRef = useRef<HTMLDivElement>(null);
   const refreshRevisionRef = useRef(0);
   const selectionRevisionRef = useRef(0);
   const probeRequestIdRef = useRef(0);
   const selectedLabelRef = useRef<string | undefined>(undefined);
+  const routerDraftRef = useRef({ fast: "", smart: "", heavy: "" });
+  const routerSaveSeqRef = useRef(0);
 
   const {
     oauth,
@@ -75,28 +90,27 @@ export function ModelSettingsOverlay({ onClose }: { onClose: () => void }) {
       provider && nextCatalog.some((entry) => entry.provider === provider)
         ? provider
         : (nextMe.defaultProvider ?? nextCatalog[0]?.provider ?? "");
-    const nextCredential = nextCredentials.find((entry) => entry.provider === nextProvider);
-    const nextModel =
-      nextProvider === OPENAI_COMPATIBLE_PROVIDER_ID
-        ? (nextCredential?.modelId ??
-          (nextMe.defaultProvider === OPENAI_COMPATIBLE_PROVIDER_ID ? nextMe.defaultModel : "") ??
-          "")
-        : (nextCatalog.find((entry) => entry.provider === nextProvider && entry.id === modelId)
-            ?.id ??
-          nextCatalog.find(
-            (entry) => entry.provider === nextProvider && entry.id === nextMe.defaultModel,
-          )?.id ??
-          nextCatalog.find((entry) => entry.provider === nextProvider)?.id ??
-          "");
+    const nextCredential = selectProviderCredential(nextCredentials, nextProvider);
+    const nextModel = isProbedModelProvider(nextProvider)
+      ? (nextCredential?.modelId ??
+        (isProbedModelProvider(nextMe.defaultProvider ?? "") ? nextMe.defaultModel : "") ??
+        "")
+      : (nextCatalog.find((entry) => entry.provider === nextProvider && entry.id === modelId)?.id ??
+        nextCatalog.find(
+          (entry) => entry.provider === nextProvider && entry.id === nextMe.defaultModel,
+        )?.id ??
+        nextCatalog.find((entry) => entry.provider === nextProvider)?.id ??
+        "");
     setCatalog(nextCatalog);
     setCredentials(nextCredentials);
     setMe(nextMe);
     if (selectionRevision === selectionRevisionRef.current) {
-      resetOpenAiCompatibleProbe();
       setProvider(nextProvider);
       setModelId(nextModel);
+      applyRouterDraft(nextCredential);
       if (nextProvider === OPENAI_COMPATIBLE_PROVIDER_ID) {
-        setBaseUrl(nextCredential?.baseUrl ?? "");
+        const restored = nextCredential?.baseUrl?.trim();
+        if (restored) setBaseUrl(restored);
       }
     }
   }
@@ -120,17 +134,32 @@ export function ModelSettingsOverlay({ onClose }: { onClose: () => void }) {
       entries.push(entry);
       grouped.set(entry.provider, entries);
     }
-    return [...grouped].map(([id, entries]) => ({
-      id,
-      name: entries[0]?.providerName ?? id,
-      entries,
-    }));
-  }, [catalog]);
+    return pinActiveModelProviders(
+      [...grouped].map(([id, entries]) => ({
+        id,
+        name: entries[0]?.providerName ?? id,
+        entries,
+      })),
+      {
+        activeProvider: me?.defaultProvider,
+        connectedProviders: credentials.map((entry) => entry.provider),
+      },
+    );
+  }, [catalog, credentials, me?.defaultProvider]);
   const filteredGroups = useMemo(() => {
     const query = providerQuery.trim().toLowerCase();
     if (!query) return groups;
     return groups.filter((group) =>
-      [group.id, group.name, ...group.entries.flatMap((entry) => [entry.id, entry.label])]
+      [
+        group.id,
+        group.name,
+        ...group.entries.flatMap((entry) => [
+          entry.id,
+          entry.label,
+          entry.authHint,
+          entry.providerName,
+        ]),
+      ]
         .join(" ")
         .toLowerCase()
         .includes(query),
@@ -140,23 +169,105 @@ export function ModelSettingsOverlay({ onClose }: { onClose: () => void }) {
   const selected = modelsForProvider.find((entry) => entry.id === modelId) ?? modelsForProvider[0];
   selectedLabelRef.current = selected?.label;
   const isOpenAiCompatible = provider === OPENAI_COMPATIBLE_PROVIDER_ID;
-  const credential = credentials.find((entry) => entry.provider === provider);
+  const isTokenRouter = provider === TOKENROUTER_PROVIDER_ID;
+  const isProbedProvider = isProbedModelProvider(provider);
+  const credential = selectProviderCredential(credentials, provider);
   const currentEntry = catalog.find(
     (entry) => entry.provider === me?.defaultProvider && entry.id === me?.defaultModel,
   );
   const isActive =
     me?.defaultProvider === selected?.provider &&
-    me?.defaultModel === (isOpenAiCompatible ? modelId.trim() : selected?.id);
+    me?.defaultModel === (isProbedProvider ? modelId.trim() : selected?.id);
   const acceptsKey = selected?.auth !== "oauth";
   const subscriptionSignIn = selected?.signIn !== undefined;
   const busy = pending !== null || oauthPending;
-  const effectiveBaseUrl = baseUrl.trim();
+  const effectiveBaseUrl = isTokenRouter ? TOKENROUTER_BASE_URL : baseUrl.trim();
   const openAiCompatibleReady = openAiCompatibleConnectReady({
     baseUrl: effectiveBaseUrl,
     modelId,
     probedBaseUrl,
     storedBaseUrl: credential?.baseUrl,
   });
+  const tokenRouterReady = tokenRouterConnectReady({
+    apiKey,
+    modelId,
+    probed: probedBaseUrl === TOKENROUTER_BASE_URL,
+  });
+  const isRouterProvider = isComplexityRouterProvider(provider);
+  const defaultCredential = selectProviderCredential(credentials, me?.defaultProvider ?? "");
+  const routerSummary = complexityRouterActiveSummary(
+    me?.defaultProvider === provider
+      ? { fast: routerFast, smart: routerSmart, heavy: routerHeavy }
+      : {
+          fast: defaultCredential?.routerFastModel,
+          smart: defaultCredential?.routerSmartModel,
+          heavy: defaultCredential?.routerHeavyModel,
+        },
+  );
+  const showAutoModel = Boolean(routerFast.trim() || credential?.routerFastModel);
+  const routerSlotIds = complexityRouterSlotOptions({
+    probeModels,
+    catalogIds: modelsForProvider
+      .filter((entry) => !entry.placeholder && entry.id !== COMPLEXITY_ROUTER_MODEL_ID)
+      .map((entry) => entry.id),
+    modelId:
+      modelId.trim() && modelId !== COMPLEXITY_ROUTER_MODEL_ID
+        ? modelId
+        : credential?.modelId === COMPLEXITY_ROUTER_MODEL_ID
+          ? undefined
+          : credential?.modelId,
+    routerFastModel: routerFast || credential?.routerFastModel,
+    routerSmartModel: routerSmart || credential?.routerSmartModel,
+    routerHeavyModel: routerHeavy || credential?.routerHeavyModel,
+  });
+  const openAiModelChoices = [
+    ...(showAutoModel ? [COMPLEXITY_ROUTER_MODEL_ID] : []),
+    ...probeModels.filter((id) => id !== COMPLEXITY_ROUTER_MODEL_ID),
+  ];
+
+  function applyRouterDraft(nextCredential?: ModelCredential) {
+    const draft = {
+      fast: nextCredential?.routerFastModel ?? "",
+      smart: nextCredential?.routerSmartModel ?? "",
+      heavy: nextCredential?.routerHeavyModel ?? "",
+    };
+    routerDraftRef.current = draft;
+    setRouterFast(draft.fast);
+    setRouterSmart(draft.smart);
+    setRouterHeavy(draft.heavy);
+  }
+
+  function updateRouterSlot(key: "fast" | "smart" | "heavy", next: string) {
+    const draft = { ...routerDraftRef.current, [key]: next };
+    routerDraftRef.current = draft;
+    setRouterFast(draft.fast);
+    setRouterSmart(draft.smart);
+    setRouterHeavy(draft.heavy);
+    void saveRouter(draft);
+  }
+
+  async function saveRouter(next: { fast: string; smart: string; heavy: string }) {
+    if (!credential || !isRouterProvider) return;
+    const fast = next.fast.trim();
+    if (!fast) return;
+    const seq = ++routerSaveSeqRef.current;
+    setError(null);
+    setNotice(null);
+    try {
+      await rpc.models.setRouter({
+        provider,
+        fast,
+        smart: next.smart.trim() || null,
+        heavy: next.heavy.trim() || null,
+      });
+      if (seq !== routerSaveSeqRef.current) return;
+      await refresh();
+    } catch (err) {
+      if (seq !== routerSaveSeqRef.current) return;
+      const message = err instanceof Error ? err.message : t`Could not save routing`;
+      setError(message === "Not Found" ? t`Could not save routing` : message);
+    }
+  }
 
   function resetOpenAiCompatibleProbe() {
     probeRequestIdRef.current += 1;
@@ -182,13 +293,14 @@ export function ModelSettingsOverlay({ onClose }: { onClose: () => void }) {
     selectionRevisionRef.current += 1;
     setProvider(nextProvider);
     setModelId(
-      nextProvider === OPENAI_COMPATIBLE_PROVIDER_ID
-        ? (credentials.find((entry) => entry.provider === nextProvider)?.modelId ?? "")
+      isProbedModelProvider(nextProvider)
+        ? (selectProviderCredential(credentials, nextProvider)?.modelId ?? "")
         : (catalog.find((entry) => entry.provider === nextProvider)?.id ?? ""),
     );
+    applyRouterDraft(selectProviderCredential(credentials, nextProvider));
     setBaseUrl(
       nextProvider === OPENAI_COMPATIBLE_PROVIDER_ID
-        ? (credentials.find((entry) => entry.provider === nextProvider)?.baseUrl ?? "")
+        ? (selectProviderCredential(credentials, nextProvider)?.baseUrl ?? "")
         : "",
     );
     detailScrollRef.current?.scrollTo({ top: 0 });
@@ -201,6 +313,7 @@ export function ModelSettingsOverlay({ onClose }: { onClose: () => void }) {
   async function probeServerModels() {
     const trimmedBaseUrl = effectiveBaseUrl;
     if (!trimmedBaseUrl) return;
+    if (isTokenRouter && apiKey.trim().length < 8) return;
     resetOpenAiCompatibleProbe();
     const requestId = probeRequestIdRef.current;
     setProbing(true);
@@ -226,15 +339,15 @@ export function ModelSettingsOverlay({ onClose }: { onClose: () => void }) {
 
   async function setModelDefault() {
     if (!selected || !credential) return;
-    const activeModelId = isOpenAiCompatible ? modelId.trim() : selected.id;
-    if (isOpenAiCompatible && !activeModelId) return;
+    const activeModelId = isProbedProvider ? modelId.trim() : selected.id;
+    if (isProbedProvider && !activeModelId) return;
     setError(null);
     setNotice(null);
     setPending("default");
     try {
       await rpc.models.setDefault({ provider: selected.provider, modelId: activeModelId });
       await refresh();
-      setNotice(isOpenAiCompatible ? t`Model updated.` : t`Now using ${selected.label}.`);
+      setNotice(isProbedProvider ? t`Model updated.` : t`Now using ${selected.label}.`);
     } catch (err) {
       setError(err instanceof Error ? err.message : t`Could not change the default model`);
     } finally {
@@ -243,36 +356,75 @@ export function ModelSettingsOverlay({ onClose }: { onClose: () => void }) {
   }
 
   async function connectKey() {
-    if (!selected) return;
-    if (isOpenAiCompatible) {
+    if (!isProbedProvider && !selected) return;
+    if (isTokenRouter) {
+      if (!tokenRouterReady) return;
+    } else if (isOpenAiCompatible) {
       if (!effectiveBaseUrl || !modelId.trim()) return;
     } else if (!apiKey.trim()) {
       return;
     }
+    const connectProvider = selected?.provider ?? provider;
+    const fast = routerDraftRef.current.fast.trim();
+    const routerFields =
+      isRouterProvider && fast
+        ? {
+            modelId: COMPLEXITY_ROUTER_MODEL_ID,
+            routerFastModel: fast,
+            routerSmartModel: routerDraftRef.current.smart.trim() || null,
+            routerHeavyModel: routerDraftRef.current.heavy.trim() || null,
+          }
+        : null;
     setError(null);
     setNotice(null);
     setPending("connect");
     try {
-      await rpc.models.connect(
+      const saved = await rpc.models.connect(
         isOpenAiCompatible
           ? {
-              provider: selected.provider,
+              provider: connectProvider,
               baseUrl: effectiveBaseUrl,
-              modelId: modelId.trim(),
+              modelId: routerFields?.modelId ?? modelId.trim(),
               apiKey: apiKey.trim() || undefined,
-              label: selected.providerName ?? selected.provider,
+              label: selected?.providerName ?? connectProvider,
+              ...(routerFields
+                ? {
+                    routerFastModel: routerFields.routerFastModel,
+                    routerSmartModel: routerFields.routerSmartModel,
+                    routerHeavyModel: routerFields.routerHeavyModel,
+                  }
+                : {}),
             }
-          : {
-              provider: selected.provider,
-              apiKey: apiKey.trim(),
-              modelId: selected.id,
-              label: selected.providerName ?? selected.provider,
-            },
+          : isTokenRouter
+            ? {
+                provider: connectProvider,
+                apiKey: apiKey.trim(),
+                modelId: routerFields?.modelId ?? modelId.trim(),
+                label: selected?.providerName ?? connectProvider,
+                ...(routerFields
+                  ? {
+                      routerFastModel: routerFields.routerFastModel,
+                      routerSmartModel: routerFields.routerSmartModel,
+                      routerHeavyModel: routerFields.routerHeavyModel,
+                    }
+                  : {}),
+              }
+            : {
+                provider: connectProvider,
+                apiKey: apiKey.trim(),
+                modelId: selected!.id,
+                label: selected!.providerName ?? connectProvider,
+              },
       );
       setApiKey("");
+      if (saved.baseUrl) setBaseUrl(saved.baseUrl);
       await refresh();
       detailScrollRef.current?.scrollTo({ top: 0 });
-      setNotice(isOpenAiCompatible ? t`Saved.` : t`Connected and using ${selected.label}.`);
+      setNotice(
+        isProbedProvider
+          ? t`Saved.`
+          : t`Connected and using ${selected?.label ?? connectProvider}.`,
+      );
     } catch (err) {
       setError(err instanceof Error ? err.message : t`Could not connect this provider`);
     } finally {
@@ -333,6 +485,9 @@ export function ModelSettingsOverlay({ onClose }: { onClose: () => void }) {
               <Trans>Configured by deployment</Trans>
             )}
           </div>
+          {routerSummary ? (
+            <div className="mt-1 text-[13px] text-[var(--rk-muted)]">{routerSummary}</div>
+          ) : null}
         </div>
 
         <div className="flex min-h-0 flex-1 flex-col gap-6 overflow-hidden px-6 py-6 sm:px-8 md:flex-row">
@@ -348,7 +503,7 @@ export function ModelSettingsOverlay({ onClose }: { onClose: () => void }) {
               value={providerQuery}
               onChange={(event) => setProviderQuery(event.target.value)}
               placeholder={t`Search providers`}
-              className="w-full rounded-[11px] border border-[var(--rk-hairline-strong)] bg-[var(--rk-input)] px-3.5 py-2.5 text-[14px] text-[var(--rk-ink)] outline-none placeholder:text-[var(--rk-muted-2)] focus:border-[var(--rk-muted-2)]"
+              className="w-full rounded-[11px] border border-[var(--rk-hairline-strong)] bg-[var(--rk-input)] px-3.5 py-2.5 text-[14px] text-[var(--rk-ink)] outline-none placeholder:text-[var(--rk-muted)] focus:border-[var(--rk-hairline-strong)]"
             />
             <div className="rk-scroll mt-3 max-h-[240px] overflow-y-auto rounded-[13px] border border-[var(--rk-hairline-strong)] md:min-h-0 md:max-h-none md:flex-1">
               {filteredGroups.length ? (
@@ -359,8 +514,10 @@ export function ModelSettingsOverlay({ onClose }: { onClose: () => void }) {
                       key={group.id}
                       type="button"
                       onClick={() => chooseProvider(group.id)}
-                      className={`flex w-full items-center gap-3 border-b border-[#202023] px-3.5 py-3 text-start last:border-0 ${
-                        group.id === provider ? "bg-[var(--rk-surface-2)]" : "hover:bg-[var(--rk-hover)]"
+                      className={`flex w-full items-center gap-3 border-b border-[var(--rk-hairline)] px-3.5 py-3 text-start last:border-0 ${
+                        group.id === provider
+                          ? "bg-[var(--rk-surface-2)]"
+                          : "hover:bg-[var(--rk-hover)]"
                       }`}
                     >
                       <span className="min-w-0 flex-1">
@@ -374,7 +531,7 @@ export function ModelSettingsOverlay({ onClose }: { onClose: () => void }) {
                         </span>
                       </span>
                       {connected ? (
-                        <span className="text-[12px] text-[#4ECB71]">
+                        <span className="text-[12px] text-[var(--rk-success)]">
                           <Trans>Connected</Trans>
                         </span>
                       ) : null}
@@ -390,38 +547,66 @@ export function ModelSettingsOverlay({ onClose }: { onClose: () => void }) {
           </div>
 
           <div ref={detailScrollRef} className="rk-scroll min-h-0 min-w-0 flex-1 overflow-y-auto">
-            {error ? <p className="mb-4 text-sm text-[#C94244]">{error}</p> : null}
-            {notice ? <p className="mb-4 text-sm text-[#4ECB71]">{notice}</p> : null}
-            {selected ? (
+            {error ? <p className="mb-4 text-sm text-[var(--rk-danger)]">{error}</p> : null}
+            {notice ? <p className="mb-4 text-sm text-[var(--rk-success)]">{notice}</p> : null}
+            {selected || isProbedProvider ? (
               <>
                 <div className="block text-[13.5px] text-[var(--rk-muted)]">
-                  {isOpenAiCompatible ? (
+                  {isProbedProvider ? (
                     <>
-                      <label className="block">
-                        <Trans>Server URL</Trans>
-                        <input
-                          value={baseUrl}
-                          onChange={(event) => updateBaseUrl(event.target.value)}
-                          aria-label={t`OpenAI-compatible server URL`}
-                          placeholder="http://127.0.0.1:8000/v1"
-                          autoComplete="off"
-                          className="mt-2 w-full rounded-[11px] border border-[var(--rk-hairline-strong)] bg-[var(--rk-input)] px-3.5 py-3 text-[var(--rk-ink)] outline-none"
-                        />
-                      </label>
-                      <details className="mt-2 text-[13px] leading-[1.5] text-[var(--rk-muted)]">
-                        <summary className="w-fit cursor-pointer select-none">
-                          <Trans>Setup help</Trans>
-                        </summary>
-                        <p className="mt-1">
-                          {t`Paste the OpenAI-compatible address from your server. RocksteadyBot adds /v1 if needed.`}
-                        </p>
-                      </details>
-                      <div className="mt-3 flex items-center gap-2">
+                      {isOpenAiCompatible ? (
+                        <>
+                          <label className="block">
+                            <Trans>Server URL</Trans>
+                            <input
+                              value={baseUrl}
+                              onChange={(event) => updateBaseUrl(event.target.value)}
+                              aria-label={t`OpenAI-compatible server URL`}
+                              placeholder="http://127.0.0.1:8000/v1"
+                              autoComplete="off"
+                              className="mt-2 w-full rounded-[11px] border border-[var(--rk-hairline-strong)] bg-[var(--rk-input)] px-3.5 py-3 text-[var(--rk-ink)] outline-none"
+                            />
+                          </label>
+                          <details className="mt-2 text-[13px] leading-[1.5] text-[var(--rk-muted)]">
+                            <summary className="w-fit cursor-pointer select-none">
+                              <Trans>Setup help</Trans>
+                            </summary>
+                            <p className="mt-1">
+                              {t`Paste the OpenAI-compatible address from your server. RocksteadyBot adds /v1 if needed.`}
+                            </p>
+                          </details>
+                        </>
+                      ) : null}
+                      {isTokenRouter ? (
+                        <label className="mb-3 block">
+                          {credential ? <Trans>Replace API key</Trans> : <Trans>API key</Trans>}
+                          <input
+                            aria-label={t`API key`}
+                            value={apiKey}
+                            onChange={(event) => updateApiKey(event.target.value)}
+                            placeholder="sk-…"
+                            type="password"
+                            autoComplete="new-password"
+                            className="mt-2 w-full rounded-[11px] border border-[var(--rk-hairline-strong)] bg-[var(--rk-input)] px-3.5 py-3 text-[var(--rk-ink)] outline-none"
+                          />
+                        </label>
+                      ) : null}
+                      <div
+                        className={
+                          isOpenAiCompatible
+                            ? "mt-3 flex items-center gap-2"
+                            : "flex items-center gap-2"
+                        }
+                      >
                         <Button
                           type="button"
                           variant="outline"
                           size="sm"
-                          disabled={busy || probing || !effectiveBaseUrl}
+                          disabled={
+                            busy ||
+                            probing ||
+                            (isTokenRouter ? apiKey.trim().length < 8 : !effectiveBaseUrl)
+                          }
                           onClick={() => void probeServerModels()}
                         >
                           {probing ? <Trans>Finding…</Trans> : <Trans>Find models</Trans>}
@@ -431,7 +616,7 @@ export function ModelSettingsOverlay({ onClose }: { onClose: () => void }) {
                         <span>
                           <Trans>Model</Trans>
                         </span>
-                        {probeModels.length && probeModels.includes(modelId) ? (
+                        {openAiModelChoices.length && openAiModelChoices.includes(modelId) ? (
                           <div className="relative mt-2">
                             <select
                               value={modelId}
@@ -445,11 +630,18 @@ export function ModelSettingsOverlay({ onClose }: { onClose: () => void }) {
                               aria-label={t`Models from server`}
                               className="w-full appearance-none rounded-[11px] border border-[var(--rk-hairline-strong)] bg-[var(--rk-input)] py-3 pl-3.5 pr-11 text-sm text-[var(--rk-ink)]"
                             >
-                              {probeModels.map((id) => (
-                                <option key={id} value={id}>
-                                  {id}
+                              {showAutoModel ? (
+                                <option value={COMPLEXITY_ROUTER_MODEL_ID}>
+                                  <Trans>Auto</Trans>
                                 </option>
-                              ))}
+                              ) : null}
+                              {probeModels
+                                .filter((id) => id !== COMPLEXITY_ROUTER_MODEL_ID)
+                                .map((id) => (
+                                  <option key={id} value={id}>
+                                    {id}
+                                  </option>
+                                ))}
                               <option value="">
                                 <Trans>Other model…</Trans>
                               </option>
@@ -476,7 +668,9 @@ export function ModelSettingsOverlay({ onClose }: { onClose: () => void }) {
                             className="mt-2 w-full rounded-[11px] border border-[var(--rk-hairline-strong)] bg-[var(--rk-input)] px-3.5 py-3 text-[var(--rk-ink)] outline-none"
                           />
                         )}
-                        {probeModels.length && !probeModels.includes(modelId) ? (
+                        {probeModels.length &&
+                        !probeModels.includes(modelId) &&
+                        modelId !== COMPLEXITY_ROUTER_MODEL_ID ? (
                           <button
                             type="button"
                             className="mt-2 text-[13px] text-[var(--rk-muted)] underline"
@@ -487,7 +681,7 @@ export function ModelSettingsOverlay({ onClose }: { onClose: () => void }) {
                         ) : null}
                       </div>
                     </>
-                  ) : (
+                  ) : selected ? (
                     <>
                       <span>
                         <Trans>Model</Trans>
@@ -504,11 +698,69 @@ export function ModelSettingsOverlay({ onClose }: { onClose: () => void }) {
                         }}
                       />
                     </>
-                  )}
+                  ) : null}
                 </div>
+                {credential && isRouterProvider ? (
+                  <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
+                    {(
+                      [
+                        {
+                          key: "fast" as const,
+                          value: routerFast,
+                          label: t`Fast`,
+                          accessible: t`Fast — simple`,
+                        },
+                        {
+                          key: "smart" as const,
+                          value: routerSmart,
+                          label: t`Smart`,
+                          accessible: t`Smart — planning and coding`,
+                        },
+                        {
+                          key: "heavy" as const,
+                          value: routerHeavy,
+                          label: t`Heavy`,
+                          accessible: t`Heavy — hard and vision`,
+                        },
+                      ] as const
+                    ).map((slot) => (
+                      <div key={slot.key} className="block text-[13.5px] text-[var(--rk-muted)]">
+                        {slot.label}
+                        {routerSlotIds.length ? (
+                          <select
+                            value={slot.value}
+                            aria-label={slot.accessible}
+                            onChange={(event) => updateRouterSlot(slot.key, event.target.value)}
+                            className="mt-2 w-full rounded-[11px] border border-[var(--rk-hairline-strong)] bg-[var(--rk-input)] px-3 py-2.5 text-[14px] text-[var(--rk-ink)]"
+                          >
+                            <option value="">{t`Choose…`}</option>
+                            {routerSlotIds.map((id) => (
+                              <option key={id} value={id}>
+                                {id}
+                              </option>
+                            ))}
+                          </select>
+                        ) : (
+                          <input
+                            key={`${slot.key}:${slot.value}`}
+                            defaultValue={slot.value}
+                            aria-label={slot.accessible}
+                            placeholder={slot.key === "fast" ? "qwen3:8b" : ""}
+                            onBlur={(event) => {
+                              const next = event.target.value.trim();
+                              if (next === slot.value) return;
+                              updateRouterSlot(slot.key, next);
+                            }}
+                            className="mt-2 w-full rounded-[11px] border border-[var(--rk-hairline-strong)] bg-[var(--rk-input)] px-3 py-2.5 text-[14px] text-[var(--rk-ink)]"
+                          />
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                ) : null}
                 {!isOpenAiCompatible ? (
                   <p className="mt-2 text-[13px] leading-[1.5] text-[var(--rk-muted)]">
-                    {selected.billing}
+                    {selected?.billing}
                   </p>
                 ) : null}
 
@@ -639,7 +891,7 @@ export function ModelSettingsOverlay({ onClose }: { onClose: () => void }) {
                           className="mt-2 w-full rounded-[11px] border border-[var(--rk-hairline-strong)] bg-[var(--rk-input)] px-3.5 py-3 text-[var(--rk-ink)] outline-none"
                         />
                       </details>
-                    ) : (
+                    ) : isTokenRouter ? null : (
                       <label className="block text-[13.5px] text-[var(--rk-muted)]">
                         {credential ? (
                           <Trans>Replace API key</Trans>
@@ -664,7 +916,11 @@ export function ModelSettingsOverlay({ onClose }: { onClose: () => void }) {
                       size="sm"
                       disabled={
                         busy ||
-                        (isOpenAiCompatible ? !openAiCompatibleReady : apiKey.trim().length < 8)
+                        (isOpenAiCompatible
+                          ? !openAiCompatibleReady
+                          : isTokenRouter
+                            ? !tokenRouterReady
+                            : apiKey.trim().length < 8)
                       }
                       onClick={() => void connectKey()}
                       className="mt-3"
@@ -682,7 +938,7 @@ export function ModelSettingsOverlay({ onClose }: { onClose: () => void }) {
                   </div>
                 ) : null}
 
-                {selected.auth === "oauth" && !subscriptionSignIn ? (
+                {selected?.auth === "oauth" && !subscriptionSignIn ? (
                   <p className="mt-5 text-sm leading-[1.5] text-[var(--rk-muted)]">
                     <Trans>
                       This subscription sign-in is not available in RocksteadyBot yet. Use a
@@ -697,7 +953,7 @@ export function ModelSettingsOverlay({ onClose }: { onClose: () => void }) {
                       type="button"
                       variant="pill"
                       size="sm"
-                      disabled={busy || (isOpenAiCompatible && !modelId.trim())}
+                      disabled={busy || (isProbedProvider && !modelId.trim())}
                       onClick={() => void setModelDefault()}
                     >
                       {pending === "default" ? (
@@ -915,7 +1171,7 @@ function ModelPicker({
         aria-controls={listboxId}
         aria-expanded={open}
         aria-haspopup="listbox"
-        className="flex w-full items-center justify-between rounded-[11px] border border-[var(--rk-hairline-strong)] bg-[var(--rk-input)] px-3.5 py-3 text-start text-[var(--rk-ink)] outline-none focus-visible:border-[var(--rk-muted-2)]"
+        className="flex w-full items-center justify-between rounded-[11px] border border-[var(--rk-hairline-strong)] bg-[var(--rk-input)] px-3.5 py-3 text-start text-[var(--rk-ink)] outline-none focus-visible:border-[var(--rk-hairline-strong)]"
         onClick={() => setOpen((current) => !current)}
         onKeyDown={onTriggerKeyDown}
       >
@@ -942,7 +1198,7 @@ function ModelPicker({
               setHighlightedIndex(0);
             }}
             onKeyDown={onSearchKeyDown}
-            className="w-full border-b border-[var(--rk-hairline-strong)] bg-transparent px-3 py-2.5 text-[13.5px] text-[var(--rk-ink)] outline-none placeholder:text-[var(--rk-muted-2)]"
+            className="w-full border-b border-[var(--rk-hairline-strong)] bg-transparent px-3 py-2.5 text-[13.5px] text-[var(--rk-ink)] outline-none placeholder:text-[var(--rk-muted)]"
           />
           <div
             id={listboxId}

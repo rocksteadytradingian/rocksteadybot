@@ -33,6 +33,19 @@ describe("model connect", () => {
     );
   });
 
+  it("stores TokenRouter keys against the fixed public endpoint", () => {
+    const plaintext = buildModelConnectPlaintext({
+      provider: "tokenrouter",
+      apiKey: "tokenrouter-key",
+      modelId: "z-ai/glm-5.2",
+    });
+    expect(parseModelSecret(plaintext)).toEqual({
+      kind: "openai_compatible",
+      baseUrl: "https://api.tokenrouter.com/v1",
+      apiKey: "tokenrouter-key",
+    });
+  });
+
   it("round-trips optional openai-compatible API keys", () => {
     const secret = {
       kind: "openai_compatible" as const,

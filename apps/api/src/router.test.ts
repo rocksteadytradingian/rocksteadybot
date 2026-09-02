@@ -293,3 +293,221 @@ describe("connections.complete", () => {
     expect(connectionReady).toHaveBeenCalled();
   });
 });
+
+describe("stack repair approval", () => {
+  const env = {
+    defaultProvider: "fake",
+    defaultModel: "fake-model",
+    webOrigin: "http://127.0.0.1:5173",
+    screenProxySecret: "fake-test-secret",
+    sandboxProvider: "fake",
+  };
+
+  it("lets the deployment owner start the worker", async () => {
+    const repairWorkerStack = vi.fn().mockResolvedValue({ ok: true, started: ["worker"] });
+    const deps = {
+      prisma: {} as PrismaClient,
+      env,
+      dataDir: "/tmp/rakazo-router-test",
+      repairWorkerStack,
+    } as unknown as RouterDeps;
+    const handler = new RPCHandler(createRouter(deps));
+    const { response } = await handler.handle(
+      new Request("http://127.0.0.1/rpc/approvals/repairStack", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ json: {} }),
+      }),
+      {
+        prefix: "/rpc",
+        context: {
+          actor: {
+            workspaceId: "workspace-1",
+            userId: "user-1",
+            email: "owner@rakazo.test",
+            isDeploymentOwner: true,
+          } satisfies Actor,
+        },
+      },
+    );
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({ json: { ok: true, started: ["worker"] } });
+    expect(repairWorkerStack).toHaveBeenCalledOnce();
+  });
+
+  it("schedules a process exit when the owner restarts the API", async () => {
+    const repairWorkerStack = vi.fn().mockResolvedValue({ ok: true, started: ["worker", "api"] });
+    const scheduleProcessExit = vi.fn();
+    const deps = {
+      prisma: {} as PrismaClient,
+      env,
+      dataDir: "/tmp/rakazo-router-test",
+      repairWorkerStack,
+      scheduleProcessExit,
+    } as unknown as RouterDeps;
+    const handler = new RPCHandler(createRouter(deps));
+    const { response } = await handler.handle(
+      new Request("http://127.0.0.1/rpc/approvals/repairStack", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ json: { restartApi: true } }),
+      }),
+      {
+        prefix: "/rpc",
+        context: {
+          actor: {
+            workspaceId: "workspace-1",
+            userId: "user-1",
+            email: "owner@rakazo.test",
+            isDeploymentOwner: true,
+          } satisfies Actor,
+        },
+      },
+    );
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({
+      json: { ok: true, started: ["worker", "api"] },
+    });
+    expect(repairWorkerStack).toHaveBeenCalledWith({ restartApi: true });
+    expect(scheduleProcessExit).toHaveBeenCalledWith(0, 250);
+  });
+
+  it("lets a local signed-in user start host processes", async () => {
+    const repairWorkerStack = vi.fn().mockResolvedValue({ ok: true, started: ["worker"] });
+    const deps = {
+      prisma: {} as PrismaClient,
+      env,
+      dataDir: "/tmp/rakazo-router-test",
+      repairWorkerStack,
+    } as unknown as RouterDeps;
+    const handler = new RPCHandler(createRouter(deps));
+    const { response } = await handler.handle(
+      new Request("http://127.0.0.1/rpc/approvals/repairStack", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ json: {} }),
+      }),
+      {
+        prefix: "/rpc",
+        context: {
+          actor: {
+            workspaceId: "workspace-1",
+            userId: "user-2",
+            email: "member@rakazo.test",
+            isDeploymentOwner: false,
+          } satisfies Actor,
+        },
+      },
+    );
+    expect(response.status).toBe(200);
+    expect(repairWorkerStack).toHaveBeenCalledOnce();
+  });
+
+  it("forbids a non-owner from starting host processes on a remote deployment", async () => {
+    const repairWorkerStack = vi.fn();
+    const deps = {
+      prisma: {} as PrismaClient,
+      env: { ...env, webOrigin: "https://rakazo.example.com" },
+      dataDir: "/tmp/rakazo-router-test",
+      repairWorkerStack,
+    } as unknown as RouterDeps;
+    const handler = new RPCHandler(createRouter(deps));
+    const { response } = await handler.handle(
+      new Request("http://127.0.0.1/rpc/approvals/repairStack", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ json: {} }),
+      }),
+      {
+        prefix: "/rpc",
+        context: {
+          actor: {
+            workspaceId: "workspace-1",
+            userId: "user-2",
+            email: "member@rakazo.test",
+            isDeploymentOwner: false,
+          } satisfies Actor,
+        },
+      },
+    );
+    expect(response.status).toBe(403);
+    expect(repairWorkerStack).not.toHaveBeenCalled();
+  });
+});
+
+describe("complexity router", () => {
+  const actor = {
+    workspaceId: "workspace-1",
+    userId: "user-1",
+    email: "user@rakazo.test",
+    isDeploymentOwner: true,
+  } satisfies Actor;
+
+  async function callSetRouter(deps: RouterDeps, input: Record<string, unknown>) {
+    const handler = new RPCHandler(createRouter(deps));
+    const { response } = await handler.handle(
+      new Request("http://127.0.0.1/rpc/models/setRouter", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ json: input }),
+      }),
+      { prefix: "/rpc", context: { actor } },
+    );
+    return response;
+  }
+
+  it("rejects routing on hosted providers", async () => {
+    const response = await callSetRouter(
+      { prisma: {} as PrismaClient, env: {}, dataDir: "/tmp" } as unknown as RouterDeps,
+      { provider: "anthropic", fast: "claude-sonnet-5" },
+    );
+    expect(response.status).toBe(400);
+  });
+
+  it("rejects Auto as a slot and missing credentials", async () => {
+    const findFirst = vi.fn(async () => null);
+    const prisma = { userModelCredential: { findFirst } } as unknown as PrismaClient;
+    const deps = { prisma, env: {}, dataDir: "/tmp" } as unknown as RouterDeps;
+
+    const autoSlot = await callSetRouter(deps, {
+      provider: "openai-compatible",
+      fast: "auto",
+    });
+    expect(autoSlot.status).toBe(400);
+    expect(findFirst).not.toHaveBeenCalled();
+
+    const missing = await callSetRouter(deps, {
+      provider: "openai-compatible",
+      fast: "qwen3:8b",
+    });
+    expect(missing.status).toBe(400);
+  });
+
+  it("stores Fast/Smart/Heavy on the connected credential", async () => {
+    const update = vi.fn(async () => ({ id: "cred-1" }));
+    const prisma = {
+      userModelCredential: {
+        findFirst: vi.fn(async () => ({
+          id: "cred-1",
+          provider: "openai-compatible",
+          isDefault: true,
+        })),
+        update,
+      },
+    } as unknown as PrismaClient;
+    const response = await callSetRouter(
+      { prisma, env: {}, dataDir: "/tmp" } as unknown as RouterDeps,
+      { provider: "openai-compatible", fast: "qwen3:8b", smart: "qwen3:30b", heavy: "" },
+    );
+    expect(response.status).toBe(200);
+    expect(update).toHaveBeenCalledWith({
+      where: { id: "cred-1" },
+      data: {
+        routerFastModel: "qwen3:8b",
+        routerSmartModel: "qwen3:30b",
+        routerHeavyModel: null,
+        defaultModel: "auto",
+      },
+    });
+  });
+});

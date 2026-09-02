@@ -4,10 +4,7 @@ export function transcriptIsNearEnd(
   return element.scrollHeight - element.scrollTop - element.clientHeight < 80;
 }
 
-export function scrollTranscriptToEnd(element: {
-  scrollTop: number;
-  scrollHeight: number;
-}): void {
+export function scrollTranscriptToEnd(element: { scrollTop: number; scrollHeight: number }): void {
   element.scrollTop = element.scrollHeight;
 }
 

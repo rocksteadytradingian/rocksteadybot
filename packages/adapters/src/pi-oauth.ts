@@ -47,6 +47,13 @@ export const SUBSCRIPTION_SIGN_IN_PROVIDERS: Record<
 const MIN_OAUTH_VALIDITY_MS = 5 * 60 * 1000;
 const SIGN_IN_START_WAIT_MS = 30_000;
 
+export class ModelAuthError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "ModelAuthError";
+  }
+}
+
 export type StoredModelSecret =
   | { kind: "api_key"; key: string }
   | { kind: "oauth"; credential: OAuthCredential }
@@ -187,17 +194,26 @@ export async function resolveModelAuth(
   }
   const oauth = opts?.oauth ?? loadProviderOAuth(provider);
   if (!oauth) {
-    throw new Error(`No OAuth handler for ${provider}. Sign in again from onboarding.`);
+    throw new ModelAuthError(`No OAuth handler for ${provider}. Sign in again from onboarding.`);
   }
   const now = opts?.now ?? Date.now();
   let credential = parsed.credential;
   if (credential.expires - now < MIN_OAUTH_VALIDITY_MS) {
-    credential = await oauth.refresh(credential, opts?.signal ?? new AbortController().signal);
+    try {
+      credential = await oauth.refresh(credential, opts?.signal ?? new AbortController().signal);
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : String(error);
+      throw new ModelAuthError(
+        /invalid_grant|Refresh token/i.test(detail)
+          ? `This ${provider} sign-in expired. Connect it again in model settings.`
+          : detail,
+      );
+    }
     await opts?.persist?.(serializeModelSecret({ kind: "oauth", credential }));
   }
   const auth = await oauth.toAuth(credential);
   if (!auth.apiKey) {
-    throw new Error("Subscription sign-in did not produce a usable token. Sign in again.");
+    throw new ModelAuthError("Subscription sign-in did not produce a usable token. Sign in again.");
   }
   return { secret: { kind: "oauth", credential }, apiKey: auth.apiKey };
 }

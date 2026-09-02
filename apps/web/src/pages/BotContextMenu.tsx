@@ -94,10 +94,10 @@ export function BotContextMenu({
           label={bot.unread ? t`Mark as Read` : t`Mark as Unread`}
           onSelect={onToggleUnread}
         />
-        <div className="my-1 border-t border-[var(--rk-hairline-strong)]" />
+        <div className="my-1 border-t border-[var(--rk-hairline)]" />
         <MenuItem icon={<EditIcon />} label={t`Edit Profile`} onSelect={onEdit} />
         <MenuItem icon={<DuplicateIcon />} label={t`Duplicate`} onSelect={onDuplicate} />
-        <div className="my-1 border-t border-[var(--rk-hairline-strong)]" />
+        <div className="my-1 border-t border-[var(--rk-hairline)]" />
         <MenuItem icon={<ClearIcon />} label={t`Clear conversation`} onSelect={onClear} />
         <MenuItem icon={<ArchiveIcon />} label={t`Archive`} onSelect={onArchive} />
         <MenuItem icon={<TrashIcon />} label={t`Delete`} tone="danger" onSelect={onDelete} />
@@ -124,7 +124,7 @@ export function BotContextMenu({
             label={t`Unassigned`}
             onSelect={() => onMoveToSection(null)}
           />
-          <div className="my-1 border-t border-[var(--rk-hairline-strong)]" />
+          <div className="my-1 border-t border-[var(--rk-hairline)]" />
           <MenuItem icon={<NewFolderIcon />} label={t`New section`} onSelect={onCreateSection} />
         </div>
       ) : null}
@@ -156,7 +156,7 @@ function MenuItem({
       role="menuitem"
       aria-expanded={expanded}
       className={`flex w-full items-center gap-3 rounded-[11px] px-3 py-2.5 text-start text-[15px] outline-none hover:bg-[var(--rk-hover)] focus-visible:bg-[var(--rk-hover)] ${
-        tone === "danger" ? "text-[#FF5364]" : "text-[var(--rk-ink)]"
+        tone === "danger" ? "text-[var(--rk-danger)]" : "text-[var(--rk-ink)]"
       }`}
       onClick={onSelect}
     >

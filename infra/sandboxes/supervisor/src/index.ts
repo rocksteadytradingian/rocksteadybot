@@ -16,6 +16,7 @@ import {
   computerNetworkNamesForCleanup,
   containerCreateOptions,
   containerNameFor,
+  isDockerNameConflict,
   resolveScreenPublishTarget,
   SCREEN_HOST,
   screenPorts,
@@ -92,6 +93,7 @@ app.post("/computers", async (c) => {
       botId: z.string().min(1),
       homePath: z.string().min(1),
       workspaceId: z.string().min(1),
+      replace: z.boolean().optional(),
     })
     .parse(await c.req.json());
   try {
@@ -112,6 +114,7 @@ app.post("/computers", async (c) => {
         const info = await existing.inspect();
         const desired = await docker.getImage(COMPUTER_IMAGE).inspect();
         if (
+          body.replace ||
           info.Image !== desired.Id ||
           (networkMode && info.HostConfig.NetworkMode !== networkMode)
         ) {
@@ -126,16 +129,20 @@ app.post("/computers", async (c) => {
         }
       }
       const name = containerNameFor(body.botId);
-      const container = await docker.createContainer(
-        containerCreateOptions({
-          name,
-          image: COMPUTER_IMAGE,
-          botId: body.botId,
-          workspaceId: body.workspaceId,
-          homePath,
-          networkMode,
-        }),
-      );
+      if (body.replace) {
+        await docker
+          .getContainer(name)
+          .remove({ force: true })
+          .catch(() => undefined);
+      }
+      const container = await createComputerContainer({
+        name,
+        image: COMPUTER_IMAGE,
+        botId: body.botId,
+        workspaceId: body.workspaceId,
+        homePath,
+        networkMode,
+      });
       await container.start();
       const screenUrl = await publishedScreenUrl(container);
       return c.json({ id: container.id, image: COMPUTER_IMAGE, screenUrl, resumed: false });
@@ -488,14 +495,17 @@ app.post("/computers/:id/stop", async (c) => {
 app.delete("/computers/:id", async (c) => {
   const id = c.req.param("id");
   const botId = c.req.header("x-rakazo-bot-id");
+  const workspaceId = c.req.header("x-rakazo-workspace-id");
   try {
     if (!botId) throw new Error("missing computer identity");
     return await withBotLifecycleLock(botId, async () => {
-      const { container } = await managedContainer(
-        id,
-        botId,
-        c.req.header("x-rakazo-workspace-id"),
-      );
+      let container: Docker.Container | undefined;
+      try {
+        ({ container } = await managedContainer(id, botId, workspaceId));
+      } catch {
+        container = workspaceId ? await findBotContainer(botId, workspaceId) : undefined;
+        if (!container) throw new Error("computer not found");
+      }
       await container.remove({ force: true }).catch(() => undefined);
       clearComputerScreenRegistry(computerScreens, id);
       if (process.env.SANDBOX_SCREEN_NETWORK !== "internal") {
@@ -558,6 +568,21 @@ async function ensureComputerImage() {
     })();
   }
   await imageReady;
+}
+
+async function createComputerContainer(
+  input: Parameters<typeof containerCreateOptions>[0],
+): Promise<Docker.Container> {
+  try {
+    return await docker.createContainer(containerCreateOptions(input));
+  } catch (error) {
+    if (!isDockerNameConflict(error)) throw error;
+    await docker
+      .getContainer(input.name)
+      .remove({ force: true })
+      .catch(() => undefined);
+    return docker.createContainer(containerCreateOptions(input));
+  }
 }
 
 async function findBotContainer(botId: string, workspaceId: string) {

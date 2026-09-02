@@ -6,11 +6,11 @@ import { useEffect, useState } from "react";
 import { rpc } from "../lib/rpc";
 
 function statusColor(status: RunActivityRow["status"]): string {
-  if (status === "failed") return "#FF5364";
+  if (status === "failed") return "var(--rk-danger)";
   if (status === "cancelled") return "var(--rk-muted)";
-  if (status === "completed") return "#4ECB71";
-  if (status === "waiting_input" || status === "waiting_takeover") return "#F5A03C";
-  return "#8B5CF6";
+  if (status === "completed") return "var(--rk-success)";
+  if (status === "waiting_input" || status === "waiting_takeover") return "var(--rk-warning)";
+  return "var(--rk-queued)";
 }
 
 type ActivityListProps = {
@@ -65,7 +65,7 @@ export function ActivityList({ onOpenRun }: ActivityListProps) {
   if (activeRuns.length === 0 && recentRuns.length === 0) return null;
 
   return (
-    <div className="mb-2 border-b border-[#202023] pb-2">
+    <div className="mb-2 border-b border-[var(--rk-hairline)] pb-2">
       {activeRuns.length > 0 ? (
         <section>
           <div className="px-2.5 pb-1 pt-1 text-[12.5px] font-medium text-[var(--rk-muted-2)]">

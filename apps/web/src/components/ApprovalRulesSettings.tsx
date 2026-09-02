@@ -113,7 +113,7 @@ export function ApprovalRulesSettings() {
           <Trans>Ask before purchases</Trans>
         </button>
       </div>
-      {error ? <p className="mt-3 text-[13px] text-[#E65707]">{error}</p> : null}
+      {error ? <p className="mt-3 text-[13px] text-[var(--rk-danger)]">{error}</p> : null}
       {loading ? (
         <p className="mt-4 text-[13px] text-[var(--rk-muted)]">
           <Trans>Loading rules…</Trans>

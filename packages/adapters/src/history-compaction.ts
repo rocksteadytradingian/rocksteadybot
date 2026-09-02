@@ -140,6 +140,12 @@ export interface CompactHistoryDeps {
     userId: string;
     workspaceId: string;
     botId?: string;
+    purpose?: "run" | "compaction";
+    prompt?: string;
+    historyChars?: number;
+    hasImages?: boolean;
+    trigger?: string;
+    stickyModelId?: string | null;
   }) => Promise<AgentRunRequest["model"]>;
 }
 
@@ -259,6 +265,7 @@ export async function compactHistory(deps: CompactHistoryDeps, threadId: string)
         userId: thread.userId,
         workspaceId: thread.workspaceId,
         botId: thread.botId,
+        purpose: "compaction",
       })
     : deps.deploymentModelKey
       ? {

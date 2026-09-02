@@ -4,10 +4,10 @@ import { BrowserRouter } from "react-router-dom";
 import { App } from "./App";
 import { I18nBootstrap } from "./components/I18nBootstrap";
 import { applyUiDirection } from "./lib/apply-ui-direction";
+import { desktopBridge } from "./lib/desktop";
 import { markAfterPaint, markOnce } from "./lib/performance";
 import { resolveUiLocale } from "./lib/ui-locale";
 import { applyUiTheme, resolveUiTheme } from "./lib/ui-theme";
-import { desktopBridge } from "./lib/desktop";
 import "./styles.css";
 
 markOnce("rk:renderer:module-evaluated");

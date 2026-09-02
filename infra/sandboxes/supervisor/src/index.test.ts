@@ -315,6 +315,14 @@ describe("sandbox supervisor input containment", () => {
     expect(releaseAssignedScreen(assigned, "writer", "run-2:2")).toBe(0);
   });
 
+  it("does not label a leftover private screen as a Team Computer", () => {
+    const assigned = new Map<string, ScreenAssignment>();
+    expect(nextScreenIndex(assigned, "writer", "run-2:2")).toBe(0);
+    expect(() => nextScreenIndex(assigned, "writer", "run-1:1")).toThrow(
+      /^This computer screen is owned by a newer execution\.$/,
+    );
+  });
+
   it("stops extra displays without touching the primary desktop", () => {
     expect(stopExtraScreenCommand(0)).toBe("");
     expect(stopExtraScreenCommand(1)).toContain("Xvfb :2 -screen");

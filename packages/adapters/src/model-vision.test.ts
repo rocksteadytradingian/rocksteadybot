@@ -46,6 +46,10 @@ describe("model vision gating for computer tools", () => {
     expect(modelAcceptsImageInput("openrouter", "rakazo-test/unknown-future-model")).toBe(false);
   });
 
+  it("treats TokenRouter as vision-capable", () => {
+    expect(modelAcceptsImageInput("tokenrouter", "z-ai/glm-5.2")).toBe(true);
+  });
+
   it("omits image-returning computer tools for text-only models", () => {
     const names = filterImageReturningComputerTools(builtinAgentTools, false).map(
       (tool) => tool.name,

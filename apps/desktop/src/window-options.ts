@@ -29,6 +29,7 @@ function windowChrome(platform: NodeJS.Platform) {
     movable: true,
     maximizable: true,
     minimizable: true,
+    closable: true,
     minWidth: 800,
     minHeight: 560,
   };

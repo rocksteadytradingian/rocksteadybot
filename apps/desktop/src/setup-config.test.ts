@@ -12,6 +12,7 @@ import {
   serializeSetup,
   servesBundledRenderer,
   sessionPartitionForServerUrl,
+  shouldInstallBundledRenderer,
 } from "./setup-config.js";
 
 describe("server address normalization", () => {
@@ -150,6 +151,20 @@ describe("bundled renderer eligibility", () => {
     expect(servesBundledRenderer("https://rakazo.example.com")).toBe(true);
     expect(servesBundledRenderer("data:text/html,<p>fixture</p>")).toBe(false);
     expect(servesBundledRenderer("nonsense")).toBe(false);
+  });
+
+  it("does not shadow a local Vite origin unless a harness forces the snapshot", () => {
+    expect(shouldInstallBundledRenderer(DEFAULT_LOCAL_WEB_URL)).toBe(false);
+    expect(shouldInstallBundledRenderer("http://localhost:5173")).toBe(false);
+    expect(shouldInstallBundledRenderer("https://rakazo.example.com")).toBe(true);
+    expect(
+      shouldInstallBundledRenderer(DEFAULT_LOCAL_WEB_URL, { RAKAZO_FORCE_BUNDLED_RENDERER: "1" }),
+    ).toBe(true);
+    expect(
+      shouldInstallBundledRenderer("https://rakazo.example.com", {
+        RAKAZO_DISABLE_BUNDLED_RENDERER: "1",
+      }),
+    ).toBe(false);
   });
 });
 

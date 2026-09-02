@@ -34,7 +34,7 @@ export function SupermemorySettingsForm({ busy, onConnect }: MemoryProviderSetti
             onClick={() => setMode(option)}
             className={`flex-1 rounded-[11px] border px-3.5 py-2.5 text-[14px] disabled:opacity-40 ${
               mode === option
-                ? "border-[var(--rk-muted-2)] bg-[var(--rk-surface-2)] text-[var(--rk-ink)]"
+                ? "border-[var(--rk-hairline-strong)] bg-[var(--rk-surface-2)] text-[var(--rk-ink)]"
                 : "border-[var(--rk-hairline-strong)] text-[var(--rk-muted)]"
             }`}
           >

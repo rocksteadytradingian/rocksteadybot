@@ -1,4 +1,5 @@
 import type { PendingApproval } from "@rakazo/contracts";
+import { isStackRepairApproval } from "@rakazo/core";
 import { useFocusEffect, useRouter } from "expo-router";
 import { useCallback, useState } from "react";
 import {
@@ -42,12 +43,17 @@ export default function Approvals() {
   async function approve(item: PendingApproval) {
     setBusyId(item.id);
     try {
-      await rpc("threads/answer", {
-        ...(item.groupId ? { groupId: item.groupId } : { botId: item.botId }),
-        runId: item.runId,
-        messageId: item.messageId,
-        answer: "allow",
-      });
+      if (isStackRepairApproval(item)) {
+        const result = await rpc<{ ok: boolean; error?: string }>("approvals/repairStack");
+        if (!result.ok) throw new Error(result.error || "Could not start the worker");
+      } else {
+        await rpc("threads/answer", {
+          ...(item.groupId ? { groupId: item.groupId } : { botId: item.botId }),
+          runId: item.runId,
+          messageId: item.messageId,
+          answer: "allow",
+        });
+      }
       setItems((current) => current.filter((row) => row.id !== item.id));
     } catch (err) {
       Alert.alert("Could not approve", err instanceof Error ? err.message : "Try again.");
@@ -69,6 +75,8 @@ export default function Approvals() {
       ) : (
         items.map((item) => {
           const requested = formatRequestedAt(item.requestedAt);
+          const stackRepair = isStackRepairApproval(item);
+          const thread = approvalThreadParams(item);
           return (
             <View key={item.id} style={styles.card}>
               <View style={styles.cardTop}>
@@ -80,30 +88,41 @@ export default function Approvals() {
                 />
                 <View style={styles.cardBody}>
                   <Text style={styles.summary}>
-                    {item.botName} · {item.summary}
+                    {stackRepair ? item.summary : `${item.botName} · ${item.summary}`}
                   </Text>
+                  {item.detail && stackRepair ? (
+                    <Text style={styles.time}>{item.detail}</Text>
+                  ) : null}
                   {item.highRisk ? <Text style={styles.risk}>High risk action</Text> : null}
                   {requested ? <Text style={styles.time}>Requested {requested}</Text> : null}
                 </View>
               </View>
               <View style={styles.actions}>
+                {thread ? (
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel="View"
+                    onPress={() => router.push(thread)}
+                    style={({ pressed }) => [styles.viewButton, pressed && styles.pressed]}
+                  >
+                    <Text style={styles.viewLabel}>View</Text>
+                  </Pressable>
+                ) : null}
                 <Pressable
                   accessibilityRole="button"
-                  accessibilityLabel="View"
-                  onPress={() => router.push(approvalThreadParams(item))}
-                  style={({ pressed }) => [styles.viewButton, pressed && styles.pressed]}
-                >
-                  <Text style={styles.viewLabel}>View</Text>
-                </Pressable>
-                <Pressable
-                  accessibilityRole="button"
-                  accessibilityLabel="Approve"
+                  accessibilityLabel={stackRepair ? "Start worker" : "Approve"}
                   disabled={busyId === item.id}
                   onPress={() => void approve(item)}
                   style={({ pressed }) => [styles.approveButton, pressed && styles.pressed]}
                 >
                   <Text style={styles.approveLabel}>
-                    {busyId === item.id ? "Sending…" : "Approve"}
+                    {busyId === item.id
+                      ? stackRepair
+                        ? "Starting…"
+                        : "Sending…"
+                      : stackRepair
+                        ? "Start worker"
+                        : "Approve"}
                   </Text>
                 </Pressable>
               </View>

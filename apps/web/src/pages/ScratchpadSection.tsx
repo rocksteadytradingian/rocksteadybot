@@ -111,14 +111,14 @@ export function ScratchpadSection({ botId }: { botId: string }) {
         items.map((item) => (
           <div
             key={item.id}
-            className="flex w-full items-start gap-2 rounded-[11px] px-2.5 py-2.5 hover:bg-[var(--rk-surface)]"
+            className="flex w-full items-start gap-2 rounded-[11px] px-2.5 py-2.5 hover:bg-[var(--rk-hover)]"
           >
             <button
               type="button"
               aria-label={item.status === "done" ? t`Reopen` : t`Complete`}
               disabled={busy}
               onClick={() => void setStatus(item, item.status === "done" ? "open" : "done")}
-              className="mt-0.5 h-4 w-4 shrink-0 rounded border border-[#3A3A40] text-[10px] leading-none text-[#E65707]"
+              className="mt-0.5 h-4 w-4 shrink-0 rounded border border-[var(--rk-hairline-strong)] text-[10px] leading-none text-[var(--rk-danger)]"
             >
               {item.status === "done" ? "✓" : ""}
             </button>
@@ -142,7 +142,7 @@ export function ScratchpadSection({ botId }: { botId: string }) {
                 aria-label={t`Park`}
                 disabled={busy}
                 onClick={() => void setStatus(item, "parked")}
-                className="shrink-0 text-[12px] text-[#7A7A80]"
+                className="shrink-0 text-[12px] text-[var(--rk-muted)]"
               >
                 <Trans>Park</Trans>
               </button>
@@ -152,7 +152,7 @@ export function ScratchpadSection({ botId }: { botId: string }) {
                 aria-label={t`Reopen`}
                 disabled={busy}
                 onClick={() => void setStatus(item, "open")}
-                className="shrink-0 text-[12px] text-[#7A7A80]"
+                className="shrink-0 text-[12px] text-[var(--rk-muted)]"
               >
                 <Trans>Open</Trans>
               </button>
@@ -162,7 +162,7 @@ export function ScratchpadSection({ botId }: { botId: string }) {
               aria-label={t`Remove`}
               disabled={busy}
               onClick={() => void removeItem(item)}
-              className="shrink-0 text-[12px] text-[#7A7A80]"
+              className="shrink-0 text-[12px] text-[var(--rk-muted)]"
             >
               ✕
             </button>
@@ -188,7 +188,9 @@ export function ScratchpadSection({ botId }: { botId: string }) {
           <Trans>Add</Trans>
         </BuiButton>
       </form>
-      {error ? <div className="mt-2 px-2.5 text-[13px] text-[#C45C5C]">{error}</div> : null}
+      {error ? (
+        <div className="mt-2 px-2.5 text-[13px] text-[var(--rk-danger)]">{error}</div>
+      ) : null}
     </div>
   );
 }

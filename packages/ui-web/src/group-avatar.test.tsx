@@ -52,6 +52,7 @@ describe("GroupAvatar", () => {
     );
     const count = (html.match(/data-working=/g) || []).length;
     expect(count).toBe(3);
+    expect(html).toContain("isolate");
   });
 
   it("renders 2 mini avatars + overflow count for 4+ members", () => {

@@ -64,13 +64,13 @@ export function HostComputerPrompt({ initialMe }: { initialMe?: Me }) {
             </Trans>
           )}
         </p>
-        {error ? <p className="mt-3 text-sm text-[#E65707]">{error}</p> : null}
+        {error ? <p className="mt-3 text-sm text-[var(--rk-danger)]">{error}</p> : null}
         <div className="mt-5 flex flex-col gap-2">
           <button
             type="button"
             disabled={pending}
             onClick={() => void choose("docker")}
-            className="rounded-[11px] bg-[#F1F1EF] px-5 py-2.5 text-[#17171A] disabled:opacity-40"
+            className="rounded-[11px] bg-[var(--rk-solid)] px-5 py-2.5 text-[var(--rk-solid-ink)] disabled:opacity-40"
           >
             <Trans>Docker (recommended)</Trans>
           </button>
@@ -94,7 +94,11 @@ export function HostComputerPrompt({ initialMe }: { initialMe?: Me }) {
               This computer runs shell commands with your account, including files in your home
               folder. Do not turn it on for a shared or public server.
             </Trans>
-          )}
+          )}{" "}
+          <Trans>
+            Connect Gmail and other Google apps as plugins. Do not let bots use a signed-in Google
+            account in the browser.
+          </Trans>
         </p>
       </div>
     </div>

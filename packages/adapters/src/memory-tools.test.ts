@@ -30,9 +30,10 @@ describe("selectMemoryTools", () => {
     expect(names).toEqual(["remember", "read_memory", "search_memory", "shell"]);
   });
 
-  it("keeps semantic memory tools and drops native remember when configured", () => {
+  it("keeps remember alongside semantic memory tools when configured", async () => {
     const names = selectMemoryTools(allTools, true).map((t) => t.name);
     expect(names).toEqual([
+      "remember",
       "read_memory",
       "search_memory",
       "recall_memory",

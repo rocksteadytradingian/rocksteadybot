@@ -72,7 +72,7 @@ export function AskCard({
         </pre>
       ) : null}
       {block.status === "answered" ? (
-        <div className="mt-3.5 text-[13.5px] font-medium text-[#4ECB71]">
+        <div className="mt-3.5 text-[13.5px] font-medium text-[var(--rk-success)]">
           {formatAnsweredState(block.answer, Boolean(approvalActions), secretInput)}
         </div>
       ) : !canAnswer ? (
@@ -89,7 +89,7 @@ export function AskCard({
               onClick={() => void submitAnswer(action.id)}
               className={
                 action.id === "allow"
-                  ? "rounded-[11px] bg-[#F1F1EF] px-[17px] py-2 text-[14.5px] font-medium text-[#17171A] disabled:opacity-50"
+                  ? "rounded-[11px] bg-[var(--rk-solid)] px-[17px] py-2 text-[14.5px] font-medium text-[var(--rk-solid-ink)] disabled:opacity-50"
                   : "rounded-[11px] border border-[var(--rk-hairline-strong)] px-[17px] py-2 text-[14.5px] text-[var(--rk-body)] disabled:opacity-50"
               }
             >
@@ -139,13 +139,13 @@ export function AskCard({
             value={answer}
             onChange={(event) => setAnswer(event.target.value)}
             placeholder={t`Type your answer`}
-            className="rounded-[11px] border border-[var(--rk-hairline-strong)] bg-[var(--rk-input)] px-3.5 py-2.5 text-[14.5px] text-[var(--rk-ink)] outline-none focus:border-[var(--rk-muted)]"
+            className="rounded-[11px] border border-[var(--rk-hairline-strong)] bg-[var(--rk-input)] px-3.5 py-2.5 text-[14.5px] text-[var(--rk-ink)] outline-none focus:border-[var(--rk-hairline-strong)]"
           />
           <div className="flex gap-2">
             <button
               type="submit"
               disabled={!answer.trim() || submitting}
-              className="rounded-[11px] bg-[#F1F1EF] px-[17px] py-2 text-[14.5px] font-medium text-[#17171A] disabled:opacity-50"
+              className="rounded-[11px] bg-[var(--rk-solid)] px-[17px] py-2 text-[14.5px] font-medium text-[var(--rk-solid-ink)] disabled:opacity-50"
             >
               {submitting ? <Trans>Sending…</Trans> : <Trans>Send answer</Trans>}
             </button>
@@ -168,7 +168,7 @@ export function AskCard({
             type="button"
             disabled={submitting}
             onClick={() => void submitAnswer("approved")}
-            className="rounded-[11px] bg-[#F1F1EF] px-[17px] py-2 text-[14.5px] font-medium text-[#17171A] disabled:opacity-50"
+            className="rounded-[11px] bg-[var(--rk-solid)] px-[17px] py-2 text-[14.5px] font-medium text-[var(--rk-solid-ink)] disabled:opacity-50"
           >
             {submitting ? <Trans>Sending…</Trans> : <Trans>Send it</Trans>}
           </button>
@@ -182,7 +182,7 @@ export function AskCard({
           </button>
         </div>
       )}
-      {error ? <p className="mt-3 text-[13px] text-[#E65707]">{error}</p> : null}
+      {error ? <p className="mt-3 text-[13px] text-[var(--rk-danger)]">{error}</p> : null}
     </div>
   );
 }

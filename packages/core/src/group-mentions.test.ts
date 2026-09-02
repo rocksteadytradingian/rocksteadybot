@@ -89,6 +89,36 @@ describe("resolveGroupTargetBotIds", () => {
       }),
     ).toEqual(["a"]);
   });
+
+  it("picks the configured leader when unmentioned", () => {
+    expect(
+      resolveGroupTargetBotIds({
+        text: "hello team",
+        members,
+        defaultBotId: "c",
+      }),
+    ).toEqual(["c"]);
+  });
+
+  it("ignores a leader who is not a member", () => {
+    expect(
+      resolveGroupTargetBotIds({
+        text: "hello team",
+        members,
+        defaultBotId: "outsider",
+      }),
+    ).toEqual(["a"]);
+  });
+
+  it("still wakes mentioned bots instead of the leader", () => {
+    expect(
+      resolveGroupTargetBotIds({
+        text: "@BotB summarize",
+        members,
+        defaultBotId: "c",
+      }),
+    ).toEqual(["b"]);
+  });
 });
 
 describe("inferHandoffTargetName", () => {

@@ -328,9 +328,9 @@ export default function Integrations() {
           <Text style={styles.section}>Project key</Text>
           <Text style={styles.secondary}>
             {projectKey?.source === "user"
-              ? "Saved for this account"
+              ? "Project key is active. Add Gmail in the list to connect Google."
               : projectKey?.source === "server"
-                ? "Using the server project key"
+                ? "Using the server project key. Add Gmail in the list to connect Google."
                 : "Paste a Platform project key (ak_…), not a For You consumer key"}
           </Text>
           <TextInput

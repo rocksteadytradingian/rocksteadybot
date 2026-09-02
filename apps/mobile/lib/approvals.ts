@@ -1,4 +1,5 @@
 import type { PendingApproval } from "@rakazo/contracts";
+import { isStackRepairApproval } from "@rakazo/core";
 import { rpc } from "./api";
 
 export function fetchPendingApprovals() {
@@ -16,6 +17,7 @@ export function formatRequestedAt(iso: string): string {
 }
 
 export function approvalThreadParams(item: PendingApproval) {
+  if (isStackRepairApproval(item)) return null;
   if (item.groupId) {
     return {
       pathname: "/group-thread" as const,

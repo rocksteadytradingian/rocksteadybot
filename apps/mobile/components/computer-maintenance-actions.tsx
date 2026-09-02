@@ -3,7 +3,7 @@ import { useState } from "react";
 import { Alert, Pressable, Text, View } from "react-native";
 import { rpc } from "../lib/api";
 
-type Action = "recover" | "reset" | "update";
+type Action = "recover" | "reset" | "update" | "restart";
 
 export function ComputerMaintenanceActions({
   botId,
@@ -19,13 +19,16 @@ export function ComputerMaintenanceActions({
 
   if (!computer) return null;
 
-  const busy = Boolean(computer.busyBotName) || computer.state === "booting";
+  const stuckBooting = computer.state === "booting";
+  const busy = stuckBooting ? false : Boolean(computer.busyBotName);
 
   async function run(action: Action) {
     setPending(action);
     setError(null);
     try {
-      if (action === "recover") await rpc("computer/recover", { botId });
+      if (action === "restart" || (action === "recover" && stuckBooting)) {
+        await rpc("computer/restart", { botId });
+      } else if (action === "recover") await rpc("computer/recover", { botId });
       else if (action === "reset") await rpc("computer/reset", { botId });
       else await rpc("computer/update", { botId });
       await onChanged();
@@ -51,11 +54,17 @@ export function ComputerMaintenanceActions({
     <View style={{ marginTop: 16, gap: 10 }}>
       <Pressable
         disabled={busy || pending !== null}
-        onPress={() => void run("recover")}
+        onPress={() => void run(stuckBooting ? "restart" : "recover")}
         style={{ opacity: busy || pending !== null ? 0.4 : 1 }}
       >
         <Text style={{ color: "#85858A", fontSize: 14 }}>
-          {pending === "recover" ? "Recovering…" : "Recover computer"}
+          {pending === "recover" || pending === "restart"
+            ? stuckBooting
+              ? "Restarting…"
+              : "Recovering…"
+            : stuckBooting
+              ? "Restart computer"
+              : "Recover computer"}
         </Text>
       </Pressable>
       <Pressable

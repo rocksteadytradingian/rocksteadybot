@@ -126,21 +126,21 @@ export function PeerMessagesOverlay({
   }, []);
 
   return (
-    <div className="absolute inset-0 z-30 flex items-center justify-center bg-[rgba(4,4,5,.62)] p-4 sm:p-10">
+    <div className="absolute inset-0 z-30 flex items-center justify-center bg-[var(--rk-overlay)] p-4 sm:p-10">
       <div
         ref={panelRef}
         role="dialog"
         aria-modal="true"
         aria-labelledby="peer-messages-title"
         tabIndex={-1}
-        className="flex h-[min(680px,100%)] w-[880px] max-w-full flex-col overflow-hidden rounded-[26px] border border-[var(--rk-hairline-strong)] bg-[var(--rk-panel)] shadow-[0_40px_90px_rgba(0,0,0,.55)] outline-none"
+        className="flex h-[min(680px,100%)] w-[880px] max-w-full flex-col overflow-hidden rounded-[26px] border border-[var(--rk-hairline-strong)] bg-[var(--rk-panel)] shadow-[var(--rk-shadow)] outline-none"
       >
         <div className="flex items-start justify-between px-6 pt-6 sm:px-8 sm:pt-7">
           <div>
             <div id="peer-messages-title" className="text-2xl font-medium text-[var(--rk-ink)]">
               <Trans>Bot messages</Trans>
             </div>
-            <p className="mt-1 text-[13.5px] text-[#7A7A80]">
+            <p className="mt-1 text-[13.5px] text-[var(--rk-muted)]">
               {!historyReady ? (
                 <Trans>Loading peer messages…</Trans>
               ) : conversations.length === 0 ? (
@@ -184,7 +184,7 @@ export function PeerMessagesOverlay({
                     onClick={() => setSelectedId(conversation.peerBotId)}
                     className={`mb-1.5 block w-full rounded-[13px] border px-3.5 py-2.5 text-start ${
                       active
-                        ? "border-[#2F2F34] bg-[#1B1B1E]"
+                        ? "border-[var(--rk-hairline-strong)] bg-[var(--rk-surface-2)]"
                         : "border-transparent hover:bg-[var(--rk-hover)]"
                     }`}
                   >
@@ -209,10 +209,10 @@ export function PeerMessagesOverlay({
                   >
                     <div
                       className={`max-w-[80%] rounded-[16px] px-4 py-2.5 ${
-                        sent ? "bg-[var(--rk-surface-2)]" : "bg-[var(--rk-surface)]"
+                        sent ? "bg-[var(--rk-hover)]" : "bg-[var(--rk-surface)]"
                       }`}
                     >
-                      <div className="mb-1 text-[12px] text-[#7A7A80]">
+                      <div className="mb-1 text-[12px] text-[var(--rk-muted)]">
                         {sent ? `${botName} → ${peerMessage.peerBotName}` : peerMessage.peerBotName}
                       </div>
                       <div className="text-[14.5px] leading-[1.5] text-[var(--rk-body)]" dir="auto">

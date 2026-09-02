@@ -148,6 +148,56 @@ describe("projectMessages", () => {
     expect(durable[0]?.blocks[0]).toMatchObject({ status: "completed", result: "ok" });
   });
 
+  it("keeps a durable failure message after live progress is cleared", () => {
+    const messages = projectMessages([
+      {
+        id: "e1",
+        threadId: "t1",
+        seq: 0,
+        type: "thread.message.created",
+        payload: { messageId: "m1", role: "user", blocks: [{ kind: "text", text: "hi" }] },
+        createdAt: "2026-01-01T00:00:00.000Z",
+      },
+      {
+        id: "e2",
+        threadId: "t1",
+        seq: 1,
+        type: "thread.progress",
+        runId: "r1",
+        payload: { text: "working" },
+        createdAt: "2026-01-01T00:00:01.000Z",
+      },
+      {
+        id: "e3",
+        threadId: "t1",
+        seq: 2,
+        type: "thread.message.created",
+        runId: "r1",
+        payload: {
+          messageId: "m2",
+          role: "bot",
+          blocks: [{ kind: "text", text: "You have no credits remaining." }],
+        },
+        createdAt: "2026-01-01T00:00:02.000Z",
+      },
+      {
+        id: "e4",
+        threadId: "t1",
+        seq: 3,
+        type: "run.failed",
+        runId: "r1",
+        payload: { error: "You have no credits remaining." },
+        createdAt: "2026-01-01T00:00:03.000Z",
+      },
+    ]);
+    expect(messages).toHaveLength(2);
+    expect(messages[1]).toMatchObject({
+      id: "m2",
+      role: "bot",
+      blocks: [{ kind: "text", text: "You have no credits remaining." }],
+    });
+  });
+
   it("drops prior history when a later clear event is replayed", () => {
     const messages = projectMessages([
       {

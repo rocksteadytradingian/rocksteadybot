@@ -144,113 +144,114 @@ export function AuthPage({ mode }: { mode: AuthMode }) {
         <WindowChrome />
       </div>
       <div className="flex flex-1 items-center justify-center px-6 py-8">
-      <form onSubmit={submit} className="flex w-[460px] flex-col items-center">
-        <div className="flex h-[74px] w-[74px] items-center justify-center gap-[11px] rounded-full bg-[var(--rk-mark)]">
-          <span className="h-5 w-[9px] rounded-full bg-[var(--rk-mark-dot)]" />
-          <span className="h-5 w-[9px] rounded-full bg-[var(--rk-mark-dot)]" />
-        </div>
-        <h1 className="mb-[38px] mt-[30px] text-[38px] tracking-[-0.02em]">{title}</h1>
-        {mode === "up" ? (
-          <label className="mb-4 w-full text-[16px] text-[var(--rk-muted)]">
-            <Trans>Name</Trans>
-            <input
-              id="name"
-              name="name"
-              autoComplete="name"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder={t`Your name`}
-              className="mt-2 w-full rounded-[13px] border border-[var(--rk-hairline-strong)] bg-[var(--rk-input)] px-[18px] py-[17px] text-[17px] text-[var(--rk-ink)] outline-none"
-            />
-          </label>
-        ) : null}
-        {mode === "reset" ? null : (
-          <label className="w-full text-[16px] text-[var(--rk-muted)]">
-            <Trans>Email</Trans>
-            <input
-              id="email"
-              name="email"
-              autoComplete="username"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              placeholder={t`Your email address`}
-              type="email"
-              required
-              className="mt-2 w-full rounded-[13px] border border-[var(--rk-hairline-strong)] bg-[var(--rk-input)] px-[18px] py-[17px] text-[17px] text-[var(--rk-ink)] outline-none"
-            />
-          </label>
-        )}
-        {mode === "forgot" ? null : (
-          <label
-            className={`${mode === "reset" ? "w-full" : "mt-4 w-full"} text-[16px] text-[var(--rk-muted)]`}
-          >
-            <Trans>Password</Trans>
-            <input
-              id={mode === "in" ? "current-password" : "new-password"}
-              name="password"
-              autoComplete={mode === "in" ? "current-password" : "new-password"}
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              placeholder={t`Password`}
-              type="password"
-              required
-              className="mt-2 w-full rounded-[13px] border border-[var(--rk-hairline-strong)] bg-[var(--rk-input)] px-[18px] py-[17px] text-[17px] text-[var(--rk-ink)] outline-none"
-            />
-          </label>
-        )}
-        {mode === "in" ? (
-          <Link
-            to="/forgot-password"
-            className="mt-4 text-[17px] font-medium text-[var(--rk-ink)] underline underline-offset-4"
-          >
-            Forgot password?
-          </Link>
-        ) : null}
-        {error ? <p className="mt-3 w-full text-sm text-[#C94244]">{error}</p> : null}
-        {notice ? <p className="mt-3 w-full text-sm text-[var(--rk-muted)]">{notice}</p> : null}
-        <button
-          type="submit"
-          disabled={pending}
-          className="mt-3 w-full rounded-[13px] bg-[var(--rk-solid)] py-[18px] text-center text-[17px] font-medium text-[var(--rk-solid-ink)] hover:opacity-90"
-        >
-          {pending ? (
-            <Trans>Working…</Trans>
-          ) : mode === "in" ? (
-            <Trans>Continue with email</Trans>
-          ) : mode === "up" ? (
-            <Trans>Create account</Trans>
-          ) : mode === "forgot" ? (
-            <Trans>Send reset link</Trans>
-          ) : (
-            <Trans>Save password</Trans>
+        <form onSubmit={submit} className="flex w-[460px] flex-col items-center">
+          <div className="flex h-[74px] w-[74px] items-center justify-center gap-[11px] rounded-full bg-[var(--rk-mark)]">
+            <span className="h-5 w-[9px] rounded-full bg-[var(--rk-mark-dot)]" />
+            <span className="h-5 w-[9px] rounded-full bg-[var(--rk-mark-dot)]" />
+          </div>
+          <h1 className="mb-[38px] mt-[30px] text-[38px] tracking-[-0.02em]">{title}</h1>
+          {mode === "up" ? (
+            <label className="mb-4 w-full text-[16px] text-[var(--rk-muted)]">
+              <Trans>Name</Trans>
+              <input
+                id="name"
+                name="name"
+                autoComplete="name"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder={t`Your name`}
+                className="mt-2 w-full rounded-[13px] border border-[var(--rk-hairline-strong)] bg-[var(--rk-input)] px-[18px] py-[17px] text-[17px] text-[var(--rk-ink)] outline-none"
+              />
+            </label>
+          ) : null}
+          {mode === "reset" ? null : (
+            <label className="w-full text-[16px] text-[var(--rk-muted)]">
+              <Trans>Email</Trans>
+              <input
+                id="email"
+                name="email"
+                autoComplete="username"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder={t`Your email address`}
+                type="email"
+                required
+                className="mt-2 w-full rounded-[13px] border border-[var(--rk-hairline-strong)] bg-[var(--rk-input)] px-[18px] py-[17px] text-[17px] text-[var(--rk-ink)] outline-none"
+              />
+            </label>
           )}
-        </button>
-        <p className="mt-[30px] text-[16px] text-[var(--rk-muted-2)]">
+          {mode === "forgot" ? null : (
+            <label
+              className={`${mode === "reset" ? "w-full" : "mt-4 w-full"} text-[16px] text-[var(--rk-muted)]`}
+            >
+              <Trans>Password</Trans>
+              <input
+                id={mode === "in" ? "current-password" : "new-password"}
+                name="password"
+                autoComplete={mode === "in" ? "current-password" : "new-password"}
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder={t`Password`}
+                type="password"
+                required
+                minLength={mode === "in" ? undefined : 8}
+                className="mt-2 w-full rounded-[13px] border border-[var(--rk-hairline-strong)] bg-[var(--rk-input)] px-[18px] py-[17px] text-[17px] text-[var(--rk-ink)] outline-none"
+              />
+            </label>
+          )}
           {mode === "in" ? (
-            <>
-              <Link to="/forgot-password" className="font-medium text-[var(--rk-ink)] underline">
-                Forgot password?
-              </Link>
-              <span aria-hidden="true"> · </span>
-              <Trans>Don’t have an account?</Trans>{" "}
-              <Link to="/sign-up" className="font-medium text-[var(--rk-ink)]">
-                <Trans>Sign up</Trans>
-              </Link>
-            </>
-          ) : mode === "up" ? (
-            <>
-              <Trans>Already have an account?</Trans>{" "}
+            <Link
+              to="/forgot-password"
+              className="mt-4 text-[17px] font-medium text-[var(--rk-ink)] underline underline-offset-4"
+            >
+              Forgot password?
+            </Link>
+          ) : null}
+          {error ? <p className="mt-3 w-full text-sm text-[var(--rk-danger)]">{error}</p> : null}
+          {notice ? <p className="mt-3 w-full text-sm text-[var(--rk-muted)]">{notice}</p> : null}
+          <button
+            type="submit"
+            disabled={pending}
+            className="mt-3 w-full rounded-[13px] bg-[var(--rk-solid)] py-[18px] text-center text-[17px] font-medium text-[var(--rk-solid-ink)] hover:opacity-90"
+          >
+            {pending ? (
+              <Trans>Working…</Trans>
+            ) : mode === "in" ? (
+              <Trans>Continue with email</Trans>
+            ) : mode === "up" ? (
+              <Trans>Create account</Trans>
+            ) : mode === "forgot" ? (
+              <Trans>Send reset link</Trans>
+            ) : (
+              <Trans>Save password</Trans>
+            )}
+          </button>
+          <p className="mt-[30px] text-[16px] text-[var(--rk-muted-2)]">
+            {mode === "in" ? (
+              <>
+                <Link to="/forgot-password" className="font-medium text-[var(--rk-ink)] underline">
+                  Forgot password?
+                </Link>
+                <span aria-hidden="true"> · </span>
+                <Trans>Don’t have an account?</Trans>{" "}
+                <Link to="/sign-up" className="font-medium text-[var(--rk-ink)]">
+                  <Trans>Sign up</Trans>
+                </Link>
+              </>
+            ) : mode === "up" ? (
+              <>
+                <Trans>Already have an account?</Trans>{" "}
+                <Link to="/sign-in" className="font-medium text-[var(--rk-ink)]">
+                  <Trans>Sign in</Trans>
+                </Link>
+              </>
+            ) : (
               <Link to="/sign-in" className="font-medium text-[var(--rk-ink)]">
                 <Trans>Sign in</Trans>
               </Link>
-            </>
-          ) : (
-            <Link to="/sign-in" className="font-medium text-[var(--rk-ink)]">
-              <Trans>Sign in</Trans>
-            </Link>
-          )}
-        </p>
-      </form>
+            )}
+          </p>
+        </form>
       </div>
     </div>
   );

@@ -32,7 +32,7 @@ function ScopePicker({
             onClick={() => onChange(option)}
             className={`flex-1 rounded-[11px] border px-3.5 py-2.5 text-[14px] disabled:opacity-40 ${
               value === option
-                ? "border-[var(--rk-muted-2)] bg-[var(--rk-surface-2)] text-[var(--rk-ink)]"
+                ? "border-[var(--rk-hairline-strong)] bg-[var(--rk-surface-2)] text-[var(--rk-ink)]"
                 : "border-[var(--rk-hairline-strong)] text-[var(--rk-muted)]"
             }`}
           >
@@ -126,14 +126,14 @@ export function MemorySettingsOverlay({
   }
 
   return (
-    <div className="absolute inset-0 z-30 flex items-center justify-center bg-[rgba(4,4,5,.62)] p-4 sm:p-10">
-      <div className="flex max-h-[min(760px,100%)] w-[560px] max-w-full flex-col overflow-hidden rounded-[26px] border border-[var(--rk-hairline-strong)] bg-[var(--rk-panel)] shadow-[0_40px_90px_rgba(0,0,0,.55)]">
+    <div className="absolute inset-0 z-30 flex items-center justify-center bg-[var(--rk-overlay)] p-4 sm:p-10">
+      <div className="flex max-h-[min(760px,100%)] w-[560px] max-w-full flex-col overflow-hidden rounded-[26px] border border-[var(--rk-hairline-strong)] bg-[var(--rk-panel)] shadow-[var(--rk-shadow)]">
         <div className="flex items-start justify-between px-6 pt-6 sm:px-8 sm:pt-7">
           <div>
             <div className="text-2xl font-medium text-[var(--rk-ink)]">
               <Trans>Memory</Trans>
             </div>
-            <p className="mt-1 text-[13.5px] text-[#7A7A80]">
+            <p className="mt-1 text-[13.5px] text-[var(--rk-muted)]">
               {registration?.description ?? (
                 <Trans>Manage the workspace semantic memory provider.</Trans>
               )}
@@ -151,7 +151,7 @@ export function MemorySettingsOverlay({
         </div>
 
         <div className="rk-scroll min-h-0 flex-1 overflow-y-auto px-6 py-6 sm:px-8">
-          {error ? <p className="mb-4 text-sm text-[#C94244]">{error}</p> : null}
+          {error ? <p className="mb-4 text-sm text-[var(--rk-danger)]">{error}</p> : null}
 
           {config === undefined ? (
             <p className="text-sm text-[var(--rk-muted)]">
@@ -214,7 +214,7 @@ export function MemorySettingsOverlay({
               <registration.SettingsForm busy={busy} onConnect={connect} />
             </>
           ) : (
-            <p className="text-sm text-[#C94244]">
+            <p className="text-sm text-[var(--rk-danger)]">
               <Trans>The selected memory provider is not available in this build.</Trans>
             </p>
           )}

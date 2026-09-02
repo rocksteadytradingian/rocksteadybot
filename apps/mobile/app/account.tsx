@@ -1,4 +1,5 @@
-import type { AvatarStyle } from "@rakazo/contracts";
+import type { AvatarStyle, MemoryDocument } from "@rakazo/contracts";
+import { canRepairHostStack, USER_IDENTITY_PATH } from "@rakazo/core";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useEffect, useState } from "react";
 import {
@@ -14,8 +15,15 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useAvatarStyle } from "../components/avatar-style";
 import { BotAvatar } from "../components/bot-avatar";
-import type { MobileBot } from "../lib/api";
-import { deleteAccount, type MobileMe, rpc, signOut } from "../lib/api";
+import { IdentityFileField, identityDocumentByPath } from "../components/identity-file-field";
+import {
+  currentApiBase,
+  deleteAccount,
+  type MobileBot,
+  type MobileMe,
+  rpc,
+  signOut,
+} from "../lib/api";
 import { confirmDeleteBot } from "../lib/bot-lifecycle";
 import { native } from "../lib/native";
 
@@ -29,22 +37,36 @@ export default function Account() {
   const [avatarError, setAvatarError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [archivedBots, setArchivedBots] = useState<MobileBot[]>([]);
+  const [bots, setBots] = useState<MobileBot[]>([]);
   const [usage, setUsage] = useState<{
     runs: number;
     inputTokens: number;
     outputTokens: number;
   } | null>(null);
   const { avatarStyle, updateAvatarStyle } = useAvatarStyle();
+  const [userDoc, setUserDoc] = useState<MemoryDocument | null>(null);
+  const [userFile, setUserFile] = useState("");
 
   useEffect(() => {
     void rpc<MobileMe>("me")
       .then(setMe)
+      .catch(() => undefined);
+    void rpc<MobileBot[]>("bots/list")
+      .then(setBots)
       .catch(() => undefined);
     void rpc<MobileBot[]>("bots/listArchived")
       .then(setArchivedBots)
       .catch(() => undefined);
     void rpc<{ runs: number; inputTokens: number; outputTokens: number }>("usage/summary")
       .then(setUsage)
+      .catch(() => undefined);
+    void rpc<MemoryDocument[]>("memory/list", { scope: "user" })
+      .then((documents) => {
+        const next = identityDocumentByPath(documents, USER_IDENTITY_PATH);
+        if (!next) return;
+        setUserDoc(next);
+        setUserFile(next.content);
+      })
       .catch(() => undefined);
   }, []);
 
@@ -92,6 +114,38 @@ export default function Account() {
     router.replace("/sign-in");
   }
 
+  async function restartComputer() {
+    const target = bots.find((bot) => bot.status === "running") ?? bots[0];
+    if (!target || pending) return;
+    setPending(true);
+    try {
+      await rpc("threads/stop", { botId: target.id }).catch(() => undefined);
+      await rpc("computer/restart", { botId: target.id });
+    } catch (err) {
+      Alert.alert(
+        "Could not restart the computer",
+        err instanceof Error ? err.message : "Try again.",
+      );
+    } finally {
+      setPending(false);
+    }
+  }
+
+  async function restartApi() {
+    if (pending) return;
+    setPending(true);
+    try {
+      const result = await rpc<{ ok: boolean; error?: string }>("approvals/repairStack", {
+        restartApi: true,
+      });
+      if (!result.ok) throw new Error(result.error || "Could not restart the API");
+    } catch (err) {
+      Alert.alert("Could not restart the API", err instanceof Error ? err.message : "Try again.");
+    } finally {
+      setPending(false);
+    }
+  }
+
   function confirmDeletion() {
     setError(null);
     Alert.alert(
@@ -129,6 +183,43 @@ export default function Account() {
         <View style={styles.profile}>
           <Text style={styles.name}>{me?.name || "Your account"}</Text>
           {me?.email ? <Text style={styles.email}>{me.email}</Text> : null}
+        </View>
+        <View style={styles.profile}>
+          <IdentityFileField
+            path={USER_IDENTITY_PATH}
+            hint="How you are."
+            value={userFile}
+            onChange={setUserFile}
+            labelStyle={styles.settingsTitle}
+            hintStyle={styles.settingsExplanation}
+            inputStyle={styles.identityInput}
+          />
+          <Pressable
+            accessibilityRole="button"
+            disabled={pending || !userDoc}
+            onPress={() => {
+              if (!userDoc) return;
+              setPending(true);
+              setError(null);
+              void rpc<MemoryDocument>("memory/update", {
+                documentId: userDoc.id,
+                content: userFile,
+              })
+                .then(setUserDoc)
+                .catch((err) =>
+                  setError(err instanceof Error ? err.message : "Could not save USER.md"),
+                )
+                .finally(() => setPending(false));
+            }}
+            style={({ pressed }) => [
+              styles.identitySave,
+              (pending || !userDoc) && styles.disabled,
+              pressed && styles.pressed,
+            ]}
+          >
+            <Text style={styles.identitySaveLabel}>{pending ? "Saving…" : "Save"}</Text>
+          </Pressable>
+          {error ? <Text style={styles.error}>{error}</Text> : null}
         </View>
         {focus !== "usage" ? usageBlock : null}
 
@@ -205,6 +296,30 @@ export default function Account() {
           </View>
           <Text style={styles.chevron}>›</Text>
         </Pressable>
+
+        {bots.length > 0 ? (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Restart computer"
+            disabled={pending}
+            onPress={() => void restartComputer()}
+            style={({ pressed }) => [styles.settingsButton, pressed && styles.pressed]}
+          >
+            <Text style={styles.settingsTitle}>{pending ? "Restarting…" : "Restart computer"}</Text>
+          </Pressable>
+        ) : null}
+
+        {canRepairHostStack(Boolean(me?.isDeploymentOwner), currentApiBase()) ? (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Restart API"
+            disabled={pending}
+            onPress={() => void restartApi()}
+            style={({ pressed }) => [styles.settingsButton, pressed && styles.pressed]}
+          >
+            <Text style={styles.settingsTitle}>{pending ? "Restarting…" : "Restart API"}</Text>
+          </Pressable>
+        ) : null}
 
         <Pressable
           accessibilityRole="button"
@@ -310,6 +425,30 @@ const styles = StyleSheet.create({
   email: {
     color: native.secondaryLabel,
     fontSize: 15,
+  },
+  identityInput: {
+    marginTop: 10,
+    minHeight: 140,
+    borderRadius: 12,
+    backgroundColor: native.page,
+    color: native.label,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    fontSize: 15,
+    textAlignVertical: "top",
+  },
+  identitySave: {
+    marginTop: 12,
+    minHeight: 44,
+    borderRadius: 12,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: native.label,
+  },
+  identitySaveLabel: {
+    color: native.page,
+    fontSize: 16,
+    fontWeight: "600",
   },
   button: {
     minHeight: 50,

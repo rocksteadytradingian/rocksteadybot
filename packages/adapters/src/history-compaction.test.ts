@@ -2,6 +2,7 @@ import type {
   AgentRunRequest,
   AgentRuntime,
   JobPublisher,
+  SemanticMemoryProvider,
   SemanticMemoryResponse,
 } from "@rakazo/adapter-kit";
 import { historyCompactJob } from "@rakazo/adapter-kit";
@@ -239,6 +240,7 @@ function compactionHarness(
       userId: string;
       workspaceId: string;
       botId?: string;
+      purpose?: "run" | "compaction";
     }) => Promise<AgentRunRequest["model"]>;
     withMemoryProvider?: boolean;
     memoryConfig?: {
@@ -331,7 +333,7 @@ function compactionHarness(
       yield { type: "done", text: "Summary of 50 messages." };
     }),
   };
-  const saveMemory = vi.fn(
+  const saveMemory = vi.fn<SemanticMemoryProvider["save"]>(
     async (): Promise<SemanticMemoryResponse> => ({ ok: true, value: undefined }),
   );
   const purgeHistory = vi.fn(
@@ -534,6 +536,7 @@ describe("compactHistory", () => {
       userId: "user-1",
       workspaceId: "workspace-1",
       botId: "bot-1",
+      purpose: "compaction",
     });
     expect(harness.runtime.run.mock.calls[0]![0].model).toEqual({
       provider: "anthropic",

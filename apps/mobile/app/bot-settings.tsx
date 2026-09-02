@@ -1,4 +1,4 @@
-import type { ComputerStatus } from "@rakazo/contracts";
+import type { ComputerStatus, MemoryDocument } from "@rakazo/contracts";
 import {
   BOT_DESCRIPTION_MAX_LENGTH,
   BOT_NAME_MAX_LENGTH,
@@ -6,11 +6,13 @@ import {
   type ComputerMode,
   normalizeCreateBotProfile,
 } from "@rakazo/contracts";
+import { BOT_IDENTITY_PATH, SOUL_IDENTITY_PATH } from "@rakazo/core";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import { useEffect, useState } from "react";
 import { Pressable, ScrollView, Text, TextInput } from "react-native";
 import { ComputerMaintenanceActions } from "../components/computer-maintenance-actions";
 import { ComputerModePicker } from "../components/computer-mode-picker";
+import { IdentityFileField, identityDocumentByPath } from "../components/identity-file-field";
 import { type MobileBot, rpc } from "../lib/api";
 
 type BotSettingsRecord = MobileBot & {
@@ -28,20 +30,35 @@ export default function BotSettingsScreen() {
   const [computer, setComputer] = useState<ComputerStatus | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
+  const [soulDoc, setSoulDoc] = useState<MemoryDocument | null>(null);
+  const [identityDoc, setIdentityDoc] = useState<MemoryDocument | null>(null);
+  const [soul, setSoul] = useState("");
+  const [identity, setIdentity] = useState("");
 
   useEffect(() => {
     if (!botId) return;
     void Promise.all([
       rpc<BotSettingsRecord>("bots/get", { botId }),
       rpc<ComputerStatus>("computer/status", { botId }).catch(() => null),
+      rpc<MemoryDocument[]>("memory/list", { botId }).catch(() => [] as MemoryDocument[]),
     ])
-      .then(([next, status]) => {
+      .then(([next, status, documents]) => {
         setBot(next);
         setName(next.name);
         setTitle(next.title);
         setDescription(next.description ?? "");
         setComputerMode(next.computerMode);
         setComputer(status);
+        const soulFile = identityDocumentByPath(documents, SOUL_IDENTITY_PATH);
+        const identityFile = identityDocumentByPath(documents, BOT_IDENTITY_PATH);
+        if (soulFile) {
+          setSoulDoc(soulFile);
+          setSoul(soulFile.content);
+        }
+        if (identityFile) {
+          setIdentityDoc(identityFile);
+          setIdentity(identityFile.content);
+        }
       })
       .catch((err) => setError(err instanceof Error ? err.message : "Could not load bot"));
   }, [botId]);
@@ -68,6 +85,12 @@ export default function BotSettingsScreen() {
       }
       if (computerMode !== bot.computerMode) {
         await rpc("bots/setComputer", { botId, mode: computerMode });
+      }
+      if (soulDoc && soul !== soulDoc.content) {
+        await rpc("memory/update", { documentId: soulDoc.id, content: soul });
+      }
+      if (identityDoc && identity !== identityDoc.content) {
+        await rpc("memory/update", { documentId: identityDoc.id, content: identity });
       }
       // Use key presence so clearing title/description to "" still persists.
       if (Object.keys(input).length > 1) {
@@ -135,6 +158,40 @@ export default function BotSettingsScreen() {
             padding: 16,
             color: "#ECECEE",
             minHeight: 120,
+            textAlignVertical: "top",
+          }}
+        />
+        <IdentityFileField
+          path={SOUL_IDENTITY_PATH}
+          hint="How it speaks."
+          value={soul}
+          onChange={setSoul}
+          labelStyle={{ color: "#85858A", marginTop: 16, fontSize: 14 }}
+          hintStyle={{ color: "#6C6C70", marginTop: 4, fontSize: 12 }}
+          inputStyle={{
+            marginTop: 8,
+            backgroundColor: "#1A1A1D",
+            borderRadius: 11,
+            padding: 16,
+            color: "#ECECEE",
+            minHeight: 140,
+            textAlignVertical: "top",
+          }}
+        />
+        <IdentityFileField
+          path={BOT_IDENTITY_PATH}
+          hint="How it acts."
+          value={identity}
+          onChange={setIdentity}
+          labelStyle={{ color: "#85858A", marginTop: 16, fontSize: 14 }}
+          hintStyle={{ color: "#6C6C70", marginTop: 4, fontSize: 12 }}
+          inputStyle={{
+            marginTop: 8,
+            backgroundColor: "#1A1A1D",
+            borderRadius: 11,
+            padding: 16,
+            color: "#ECECEE",
+            minHeight: 140,
             textAlignVertical: "top",
           }}
         />

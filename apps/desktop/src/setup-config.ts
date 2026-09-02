@@ -125,6 +125,27 @@ export function servesBundledRenderer(targetUrl: string): boolean {
   }
 }
 
+/**
+ * Packaged shells pointed at local Vite must load that origin, not the
+ * snapshot baked into `resources/web`. Performance runs that still want the
+ * snapshot against loopback set `RAKAZO_FORCE_BUNDLED_RENDERER=1`.
+ */
+export function shouldInstallBundledRenderer(
+  targetUrl: string,
+  env: Partial<
+    Pick<NodeJS.ProcessEnv, "RAKAZO_DISABLE_BUNDLED_RENDERER" | "RAKAZO_FORCE_BUNDLED_RENDERER">
+  > = process.env,
+): boolean {
+  if (env.RAKAZO_DISABLE_BUNDLED_RENDERER === "1") return false;
+  if (!servesBundledRenderer(targetUrl)) return false;
+  if (env.RAKAZO_FORCE_BUNDLED_RENDERER === "1") return true;
+  try {
+    return !isLoopbackHost(new URL(targetUrl).hostname);
+  } catch {
+    return false;
+  }
+}
+
 /** Each Rakazo origin gets its own persistent cookie and storage partition. */
 export function sessionPartitionForServerUrl(targetUrl: string): string | null {
   try {

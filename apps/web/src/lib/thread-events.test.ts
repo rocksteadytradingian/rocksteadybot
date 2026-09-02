@@ -522,6 +522,42 @@ describe("thread event reduction", () => {
     expect(next?.cursor).toBe(10);
   });
 
+  it("keeps a durable failure message after the run ends", () => {
+    const runA = threadRun("run-a", "bot-a");
+    const initial: ThreadSnapshot = {
+      ...snapshot([
+        {
+          ...message("progress:run-a", [{ kind: "progress", text: "…" }]),
+          runId: runA.id,
+        },
+      ]),
+      run: runA,
+      activeRuns: [runA],
+    };
+    const created = reduceThreadSnapshot(
+      initial,
+      event({
+        type: "thread.message.created",
+        seq: 9,
+        runId: runA.id,
+        payload: {
+          messageId: "fail-1",
+          role: "bot",
+          blocks: [{ kind: "text", text: "You have no credits remaining." }],
+        },
+      }),
+    );
+    const failed = reduceThreadSnapshot(
+      created,
+      event({ type: "run.failed", seq: 10, runId: runA.id }),
+    );
+    expect(failed?.messages.map((item) => item.id)).toEqual(["fail-1"]);
+    expect(failed?.messages[0]?.blocks).toEqual([
+      { kind: "text", text: "You have no credits remaining." },
+    ]);
+    expect(failed?.run).toBeNull();
+  });
+
   it("applies the durable waiting-input run transition without a refresh", () => {
     const initial: ThreadSnapshot = {
       ...snapshot([]),

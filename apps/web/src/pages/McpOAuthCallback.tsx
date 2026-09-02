@@ -55,17 +55,17 @@ export function McpOAuthCallbackPage() {
             <Trans>Finishing MCP connection…</Trans>
           )}
         </div>
-        {error ? <p className="mt-2 max-w-md text-sm text-[#85858B]">{error}</p> : null}
+        {error ? <p className="mt-2 max-w-md text-sm text-[var(--rk-muted)]">{error}</p> : null}
         {showReturn ? (
           <button
             type="button"
             onClick={() => navigate("/app")}
-            className="mt-5 rounded-xl bg-[#7785FF] px-4 py-2 text-sm font-semibold text-[#090A12]"
+            className="mt-5 rounded-xl bg-[var(--rk-solid)] px-4 py-2 text-sm font-semibold text-[var(--rk-solid-ink)]"
           >
             <Trans>Return to RocksteadyBot</Trans>
           </button>
         ) : (
-          <p className="mt-2 text-sm text-[#85858B]">
+          <p className="mt-2 text-sm text-[var(--rk-muted)]">
             {error || done ? (
               <Trans>You can close this window.</Trans>
             ) : (

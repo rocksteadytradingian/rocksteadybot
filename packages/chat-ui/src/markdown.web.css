@@ -90,7 +90,7 @@
 .rk-chat-markdown code {
   border: 1px solid var(--rk-hairline-strong);
   border-radius: 0.35em;
-  background: var(--rk-input);
+  background: var(--rk-surface-2);
   color: var(--rk-ink);
   padding: 0.08em 0.32em;
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
@@ -104,7 +104,7 @@
   overflow-x: auto;
   border: 1px solid var(--rk-hairline-strong);
   border-radius: 0.75em;
-  background: var(--rk-input);
+  background: var(--rk-surface-2);
   color: var(--rk-ink);
   padding: 0.8em 0.9em;
   direction: ltr;
@@ -114,7 +114,6 @@
 .rk-chat-markdown pre code {
   border: 0;
   background: transparent;
-  color: inherit;
   padding: 0;
   font-size: 0.84em;
   white-space: pre;
@@ -158,7 +157,7 @@
 }
 
 .rk-chat-markdown blockquote {
-  border-left: 3px solid var(--rk-muted-2);
+  border-left: 3px solid var(--rk-hairline-strong);
   padding-left: 0.85em;
   color: var(--rk-muted);
 }
@@ -182,9 +181,18 @@
 }
 
 .rk-chat-markdown th {
-  background: var(--rk-surface-2);
-  color: var(--rk-ink);
+  background: var(--rk-ink);
+  color: var(--rk-page);
   font-weight: 600;
+}
+
+.rk-chat-markdown td {
+  background: var(--rk-surface);
+  color: var(--rk-body);
+}
+
+.rk-chat-markdown tbody tr:nth-child(even) td {
+  background: var(--rk-surface-2);
 }
 
 .rk-chat-markdown hr {

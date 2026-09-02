@@ -157,7 +157,7 @@ export function SkillDraftCard({
           type="button"
           disabled={busy}
           onClick={() => void saveDraft()}
-          className="rounded-[11px] bg-[#F1F1EF] px-4 py-2 text-[14px] text-[#17171A] disabled:opacity-40"
+          className="rounded-[11px] bg-[var(--rk-solid)] px-4 py-2 text-[14px] text-[var(--rk-solid-ink)] disabled:opacity-40"
         >
           {saved ? <Trans>Saved</Trans> : busy ? <Trans>Saving…</Trans> : <Trans>Save</Trans>}
         </button>

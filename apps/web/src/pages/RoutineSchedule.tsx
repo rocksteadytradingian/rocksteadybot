@@ -222,7 +222,7 @@ function RoutineSchedule({
           height="17"
           viewBox="0 0 24 24"
           fill="none"
-          stroke="var(--rk-muted)"
+          stroke="currentColor"
           strokeWidth="1.6"
           strokeLinecap="round"
           strokeLinejoin="round"
@@ -233,9 +233,11 @@ function RoutineSchedule({
           <path d="M12 7v5l3 2" />
         </svg>
         <span className="text-[14.5px] text-[var(--rk-ink)]">{lead}</span>
-        {detail ? <span className="flex-1 text-[14.5px] text-[var(--rk-muted)]">{detail}</span> : null}
+        {detail ? (
+          <span className="flex-1 text-[14.5px] text-[var(--rk-muted)]">{detail}</span>
+        ) : null}
       </div>
-      <div className="mt-2.5 flex flex-wrap items-center gap-2 rounded-[11px] bg-[var(--rk-surface-2)] px-2.5 py-2.5 text-[14px] text-[var(--rk-body)]">
+      <div className="mt-2.5 flex flex-wrap items-center gap-2 rounded-[11px] bg-[var(--rk-surface-2)] px-2.5 py-2.5 text-[14px] text-[var(--rk-muted)]">
         <select
           className="rk-schedule-select"
           value={value.freq}
@@ -267,7 +269,7 @@ function RoutineSchedule({
             placeholder="*/3 * * * *"
             aria-label={t`Cron expression`}
             onChange={(event) => patch({ cron: event.target.value })}
-            className="min-w-[120px] flex-1 rounded-lg border-0 bg-[var(--rk-surface-2)] px-2.5 py-1.5 font-mono text-[13.5px] text-[var(--rk-ink)] outline-none"
+            className="min-w-[120px] flex-1 rounded-lg border-0 bg-[var(--rk-input)] px-2.5 py-1.5 font-mono text-[13.5px] text-[var(--rk-ink)] outline-none"
           />
         ) : null}
       </div>

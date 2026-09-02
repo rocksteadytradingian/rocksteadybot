@@ -32,6 +32,8 @@ export function resolveGroupTargetBotIds(input: {
   members: GroupMemberRef[];
   /** Bot ids from typed mention chips (non-members are ignored for wake). */
   explicitMentions?: string[];
+  /** Optional group leader; used only when nobody is mentioned. */
+  defaultBotId?: string | null;
 }): string[] {
   const membersById = new Map(input.members.map((member) => [member.id, member]));
   const targetIds = new Set<string>();
@@ -49,11 +51,20 @@ export function resolveGroupTargetBotIds(input: {
     }
   }
 
-  if (targetIds.size === 0 && input.members[0]) {
-    targetIds.add(input.members[0].id);
+  if (targetIds.size === 0) {
+    const fallback = fallbackGroupBotId(input.members, input.defaultBotId);
+    if (fallback) targetIds.add(fallback);
   }
 
   return [...targetIds];
+}
+
+export function fallbackGroupBotId(
+  members: readonly GroupMemberRef[],
+  defaultBotId?: string | null,
+): string | undefined {
+  if (defaultBotId && members.some((member) => member.id === defaultBotId)) return defaultBotId;
+  return members[0]?.id;
 }
 
 export function inferHandoffTargetName(prompt: string): string | undefined {

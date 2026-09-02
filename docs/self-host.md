@@ -76,11 +76,13 @@ To use an operator-controlled OpenAI-compatible server such as Ollama, LM Studio
 MLX, list its model IDs and an endpoint that both the API and worker processes can reach:
 
 ```env
-RAKAZO_LOCAL_MODELS=qwen3:4b,llama3.1:8b
+RAKAZO_LOCAL_MODELS=qwen3:8b,qwen3:30b-a3b,qwen3.8:27b
 RAKAZO_LOCAL_MODELS_URL=http://127.0.0.1:11434/v1
 RAKAZO_LOCAL_CONTEXT_WINDOW=32768
 RAKAZO_LOCAL_MAX_TOKENS=4096
 ```
+
+Assign those ids to **Fast** (simple), **Smart** (planning and coding), and **Heavy** (hard and vision) in **Settings → Models**, then set **Auto** as the workspace or per-bot default. Auto classifies each turn and runs the matching local model. Pinning a specific id still bypasses the router.
 
 The loopback default is suitable when running Rakazo from a source checkout. In Docker Compose,
 use the model server's Compose service name or another address reachable from the containers.

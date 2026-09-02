@@ -10,6 +10,7 @@ export default function NewGroup() {
   const [bots, setBots] = useState<MobileBot[]>([]);
   const [name, setName] = useState("");
   const [selected, setSelected] = useState<string[]>([]);
+  const [defaultBotId, setDefaultBotId] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
 
@@ -21,9 +22,13 @@ export default function NewGroup() {
 
   function toggle(botId: string) {
     setSelected((current) => {
-      if (current.includes(botId)) return current.filter((id) => id !== botId);
-      if (current.length >= GROUP_MEMBER_MAX) return current;
-      return [...current, botId];
+      const next = current.includes(botId)
+        ? current.filter((id) => id !== botId)
+        : current.length >= GROUP_MEMBER_MAX
+          ? current
+          : [...current, botId];
+      if (defaultBotId && !next.includes(defaultBotId)) setDefaultBotId("");
+      return next;
     });
   }
 
@@ -41,6 +46,7 @@ export default function NewGroup() {
       const group = await rpc<{ id: string; name: string }>("groups/create", {
         name: name.trim(),
         botIds: selected,
+        ...(defaultBotId ? { defaultBotId } : {}),
       });
       router.replace({
         pathname: "/group-thread",
@@ -97,6 +103,46 @@ export default function NewGroup() {
             </Pressable>
           );
         })}
+        <Text
+          accessibilityLabel="Leader, the bot that responds first"
+          style={{ color: "#85858A", fontSize: 14, marginTop: 20 }}
+        >
+          Leader
+        </Text>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityState={{ selected: !defaultBotId }}
+          onPress={() => setDefaultBotId("")}
+          style={{
+            flexDirection: "row",
+            alignItems: "center",
+            gap: 12,
+            paddingVertical: 12,
+          }}
+        >
+          <Text style={{ flex: 1, color: "#ECECEE", fontSize: 16 }}>First member</Text>
+          <Text style={{ color: "#6C6C70" }}>{defaultBotId ? "" : "✓"}</Text>
+        </Pressable>
+        {bots
+          .filter((bot) => selected.includes(bot.id))
+          .map((bot) => (
+            <Pressable
+              key={`leader-${bot.id}`}
+              accessibilityRole="button"
+              accessibilityState={{ selected: defaultBotId === bot.id }}
+              onPress={() => setDefaultBotId(bot.id)}
+              style={{
+                flexDirection: "row",
+                alignItems: "center",
+                gap: 12,
+                paddingVertical: 12,
+              }}
+            >
+              <BotAvatar color={bot.color} size={34} status={bot.status} />
+              <Text style={{ flex: 1, color: "#ECECEE", fontSize: 16 }}>{bot.name}</Text>
+              <Text style={{ color: "#6C6C70" }}>{defaultBotId === bot.id ? "✓" : ""}</Text>
+            </Pressable>
+          ))}
         {error ? <Text style={{ color: "#FF6B6B", marginTop: 12 }}>{error}</Text> : null}
         <Pressable
           onPress={() => void create()}

@@ -70,11 +70,11 @@ export function TeachComputerSection({
 
   return (
     <div className="mt-[30px]">
-      <div className="mb-3 text-[14px] text-[var(--rk-body)]">
+      <div className="mb-3 text-[14px] text-[var(--rk-muted)]">
         <Trans>Teach a task</Trans>
       </div>
       {!teachAvailable ? (
-        <div className="rounded-[11px] border border-[var(--rk-hairline-strong)] px-3 py-3 text-[13.5px] leading-[1.5] text-[var(--rk-body)]">
+        <div className="rounded-[11px] border border-[var(--rk-hairline-strong)] px-3 py-3 text-[13.5px] leading-[1.5] text-[var(--rk-muted-2)]">
           {computer?.kind === "desktop" ? (
             <Trans>
               Teaching needs a graphical sandbox computer. Desktop-host bots can run shell tasks,
@@ -93,7 +93,7 @@ export function TeachComputerSection({
         />
       ) : goalOpen ? (
         <div className="rounded-[11px] border border-[var(--rk-hairline-strong)] bg-[var(--rk-surface)] px-3 py-3">
-          <label htmlFor="teach-goal-input" className="text-[13px] text-[var(--rk-body)]">
+          <label htmlFor="teach-goal-input" className="text-[13px] text-[var(--rk-muted)]">
             <Trans>What result will you demonstrate?</Trans>
           </label>
           <textarea
@@ -117,7 +117,7 @@ export function TeachComputerSection({
             <button
               type="button"
               onClick={() => setGoalOpen(false)}
-              className="rounded-[11px] border border-[var(--rk-ink)] px-4 py-2 text-[14px] text-[var(--rk-ink)]"
+              className="rounded-[11px] border border-[var(--rk-hairline-strong)] px-4 py-2 text-[14px] text-[var(--rk-ink)]"
             >
               <Trans>Cancel</Trans>
             </button>
@@ -128,7 +128,7 @@ export function TeachComputerSection({
           type="button"
           data-testid="teach-start-button"
           onClick={() => setGoalOpen(true)}
-          className="flex items-center gap-2.5 px-2.5 py-2.5 text-[14.5px] text-[var(--rk-ink)]"
+          className="flex items-center gap-2.5 px-2.5 py-2.5 text-[14.5px] text-[var(--rk-muted)]"
         >
           <Trans>+ Teach a task</Trans>
         </button>
@@ -136,7 +136,7 @@ export function TeachComputerSection({
 
       {saved.length > 0 ? (
         <>
-          <div className="mt-[22px] mb-3 text-[14px] text-[var(--rk-body)]">
+          <div className="mt-[22px] mb-3 text-[14px] text-[var(--rk-muted)]">
             <Trans>Saved skills</Trans>
           </div>
           {saved.map((skill) => (
@@ -158,14 +158,14 @@ export function TeachComputerSection({
                       setLocalBusy(false);
                     }
                   }}
-                  className="rounded-[11px] border border-[var(--rk-ink)] px-3 py-1.5 text-[13px] text-[var(--rk-ink)]"
+                  className="rounded-[11px] border border-[var(--rk-hairline-strong)] px-3 py-1.5 text-[13px] text-[var(--rk-ink)]"
                 >
                   <Trans>Test</Trans>
                 </button>
                 <button
                   type="button"
                   onClick={() => onAddRoutine(skill)}
-                  className="rounded-[11px] border border-[var(--rk-ink)] px-3 py-1.5 text-[13px] text-[var(--rk-ink)]"
+                  className="rounded-[11px] border border-[var(--rk-hairline-strong)] px-3 py-1.5 text-[13px] text-[var(--rk-ink)]"
                 >
                   <Trans>Add to routine</Trans>
                 </button>

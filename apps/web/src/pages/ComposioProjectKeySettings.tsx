@@ -52,9 +52,9 @@ export function ComposioProjectKeySettings({
       </div>
       <div className="mt-1 text-[13.5px] text-[var(--rk-muted)]">
         {userSaved ? (
-          <Trans>Saved for this account</Trans>
+          <Trans>Project key is active. Add Gmail in the list to connect Google.</Trans>
         ) : status?.source === "server" ? (
-          <Trans>Using the server project key</Trans>
+          <Trans>Using the server project key. Add Gmail in the list to connect Google.</Trans>
         ) : (
           <Trans>Paste a Platform project key (ak_…), not a For You consumer key</Trans>
         )}
@@ -76,7 +76,7 @@ export function ComposioProjectKeySettings({
           className="w-full rounded-[11px] border border-[var(--rk-hairline)] bg-[var(--rk-input)] px-3.5 py-2.5 text-[14px] text-[var(--rk-ink)] outline-none"
         />
       </label>
-      {error ? <p className="mt-2 text-sm text-[#C94244]">{error}</p> : null}
+      {error ? <p className="mt-2 text-sm text-[var(--rk-danger)]">{error}</p> : null}
       <div className="mt-3 flex flex-wrap gap-2">
         <Button
           type="button"

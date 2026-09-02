@@ -8,12 +8,12 @@ const buttonVariants = cva(
   {
     variants: {
       variant: {
-        default: "bg-[var(--rk-solid)] text-[color:var(--rk-solid-ink)] hover:opacity-90",
-        cream: "bg-[var(--rk-surface-2)] text-[color:var(--rk-ink)] hover:bg-[var(--rk-hover)]",
+        default: "bg-[var(--rk-solid)] text-[var(--rk-solid-ink)] hover:opacity-90",
+        cream: "bg-[var(--rk-surface-2)] text-[var(--rk-ink)] hover:bg-[var(--rk-hover)]",
         outline:
-          "border border-[var(--rk-ink)] bg-[var(--rk-surface)] text-[color:var(--rk-ink)] hover:bg-[var(--rk-hover)]",
-        ghost: "text-[color:var(--rk-body)] hover:bg-[var(--rk-hover)]",
-        pill: "rounded-full bg-[var(--rk-solid)] text-[color:var(--rk-solid-ink)] hover:opacity-90 hover:scale-[1.04]",
+          "border border-[var(--rk-hairline-strong)] bg-[var(--rk-surface)] text-[var(--rk-ink)] hover:bg-[var(--rk-hover)]",
+        ghost: "text-[var(--rk-muted)] hover:bg-[var(--rk-hover)] hover:text-[var(--rk-ink)]",
+        pill: "rounded-full bg-[var(--rk-solid)] text-[var(--rk-solid-ink)] hover:opacity-90 hover:scale-[1.04]",
       },
       size: {
         default: "h-10 px-4",

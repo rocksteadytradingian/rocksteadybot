@@ -4,7 +4,7 @@ import { useState } from "react";
 import { rpc } from "../lib/rpc";
 import { BuiButton, BuiCard } from "./beautiful-ui/primitives";
 
-type Action = "recover" | "reset" | "update";
+type Action = "recover" | "reset" | "update" | "restart";
 
 export function ComputerMaintenanceActions({
   botId,
@@ -24,12 +24,14 @@ export function ComputerMaintenanceActions({
 
   if (!computer) return null;
 
-  const busy = Boolean(computer.busyBotName) || computer.state === "booting";
+  const stuckBooting = computer.state === "booting";
+  const busy = stuckBooting ? false : Boolean(computer.busyBotName);
   const showRecover =
     computer.state === "error" ||
     computer.state === "running" ||
     computer.state === "suspended" ||
-    computer.state === "stopped";
+    computer.state === "stopped" ||
+    stuckBooting;
   const showReset = showRecover;
   const showUpdate = computer.updateAvailable;
 
@@ -37,7 +39,9 @@ export function ComputerMaintenanceActions({
     setPending(action);
     setError(null);
     try {
-      if (action === "recover") await rpc.computer.recover({ botId });
+      if (action === "restart" || (action === "recover" && stuckBooting)) {
+        await rpc.computer.restart({ botId });
+      } else if (action === "recover") await rpc.computer.recover({ botId });
       else if (action === "reset") await rpc.computer.reset({ botId });
       else await rpc.computer.update({ botId });
       setConfirmReset(false);
@@ -53,8 +57,21 @@ export function ComputerMaintenanceActions({
     <div className={compact ? "flex flex-col items-start gap-2" : "mt-4 flex flex-col gap-3"}>
       <div className={compact ? "flex flex-wrap gap-2" : "flex flex-col gap-2"}>
         {showRecover ? (
-          <BuiButton disabled={busy || pending !== null} onClick={() => void run("recover")}>
-            {pending === "recover" ? <Trans>Recovering…</Trans> : <Trans>Recover computer</Trans>}
+          <BuiButton
+            disabled={busy || pending !== null}
+            onClick={() => void run(stuckBooting ? "restart" : "recover")}
+          >
+            {pending === "recover" || pending === "restart" ? (
+              stuckBooting ? (
+                <Trans>Restarting…</Trans>
+              ) : (
+                <Trans>Recovering…</Trans>
+              )
+            ) : stuckBooting ? (
+              <Trans>Restart computer</Trans>
+            ) : (
+              <Trans>Recover computer</Trans>
+            )}
           </BuiButton>
         ) : null}
         {showReset ? (
@@ -83,10 +100,12 @@ export function ComputerMaintenanceActions({
           </Trans>
         </p>
       ) : null}
-      {error && !confirmReset ? <p className="text-[13px] text-[#E65707]">{error}</p> : null}
+      {error && !confirmReset ? (
+        <p className="text-[13px] text-[var(--rk-danger)]">{error}</p>
+      ) : null}
       {confirmReset ? (
         <div
-          className="fixed inset-0 z-50 grid place-items-center bg-[rgba(4,4,5,.72)] px-6"
+          className="fixed inset-0 z-50 grid place-items-center bg-[var(--rk-overlay)] px-6"
           role="alertdialog"
           aria-modal="true"
           aria-labelledby="reset-computer-title"
@@ -102,7 +121,7 @@ export function ComputerMaintenanceActions({
             >
               <Trans>Restore the last saved workspace. Unsaved work on the computer is lost.</Trans>
             </p>
-            {error ? <p className="mt-2 text-[13px] text-[#E65707]">{error}</p> : null}
+            {error ? <p className="mt-2 text-[13px] text-[var(--rk-danger)]">{error}</p> : null}
             <div className="mt-4 flex justify-end gap-2">
               <BuiButton onClick={() => setConfirmReset(false)}>
                 <Trans>Cancel</Trans>

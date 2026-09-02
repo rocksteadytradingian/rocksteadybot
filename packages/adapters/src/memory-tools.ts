@@ -6,8 +6,9 @@ export function selectMemoryTools(
   tools: ConnectorTool[],
   semanticMemoryConfigured: boolean,
 ): ConnectorTool[] {
+  // Keep `remember` when semantic memory is on so identity files can still be written.
   return semanticMemoryConfigured
-    ? tools.filter((tool) => tool.name !== "remember")
+    ? tools
     : tools.filter((tool) => !SEMANTIC_MEMORY_TOOL_NAMES.has(tool.name));
 }
 

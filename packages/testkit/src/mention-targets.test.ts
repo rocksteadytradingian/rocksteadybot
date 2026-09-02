@@ -200,6 +200,45 @@ describeWithDatabase("structured @ mention targets", () => {
     expect(after - before).toBe(1);
   });
 
+  it("wakes the configured group leader on an unmentioned send", async () => {
+    const cookie = await signup(app, `mention-group-leader-${stamp}@rakazo.test`, "Group Leader");
+    const botA = await rpc<{ id: string }>(app, cookie, "bots/create", {
+      name: "BotA",
+      title: "",
+      description: "",
+      instructions: "",
+      notifyOnFinish: true,
+    });
+    const botB = await rpc<{ id: string }>(app, cookie, "bots/create", {
+      name: "BotB",
+      title: "",
+      description: "",
+      instructions: "",
+      notifyOnFinish: true,
+    });
+    const group = await rpc<{ id: string; threadId: string; defaultBotId: string | null }>(
+      app,
+      cookie,
+      "groups/create",
+      {
+        name: "Squad",
+        botIds: [botA.id, botB.id],
+        defaultBotId: botB.id,
+      },
+    );
+    expect(group.defaultBotId).toBe(botB.id);
+    const sent = await rpc<{ runId: string; runIds?: string[] }>(app, cookie, "threads/send", {
+      groupId: group.id,
+      text: "hello team",
+    });
+    const runIds = sent.runIds ?? [sent.runId];
+    const runs = await prisma.run.findMany({
+      where: { id: { in: runIds } },
+      select: { botId: true },
+    });
+    expect(runs.map((run) => run.botId)).toEqual([botB.id]);
+  });
+
   it("wakes a mentioned group member from typed bot chips and ignores non-members", async () => {
     const cookie = await signup(app, `mention-out-${stamp}@rakazo.test`, "Out Of Chat");
     const botA = await rpc<{ id: string }>(app, cookie, "bots/create", {

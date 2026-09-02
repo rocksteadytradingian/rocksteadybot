@@ -84,6 +84,16 @@ describe("composio tool mapping", () => {
     );
   });
 
+  it("explains a read-only project key instead of dumping the 403 JSON", () => {
+    expect(
+      sanitizeComposioError(
+        '403 {"error":{"message":"This API key does not have the permissions required for POST /api/v3.1/tool_router/session. This route requires \\"session_management\\" write access, but the key has read access for \\"session_management\\".","slug":"APIKey_InsufficientPermissions"}}',
+      ),
+    ).toBe(
+      "This project key is read-only. Create a Platform API key with write access, paste it here, then add Gmail.",
+    );
+  });
+
   it("paginates until the cursor ends", async () => {
     const pages = [
       { items: ["gmail", "github"], cursor: "page-2" },
@@ -265,5 +275,21 @@ describe("Composio during pnpm test", () => {
       resolveUserApiKey: async () => undefined,
     });
     expect(stack.composio).toBeInstanceOf(ComposioConnector);
+  });
+
+  it("still lists curated apps when the live Composio session fails", async () => {
+    const connector = new ComposioConnector({ envApiKey: "ak_invalidsessionkey" });
+    const items = await connector.catalog({
+      operationId: "test",
+      traceId: "test",
+      workspaceId: "workspace",
+      userId: "user-1",
+      signal: new AbortController().signal,
+    });
+    expect(items.some((item) => item.slug === "gmail")).toBe(true);
+    expect(items.find((item) => item.slug === "gmail")).toMatchObject({
+      connectorId: "composio",
+      connected: false,
+    });
   });
 });

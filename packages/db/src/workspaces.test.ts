@@ -66,14 +66,15 @@ describe("setActiveWorkspace", () => {
 
 describe("createWorkspace", () => {
   it("provisions membership, memory, and copied model credentials", async () => {
-    const secretCreate = vi.fn(async () => ({ id: "secret-2" }));
     const modelCreate = vi.fn();
+    const secretCreate = vi.fn();
     const prisma = {
       $transaction: vi.fn(async (callback: (tx: unknown) => Promise<void>) =>
         callback({
           organization: { create: vi.fn() },
           member: { create: vi.fn() },
-          memoryDocument: { create: vi.fn() },
+          memoryDocument: { create: vi.fn(), findFirst: vi.fn(async () => null) },
+          bot: { findFirst: vi.fn() },
           notificationPreference: { create: vi.fn() },
           userModelCredential: {
             findMany: vi.fn(async () => [
@@ -92,7 +93,6 @@ describe("createWorkspace", () => {
             create: vi.fn(),
           },
           secret: {
-            findMany: vi.fn(async () => [{ id: "secret-1", kind: "model", ciphertext: "cipher" }]),
             create: secretCreate,
           },
         }),
@@ -106,21 +106,14 @@ describe("createWorkspace", () => {
     });
     expect(created.name).toBe("Work");
     expect(created.id).toMatch(/^[a-f0-9]{32}$/);
-    expect(secretCreate).toHaveBeenCalledWith({
-      data: {
-        userId: "user-1",
-        workspaceId: created.id,
-        kind: "model",
-        ciphertext: "cipher",
-      },
-    });
+    expect(secretCreate).not.toHaveBeenCalled();
     expect(modelCreate).toHaveBeenCalledWith({
       data: {
         userId: "user-1",
         workspaceId: created.id,
         provider: "openrouter",
         label: "OpenRouter",
-        secretId: "secret-2",
+        secretId: "secret-1",
         isDefault: true,
         defaultModel: "test/model",
       },
@@ -159,5 +152,49 @@ describe("deleteWorkspace", () => {
       name: "WorkspaceError",
       code: "last_workspace",
     } satisfies Partial<WorkspaceError>);
+  });
+
+  it("does not delete a model secret still used by another workspace", async () => {
+    const secretDeleteMany = vi.fn(async () => ({ count: 0 }));
+    const prisma = {
+      member: {
+        findUnique: vi.fn(async () => ({ role: "owner" })),
+        findMany: vi.fn(async () => [
+          { organization: { id: "personal", name: "Personal" } },
+          { organization: { id: "work", name: "Work" } },
+        ]),
+      },
+      $transaction: vi.fn(async (callback: (tx: unknown) => Promise<void>) =>
+        callback({
+          session: { updateMany: vi.fn() },
+          userModelCredential: {
+            deleteMany: vi.fn(),
+            findMany: vi.fn(async () => [{ secretId: "shared-secret" }]),
+          },
+          userVoiceCredential: {
+            deleteMany: vi.fn(),
+            findMany: vi.fn(async () => []),
+          },
+          secret: {
+            updateMany: vi.fn(),
+            deleteMany: secretDeleteMany,
+          },
+          organization: { delete: vi.fn() },
+        }),
+      ),
+    } as unknown as PrismaClient;
+
+    await deleteWorkspace(prisma, {
+      userId: "user-1",
+      workspaceId: "work",
+      currentWorkspaceId: "work",
+    });
+    expect(secretDeleteMany).toHaveBeenCalledWith({
+      where: {
+        userId: "user-1",
+        workspaceId: "work",
+        id: { notIn: ["shared-secret"] },
+      },
+    });
   });
 });

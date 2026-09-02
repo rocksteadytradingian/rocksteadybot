@@ -16,6 +16,30 @@ body,
   font-family: "Geist Variable", ui-sans-serif, system-ui, sans-serif;
 }
 
+::placeholder {
+  color: var(--rk-muted);
+  opacity: 1;
+}
+
+.rk-banner-danger,
+.rk-banner-warning {
+  border: 1px solid color-mix(in srgb, currentColor 40%, var(--rk-hairline));
+  background: color-mix(in srgb, currentColor 12%, var(--rk-surface));
+}
+
+.rk-banner-danger {
+  color: var(--rk-danger);
+}
+
+.rk-banner-warning {
+  color: var(--rk-warning);
+}
+
+option {
+  background-color: var(--rk-input);
+  color: var(--rk-ink);
+}
+
 .rk-scroll::-webkit-scrollbar {
   width: 6px;
 }

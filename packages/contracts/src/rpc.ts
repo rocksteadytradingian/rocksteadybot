@@ -37,6 +37,7 @@ import {
   ModelConnectInputSchema,
   ModelCredentialSchema,
   ModelOAuthBeginSchema,
+  ModelSetRouterInputSchema,
   RoutineSchema,
   ScratchpadItemSchema,
   ScratchpadItemStatusSchema,
@@ -58,7 +59,12 @@ import {
 } from "./domain.js";
 import { ProductEventSchema } from "./events.js";
 import { Id } from "./ids.js";
-import { PendingApprovalSchema, RunsListOutputSchema } from "./runs.js";
+import {
+  PendingApprovalSchema,
+  RepairStackInput,
+  RunsListOutputSchema,
+  StackRepairResultSchema,
+} from "./runs.js";
 import { SearchQueryOutputSchema } from "./search.js";
 
 const botId = z.object({ botId: Id });
@@ -114,7 +120,7 @@ const threadSendInput = threadTarget
 
 export const appContract = {
   health: oc.output(z.object({ ok: z.literal(true), version: z.string() })),
-  me: oc.output(MeSchema),
+  me: oc.input(z.object({ restoreLastWorking: z.boolean().optional() }).nullish()).output(MeSchema),
   preferences: {
     update: oc.input(z.object({ avatarStyle: AvatarStyleSchema })).output(MeSchema),
   },
@@ -180,6 +186,7 @@ export const appContract = {
     setDefault: oc
       .input(z.object({ provider: z.string(), modelId: z.string() }))
       .output(z.object({ ok: z.literal(true) })),
+    setRouter: oc.input(ModelSetRouterInputSchema).output(z.object({ ok: z.literal(true) })),
   },
   bots: {
     list: oc.output(z.array(BotSchema)),
@@ -258,6 +265,7 @@ export const appContract = {
     recover: oc.input(botId).output(ComputerStatusSchema),
     reset: oc.input(botId).output(ComputerStatusSchema),
     update: oc.input(botId).output(ComputerStatusSchema),
+    restart: oc.input(botId).output(ComputerStatusSchema),
     takeover: oc.input(botId).output(z.object({ leaseId: Id, expiresAt: z.string() })),
     release: oc
       .input(
@@ -521,6 +529,7 @@ export const appContract = {
   },
   approvals: {
     list: oc.output(z.array(PendingApprovalSchema)),
+    repairStack: oc.input(RepairStackInput.optional()).output(StackRepairResultSchema),
   },
   artifacts: {
     list: oc.input(botId).output(z.array(ArtifactSchema)),

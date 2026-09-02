@@ -125,12 +125,9 @@ export function formatSkillsCatalogInstruction(entries: SkillCatalogEntry[]): st
   if (entries.length === 0) return undefined;
   const lines = entries.slice(0, 50).map(skillCatalogLine).join("\n");
   return [
-    "Available Claude Agent Skills (SKILL.md recipes shared across assistants; generic how-tos, not account-specific routines). The Pi runtime already understands this format; we persist and inject them:",
+    "Skills (SKILL.md recipes). When one matches, call skill_read and follow it. Prefer matching skills over improvising.",
     lines,
-    "When a skill matches the user's request, call skill_read for that name and follow it immediately. Prefer matching skills over improvising multi-step recipes.",
-    "Users can force a skill with /Name in the composer. Routines may mention a skill as @Name — that loads the skill at fire time.",
-    "Create a skill with skill_create when a multi-step task is worth repeating (or when asked). After creating one, mention /Name so the user can open it.",
-    "Only skill_update / skill_delete user-created skills (not builtin or plugin).",
+    "Force with /Name. Routines may @Name. skill_create for repeatable recipes (then mention /Name). skill_update / skill_delete only user skills, not builtin or plugin.",
   ].join("\n");
 }
 

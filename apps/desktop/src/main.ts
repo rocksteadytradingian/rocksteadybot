@@ -36,7 +36,12 @@ import {
   sessionPartitionForServerUrl,
 } from "./setup-config.js";
 import { clearSetup, readSetup, writeSetup } from "./setup-store.js";
-import { browserWindowOptions, setupWindowOptions, TITLEBAR_OVERLAY_HEIGHT, warmWindowTtlMs } from "./window-options.js";
+import {
+  browserWindowOptions,
+  setupWindowOptions,
+  TITLEBAR_OVERLAY_HEIGHT,
+  warmWindowTtlMs,
+} from "./window-options.js";
 
 const PERFORMANCE_USER_DATA = process.env.RAKAZO_PERFORMANCE_USER_DATA;
 const PROBE_TIMEOUT_MS = 8_000;
@@ -72,6 +77,10 @@ markOnce("rk:main:module-evaluated");
 if (PERFORMANCE_USER_DATA) {
   app.setPath("userData", PERFORMANCE_USER_DATA);
   app.setPath("sessionData", path.join(PERFORMANCE_USER_DATA, "session"));
+}
+const gotSingleInstanceLock = app.requestSingleInstanceLock();
+if (!gotSingleInstanceLock) {
+  app.quit();
 }
 app.once("will-finish-launching", () => markOnce("rk:main:will-finish-launching"));
 app.once("ready", () => markOnce("rk:main:ready"));
@@ -887,7 +896,28 @@ function safeOrigin(targetUrl: string) {
   }
 }
 
+/** Bring an already-open setup or app window forward (used for the single-instance relaunch). */
+function focusExistingWindow(): boolean {
+  if (setupWindow !== null && !setupWindow.isDestroyed()) {
+    setupWindow.show();
+    setupWindow.focus();
+    return true;
+  }
+  if (mainWindow !== null && !mainWindow.isDestroyed()) {
+    clearTimeout(warmWindowTimer);
+    mainWindow.show();
+    mainWindow.focus();
+    return true;
+  }
+  return false;
+}
+
+app.on("second-instance", () => {
+  focusExistingWindow();
+});
+
 app.whenReady().then(async () => {
+  if (!gotSingleInstanceLock) return;
   try {
     const userDataDir = app.getPath("userData");
     currentSetup = await readSetup(userDataDir);

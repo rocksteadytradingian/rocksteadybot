@@ -19,6 +19,9 @@ describe("describeToolActivity", () => {
     expect(describeToolActivity("read_memory", { path: "MEMORY.md", scope: "bot" })).toBe(
       "Reading memory MEMORY.md",
     );
+    expect(describeToolActivity("remember", { path: "SOUL.md", content: "…" })).toBe(
+      "Saving SOUL.md",
+    );
     expect(describeToolActivity("search_memory", { query: "rust" })).toBe("Searching memory: rust");
     expect(describeToolActivity("run_subagent", { name: "scout", task: "…" })).toBe(
       "Delegating to helper: scout",

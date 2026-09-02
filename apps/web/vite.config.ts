@@ -181,10 +181,21 @@ export default defineConfig(({ mode }) => {
       port: webPort,
       strictPort: true,
       ...(process.env.VITE_DEV_HOST ? { allowedHosts: true as const } : {}),
+      headers: {
+        "Cache-Control": "no-store",
+      },
+      watch: {
+        // pnpm links workspace packages through node_modules; Vite ignores that
+        // tree by default, so token/button edits never reach a browser refresh.
+        ignored: ["!**/node_modules/@rakazo/**"],
+      },
       proxy: {
         "/api": { target: api, changeOrigin: true, xfwd: true },
         "/rpc": { target: api, changeOrigin: true, xfwd: true },
       },
+    },
+    optimizeDeps: {
+      exclude: ["@rakazo/ui-tokens", "@rakazo/ui-web", "@rakazo/chat-ui"],
     },
     preview: {
       host: "0.0.0.0",

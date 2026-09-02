@@ -46,6 +46,7 @@ export function collectPendingApprovals(
     if (!matched) continue;
     pending.push({
       id: effect.id,
+      kind: "ask",
       runId: effect.run.id,
       messageId: matched.messageId,
       threadId: effect.run.threadId,
