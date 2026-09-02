@@ -506,10 +506,10 @@ describe("launcher files", () => {
     const cmd = await readFile(path.join(root, "apps/desktop/scripts/open-desktop.cmd"), "utf8");
     expect(cmd).toContain("docker-compose.desktop.yml");
     expect(cmd).toContain("electron.exe");
-    expect(cmd).toContain("--app=");
-    expect(cmd).toContain("Opening RocksteadyBot");
+    expect(cmd).toContain("ensure-desktop.cmd");
+    expect(cmd).toContain("Opening the desktop window");
     expect(cmd).toContain("goto fail");
-    expect(cmd).not.toMatch(/if defined ELECTRON if exist[\s\S]*else \(/);
+    expect(cmd).not.toContain("--app=");
     expect(cmd).toContain("http://127.0.0.1:5173");
     expect(cmd).toContain("install-desktop-shortcut.vbs");
     expect(cmd).toContain("free-own-ports.ps1");
@@ -549,6 +549,14 @@ describe("launcher files", () => {
     expect(setPassword).toContain("docker-compose.desktop.yml");
     expect(setPassword).toContain("auth:set-password");
     expect(setPassword).toContain("You do not need pnpm on Windows");
+    const ensureDesktop = await readFile(
+      path.join(root, "apps/desktop/scripts/ensure-desktop.cmd"),
+      "utf8",
+    );
+    expect(ensureDesktop).toContain("pnpm@9.15.0");
+    expect(ensureDesktop).toContain("--filter @rakazo/desktop");
+    expect(ensureDesktop).toContain("OpenJS.NodeJS.LTS");
+    expect(ensureDesktop).toContain("electron.exe");
   });
 
   it("injects a Forgot password fallback into baked preview HTML", async () => {

@@ -102,14 +102,13 @@ if errorlevel 1 (
 )
 "%DOCKER%" compose !COMPOSE_ENV! -f "%COMPOSE_FILE%" -f "%DESKTOP_COMPOSE%" exec -T web grep -R "Can't reach the server." /app/apps/web/dist >nul
 
-set "APP_URL=http://127.0.0.1:5173/sign-in"
-set "CHROME=%ProgramFiles%\Google\Chrome\Application\chrome.exe"
-set "CHROME_X86=%ProgramFiles(x86)%\Google\Chrome\Application\chrome.exe"
-set "EDGE=%ProgramFiles%\Microsoft\Edge\Application\msedge.exe"
-set "EDGE_X86=%ProgramFiles(x86)%\Microsoft\Edge\Application\msedge.exe"
 set "RAKAZO_WEB_URL=http://127.0.0.1:5173"
 set "RAKAZO_DISABLE_LOCAL_STACK=1"
 set "RAKAZO_PERFORMANCE_CLEAR_CACHE=1"
+
+echo Preparing the desktop app...
+call "%SCRIPT_DIR%ensure-desktop.cmd" "%ROOT%"
+if errorlevel 1 goto fail
 
 set "ELECTRON="
 if exist "%ROOT%\node_modules\electron\dist\electron.exe" set "ELECTRON=%ROOT%\node_modules\electron\dist\electron.exe"
@@ -117,42 +116,18 @@ if not defined ELECTRON if exist "%ROOT%\apps\desktop\node_modules\electron\dist
   set "ELECTRON=%ROOT%\apps\desktop\node_modules\electron\dist\electron.exe"
 )
 
-if defined ELECTRON if not exist "%ROOT%\apps\desktop\dist\main.js" (
-  echo Building the desktop app...
-  npx --yes pnpm@9.15.0 --config.engine-strict=false --filter @rakazo/desktop build >nul 2>&1
+if not defined ELECTRON (
+  echo The desktop app is not installed. Install Node.js LTS from https://nodejs.org then open this shortcut again.
+  goto fail
+)
+if not exist "%ROOT%\apps\desktop\dist\main.js" (
+  echo The desktop app did not build. Check the output above.
+  goto fail
 )
 
-rem cmd.exe ignores a chained else when the first IF is false, so Electron-missing
-rem must fall through to Chrome/Edge rather than using "if defined ELECTRON ... else".
-if defined ELECTRON (
-  if exist "%ROOT%\apps\desktop\dist\main.js" (
-    echo Opening the desktop window...
-    start "" /D "%ROOT%\apps\desktop" "!ELECTRON!" .
-    goto opened
-  )
-)
-if exist "!CHROME!" (
-  echo Opening RocksteadyBot...
-  start "" "!CHROME!" --app=!APP_URL!
-  goto opened
-)
-if exist "!CHROME_X86!" (
-  echo Opening RocksteadyBot...
-  start "" "!CHROME_X86!" --app=!APP_URL!
-  goto opened
-)
-if exist "!EDGE!" (
-  echo Opening RocksteadyBot...
-  start "" "!EDGE!" --app=!APP_URL!
-  goto opened
-)
-if exist "!EDGE_X86!" (
-  echo Opening RocksteadyBot...
-  start "" "!EDGE_X86!" --app=!APP_URL!
-  goto opened
-)
-echo Opening RocksteadyBot in the browser...
-start "" "!APP_URL!"
+echo Opening the desktop window...
+start "" /D "%ROOT%\apps\desktop" "!ELECTRON!" .
+goto opened
 
 :opened
 cscript //nologo "%SCRIPT_DIR%install-desktop-shortcut.vbs" "%ROOT%" >nul 2>&1
