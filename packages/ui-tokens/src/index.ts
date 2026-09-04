@@ -31,6 +31,13 @@ export const botColors = [
 ] as const;
 
 export {
+  RK_PALETTES,
+  RK_RADIUS,
+  type RkPalette,
+  rkCssVar,
+  rkPaletteById,
+} from "./palettes.js";
+export {
   canonicalUiThemeId,
   DEFAULT_UI_THEME,
   isUiThemeId,
