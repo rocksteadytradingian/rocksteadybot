@@ -5485,12 +5485,21 @@ function BotSettings({
             const selected = modelKey ? parseModelOptionKey(modelKey) : null;
             void (async () => {
               const writes: Array<Promise<void>> = [];
-              if (soulDoc && soul !== soulDoc.content) {
+              // Compare against "" when the doc is missing so an edit still
+              // counts; a missing doc means the server never provisioned it, so
+              // surface that instead of silently dropping the change.
+              if (soul !== (soulDoc?.content ?? "")) {
+                if (!soulDoc) {
+                  throw new Error(t`Identity files aren't available on this server yet`);
+                }
                 writes.push(
                   rpc.memory.update({ documentId: soulDoc.id, content: soul }).then(setSoulDoc),
                 );
               }
-              if (identityDoc && identity !== identityDoc.content) {
+              if (identity !== (identityDoc?.content ?? "")) {
+                if (!identityDoc) {
+                  throw new Error(t`Identity files aren't available on this server yet`);
+                }
                 writes.push(
                   rpc.memory
                     .update({ documentId: identityDoc.id, content: identity })

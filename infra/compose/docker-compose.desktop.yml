@@ -12,6 +12,18 @@ services:
       - ../../apps/api/src:/app/apps/api/src:ro
       - ../../packages/auth/src:/app/packages/auth/src:ro
       - ../../packages/adapters/src:/app/packages/adapters/src:ro
+      - ../../packages/db/src:/app/packages/db/src:ro
+      - ../../packages/core/src:/app/packages/core/src:ro
+  # Same bind mounts as api so a bot spawned from chat (spawn_bot) runs this
+  # tree's createBot / ensureIdentityDocuments instead of the baked image.
+  worker:
+    volumes:
+      - ../../apps/worker/src:/app/apps/worker/src:ro
+      - ../../packages/auth/src:/app/packages/auth/src:ro
+      - ../../packages/adapters/src:/app/packages/adapters/src:ro
+      - ../../packages/db/src:/app/packages/db/src:ro
+      - ../../packages/core/src:/app/packages/core/src:ro
+      - ../../packages/memory/src:/app/packages/memory/src:ro
   # Image dist/ is root-owned from the Dockerfile build. Vite empties it before
   # rebuilding from the bind-mounted checkout; run as root so unlink works
   # without rebuilding the image.

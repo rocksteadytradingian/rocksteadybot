@@ -88,10 +88,19 @@ export default function BotSettingsScreen() {
       if (computerMode !== bot.computerMode) {
         await rpc("bots/setComputer", { botId, mode: computerMode });
       }
-      if (soulDoc && soul !== soulDoc.content) {
+      // Compare against "" when the doc is missing so an edit still counts; a
+      // missing doc means the server never provisioned it, so surface that
+      // instead of silently dropping the change.
+      if (soul !== (soulDoc?.content ?? "")) {
+        if (!soulDoc) {
+          throw new Error(`${SOUL_IDENTITY_PATH} isn't available on this server yet`);
+        }
         await rpc("memory/update", { documentId: soulDoc.id, content: soul });
       }
-      if (identityDoc && identity !== identityDoc.content) {
+      if (identity !== (identityDoc?.content ?? "")) {
+        if (!identityDoc) {
+          throw new Error(`${BOT_IDENTITY_PATH} isn't available on this server yet`);
+        }
         await rpc("memory/update", { documentId: identityDoc.id, content: identity });
       }
       // Use key presence so clearing title/description to "" still persists.
