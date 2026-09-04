@@ -11,9 +11,12 @@ import {
   EMPTY_PLUGIN_CATALOG_MESSAGE,
   enrichPluginCatalogItem,
   type PluginMarketplaceFilter,
+  type PluginSourceFilter,
   pluginDescriptionFor,
   presentPluginCategories,
+  presentPluginSources,
   selectPluginEntries,
+  selectPluginEntriesBySource,
 } from "@rakazo/core";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -54,11 +57,18 @@ const PLUGIN_FILTER_LABELS: Record<PluginMarketplaceFilter, string> = {
   more: "More",
 };
 
+const PLUGIN_SOURCE_LABELS: Record<PluginSourceFilter, string> = {
+  all: "All sources",
+  composio: "Composio",
+  pipedream: "Pipedream",
+};
+
 export default function Integrations() {
   const { width } = useWindowDimensions();
   const catalogColumns = width >= 480 ? 2 : 1;
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<PluginMarketplaceFilter>("all");
+  const [source, setSource] = useState<PluginSourceFilter>("all");
   const [catalog, setCatalog] = useState<ConnectionCatalogItem[]>([]);
   const [sources, setSources] = useState<CapabilityInstall[]>([]);
   const [sourceKind, setSourceKind] = useState<SourceKind | null>(null);
@@ -79,8 +89,19 @@ export default function Integrations() {
   const { palette } = useTheme();
   const styles = useThemedStyles(makeStyles);
 
-  const entries = useMemo(() => catalog.map(enrichPluginCatalogItem), [catalog]);
-  const featuredTiles = useMemo(() => buildFeaturedConnectorTiles(catalog), [catalog]);
+  const availableSources = useMemo(() => presentPluginSources(catalog), [catalog]);
+  const sourceScopedCatalog = useMemo(
+    () => selectPluginEntriesBySource(catalog, source),
+    [catalog, source],
+  );
+  const entries = useMemo(
+    () => sourceScopedCatalog.map(enrichPluginCatalogItem),
+    [sourceScopedCatalog],
+  );
+  const featuredTiles = useMemo(
+    () => buildFeaturedConnectorTiles(sourceScopedCatalog),
+    [sourceScopedCatalog],
+  );
   const chips = useMemo(() => presentPluginCategories(entries), [entries]);
   const searching = query.trim().length > 0;
   const sections = useMemo(
@@ -119,6 +140,11 @@ export default function Integrations() {
     void loadLastBotId().then(setLastBotId);
     return () => connectionAttempt.current?.abort();
   }, []);
+
+  function selectSource(next: PluginSourceFilter) {
+    setSource(next);
+    setFilter("all");
+  }
 
   function closeAdvanced() {
     setAdvancedOpen(false);
@@ -309,6 +335,28 @@ export default function Integrations() {
     <SafeAreaView edges={["bottom"]} style={styles.screen}>
       <ScrollView contentContainerStyle={styles.content}>
         <Text style={styles.explanation}>Connect apps.</Text>
+        {availableSources.length > 1 ? (
+          <View style={styles.sourceTabs}>
+            {(["all", ...availableSources] as const).map((id) => {
+              const selected = source === id;
+              return (
+                <Pressable
+                  key={id}
+                  accessibilityRole="button"
+                  accessibilityState={{ selected }}
+                  onPress={() => selectSource(id)}
+                  style={[styles.sourceTab, selected ? styles.sourceTabSelected : null]}
+                >
+                  <Text
+                    style={[styles.sourceTabLabel, selected ? styles.sourceTabLabelSelected : null]}
+                  >
+                    {PLUGIN_SOURCE_LABELS[id]}
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </View>
+        ) : null}
         <TextInput
           value={query}
           onChangeText={setQuery}
@@ -697,6 +745,21 @@ const makeStyles = ({ palette }: ThemedStyleArgs) =>
       alignItems: "center",
       justifyContent: "space-between",
     },
+    sourceTabs: {
+      flexDirection: "row",
+      gap: 20,
+      borderBottomWidth: StyleSheet.hairlineWidth,
+      borderBottomColor: palette.hairline,
+    },
+    sourceTab: {
+      paddingTop: 2,
+      paddingBottom: 8,
+      borderBottomWidth: 2,
+      borderBottomColor: "transparent",
+    },
+    sourceTabSelected: { borderBottomColor: palette.ink },
+    sourceTabLabel: { color: palette.muted, fontSize: 14, fontWeight: "600" },
+    sourceTabLabelSelected: { color: palette.ink },
     chips: { gap: 8, paddingVertical: 4 },
     chip: {
       minHeight: 34,
