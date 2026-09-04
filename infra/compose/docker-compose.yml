@@ -65,7 +65,7 @@ services:
       SANDBOX_PROVIDER: docker
       AGENT_RUNTIME: pi
     ports:
-      - "127.0.0.1:3100:3100"
+      - "3100:3100"
     volumes:
       - ../../data:/data
     depends_on:

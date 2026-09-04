@@ -1,12 +1,12 @@
 {
   "expo": {
     "name": "RocksteadyBot",
-    "slug": "rakazo",
-    "owner": "inbox-zero",
+    "slug": "rckbot",
+    "owner": "rocksteadytradingian",
     "scheme": "rakazo",
     "version": "1.0.0",
     "orientation": "portrait",
-    "userInterfaceStyle": "dark",
+    "userInterfaceStyle": "automatic",
     "icon": "./assets/icon.png",
     "plugins": [
       [
@@ -39,6 +39,14 @@
         }
       ],
       "expo-sharing",
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "usesCleartextTraffic": true
+          }
+        }
+      ],
       "./plugins/with-worklets-headers"
     ],
     "ios": {
@@ -74,7 +82,7 @@
       "router": {},
       "supportsRTL": true,
       "eas": {
-        "projectId": "07f7eb04-45e3-47fe-9374-99a2f991131e"
+        "projectId": "1fcacde9-eec1-4bf7-8988-f19457811b87"
       }
     }
   }
