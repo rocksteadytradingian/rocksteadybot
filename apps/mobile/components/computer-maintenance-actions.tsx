@@ -2,6 +2,7 @@ import type { ComputerStatus } from "@rakazo/contracts";
 import { useState } from "react";
 import { Alert, Pressable, Text, View } from "react-native";
 import { rpc } from "../lib/api";
+import { useTheme } from "../lib/theme";
 
 type Action = "recover" | "reset" | "update" | "restart";
 
@@ -14,6 +15,7 @@ export function ComputerMaintenanceActions({
   computer: ComputerStatus | null;
   onChanged: () => Promise<void>;
 }) {
+  const { palette } = useTheme();
   const [pending, setPending] = useState<Action | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -57,7 +59,7 @@ export function ComputerMaintenanceActions({
         onPress={() => void run(stuckBooting ? "restart" : "recover")}
         style={{ opacity: busy || pending !== null ? 0.4 : 1 }}
       >
-        <Text style={{ color: "#85858A", fontSize: 14 }}>
+        <Text style={{ color: palette.muted, fontSize: 14 }}>
           {pending === "recover" || pending === "restart"
             ? stuckBooting
               ? "Restarting…"
@@ -72,7 +74,7 @@ export function ComputerMaintenanceActions({
         onPress={confirmReset}
         style={{ opacity: busy || pending !== null ? 0.4 : 1 }}
       >
-        <Text style={{ color: "#85858A", fontSize: 14 }}>
+        <Text style={{ color: palette.muted, fontSize: 14 }}>
           {pending === "reset" ? "Resetting…" : "Reset computer"}
         </Text>
       </Pressable>
@@ -82,12 +84,12 @@ export function ComputerMaintenanceActions({
           onPress={() => void run("update")}
           style={{ opacity: busy || pending !== null ? 0.4 : 1 }}
         >
-          <Text style={{ color: "#85858A", fontSize: 14 }}>
+          <Text style={{ color: palette.muted, fontSize: 14 }}>
             {pending === "update" ? "Updating…" : "Update computer"}
           </Text>
         </Pressable>
       ) : null}
-      {error ? <Text style={{ color: "#E65707", fontSize: 13 }}>{error}</Text> : null}
+      {error ? <Text style={{ color: palette.danger, fontSize: 13 }}>{error}</Text> : null}
     </View>
   );
 }

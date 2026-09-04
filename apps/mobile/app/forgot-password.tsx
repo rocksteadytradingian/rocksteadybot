@@ -1,9 +1,10 @@
 import { useRouter } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { useState } from "react";
-import { Pressable, Text, TextInput, View } from "react-native";
+import { Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { requestPasswordReset } from "../lib/api";
+import { type ThemedStyleArgs, useTheme, useThemedStyles } from "../lib/theme";
 
 export default function ForgotPassword() {
   const router = useRouter();
@@ -11,6 +12,8 @@ export default function ForgotPassword() {
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
+  const { palette, colorScheme } = useTheme();
+  const styles = useThemedStyles(makeStyles);
 
   async function submit() {
     setPending(true);
@@ -27,48 +30,83 @@ export default function ForgotPassword() {
   }
 
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: "#F7F7F4" }}>
-      <StatusBar style="dark" />
-      <View style={{ flex: 1, justifyContent: "center", paddingHorizontal: 24 }}>
-        <Text style={{ color: "#1B1B1E", fontSize: 32, fontWeight: "500", textAlign: "center" }}>
-          Reset your password
-        </Text>
+    <SafeAreaView style={styles.screen}>
+      <StatusBar style={colorScheme === "dark" ? "light" : "dark"} />
+      <View style={styles.body}>
+        <Text style={styles.title}>Reset your password</Text>
         <TextInput
           autoCapitalize="none"
           keyboardType="email-address"
+          keyboardAppearance={colorScheme}
           placeholder="Email"
-          placeholderTextColor="#8C8C86"
+          placeholderTextColor={palette.muted2}
           value={email}
           onChangeText={setEmail}
-          style={{
-            marginTop: 28,
-            backgroundColor: "#F1F1ED",
-            borderRadius: 13,
-            padding: 16,
-            color: "#1B1B1E",
-          }}
+          style={styles.input}
         />
-        {error ? <Text style={{ color: "#C94244", marginTop: 12 }}>{error}</Text> : null}
-        {notice ? <Text style={{ color: "#6E6E68", marginTop: 12 }}>{notice}</Text> : null}
-        <Pressable
-          onPress={() => void submit()}
-          disabled={pending}
-          style={{
-            marginTop: 16,
-            backgroundColor: "#121215",
-            borderRadius: 13,
-            padding: 18,
-            alignItems: "center",
-          }}
-        >
-          <Text style={{ color: "#FBFBF9", fontSize: 17 }}>
-            {pending ? "Working…" : "Send reset link"}
-          </Text>
+        {error ? <Text style={styles.error}>{error}</Text> : null}
+        {notice ? <Text style={styles.notice}>{notice}</Text> : null}
+        <Pressable onPress={() => void submit()} disabled={pending} style={styles.primary}>
+          <Text style={styles.primaryLabel}>{pending ? "Working…" : "Send reset link"}</Text>
         </Pressable>
-        <Pressable onPress={() => router.back()} style={{ marginTop: 24, alignItems: "center" }}>
-          <Text style={{ color: "#1B1B1E", fontSize: 16, fontWeight: "500" }}>Sign in</Text>
+        <Pressable onPress={() => router.back()} style={styles.link}>
+          <Text style={styles.linkLabel}>Sign in</Text>
         </Pressable>
       </View>
     </SafeAreaView>
   );
 }
+
+const makeStyles = ({ palette }: ThemedStyleArgs) =>
+  StyleSheet.create({
+    screen: {
+      flex: 1,
+      backgroundColor: palette.page,
+    },
+    body: {
+      flex: 1,
+      justifyContent: "center",
+      paddingHorizontal: 24,
+    },
+    title: {
+      color: palette.ink,
+      fontSize: 32,
+      fontWeight: "500",
+      textAlign: "center",
+    },
+    input: {
+      marginTop: 28,
+      backgroundColor: palette.input,
+      borderRadius: 13,
+      padding: 16,
+      color: palette.ink,
+    },
+    error: {
+      color: palette.danger,
+      marginTop: 12,
+    },
+    notice: {
+      color: palette.muted,
+      marginTop: 12,
+    },
+    primary: {
+      marginTop: 16,
+      backgroundColor: palette.solid,
+      borderRadius: 13,
+      padding: 18,
+      alignItems: "center",
+    },
+    primaryLabel: {
+      color: palette.solidInk,
+      fontSize: 17,
+    },
+    link: {
+      marginTop: 24,
+      alignItems: "center",
+    },
+    linkLabel: {
+      color: palette.ink,
+      fontSize: 16,
+      fontWeight: "500",
+    },
+  });

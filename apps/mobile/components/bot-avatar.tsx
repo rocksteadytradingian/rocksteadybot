@@ -1,8 +1,10 @@
 import type { AvatarStyle } from "@rakazo/contracts";
 import { ACTIVE_RUN_STATUSES, avatarIdentitySeed, organicAvatarPath } from "@rakazo/core";
+import { botColors } from "@rakazo/ui-tokens";
 import { memo } from "react";
 import { View } from "react-native";
 import Svg, { Path, Rect } from "react-native-svg";
+import { useTheme } from "../lib/theme";
 import { useAvatarStyle } from "./avatar-style";
 
 export const BotAvatar = memo(function BotAvatar({
@@ -20,8 +22,9 @@ export const BotAvatar = memo(function BotAvatar({
 }) {
   const isWorking = ACTIVE_RUN_STATUSES.some((activeStatus) => activeStatus === status);
   const { avatarStyle } = useAvatarStyle();
+  const { palette } = useTheme();
   if ((variant ?? avatarStyle) === "organic") {
-    const seed = avatarIdentitySeed(identity || color || "#8B5CF6");
+    const seed = avatarIdentitySeed(identity || color || botColors[3]);
     return (
       <View
         style={{
@@ -29,7 +32,7 @@ export const BotAvatar = memo(function BotAvatar({
           height: size,
           borderRadius: size / 2,
           borderWidth: isWorking ? 2 : 0,
-          borderColor: "#FFFFFF",
+          borderColor: palette.accent,
         }}
       >
         <Svg width={size} height={size} viewBox="-60 -60 120 120">
@@ -73,7 +76,7 @@ export const BotAvatar = memo(function BotAvatar({
         alignItems: "center",
         justifyContent: "center",
         borderWidth: isWorking ? 2 : 0,
-        borderColor: "#FFFFFF",
+        borderColor: palette.accent,
       }}
     >
       <View

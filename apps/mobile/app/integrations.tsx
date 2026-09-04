@@ -31,7 +31,7 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import { rpc } from "../lib/api";
 import { loadLastBotId } from "../lib/last-bot";
-import { native } from "../lib/native";
+import { type ThemedStyleArgs, useTheme, useThemedStyles } from "../lib/theme";
 
 type SourceKind = "treg" | "mcp" | "api";
 
@@ -76,6 +76,8 @@ export default function Integrations() {
   const [projectKeyInput, setProjectKeyInput] = useState("");
   const [projectKeyBusy, setProjectKeyBusy] = useState(false);
   const connectionAttempt = useRef<AbortController | null>(null);
+  const { palette } = useTheme();
+  const styles = useThemedStyles(makeStyles);
 
   const entries = useMemo(() => catalog.map(enrichPluginCatalogItem), [catalog]);
   const featuredTiles = useMemo(() => buildFeaturedConnectorTiles(catalog), [catalog]);
@@ -211,6 +213,18 @@ export default function Integrations() {
   }
 
   async function revoke(item: ConnectionCatalogItem) {
+    const confirmed = await new Promise<boolean>((resolve) => {
+      Alert.alert(
+        `Disconnect ${item.name}?`,
+        "Bots will lose access to its tools until it is reconnected.",
+        [
+          { text: "Cancel", style: "cancel", onPress: () => resolve(false) },
+          { text: "Disconnect", style: "destructive", onPress: () => resolve(true) },
+        ],
+        { cancelable: true, onDismiss: () => resolve(false) },
+      );
+    });
+    if (!confirmed) return;
     const key = `${item.connectorId}:${item.slug}`;
     setPending(key);
     setCatalogError(null);
@@ -224,8 +238,16 @@ export default function Integrations() {
         matches.find((connection) => connection.status === "connected") ??
         matches.find((connection) => connection.status === "pending") ??
         matches.find((connection) => connection.status === "error");
-      if (!row) throw new Error(`No connection record found for ${item.name}.`);
-      await rpc("connections/revoke", { connectionId: row.id });
+      if (row) {
+        await rpc("connections/revoke", { connectionId: row.id });
+      } else {
+        // Catalog reports `connected` account-wide; the revocable row may live in
+        // another workspace. Revoke by provider so it works from anywhere.
+        await rpc("connections/revokeByProvider", {
+          connectorId: item.connectorId,
+          provider: item.slug,
+        });
+      }
       await refresh();
     } catch (reason) {
       setCatalogError(reason instanceof Error ? reason.message : "Could not revoke connection");
@@ -291,7 +313,7 @@ export default function Integrations() {
           value={query}
           onChangeText={setQuery}
           placeholder="Search plugins"
-          placeholderTextColor={native.secondaryLabel}
+          placeholderTextColor={palette.muted}
           autoCapitalize="none"
           autoCorrect={false}
           accessibilityLabel="Search plugins"
@@ -337,7 +359,7 @@ export default function Integrations() {
             value={projectKeyInput}
             onChangeText={setProjectKeyInput}
             placeholder={projectKey?.configured ? "Paste a replacement key" : "ak_…"}
-            placeholderTextColor={native.secondaryLabel}
+            placeholderTextColor={palette.muted}
             autoCapitalize="none"
             autoCorrect={false}
             secureTextEntry
@@ -368,7 +390,7 @@ export default function Integrations() {
           </View>
         </View>
 
-        {!catalogReady ? <ActivityIndicator color={native.fillPressed} /> : null}
+        {!catalogReady ? <ActivityIndicator color={palette.muted} /> : null}
 
         {catalogReady && catalog.length === 0 ? (
           <Text style={styles.secondary}>{EMPTY_PLUGIN_CATALOG_MESSAGE}</Text>
@@ -413,13 +435,17 @@ export default function Integrations() {
                           <Pressable
                             accessibilityRole="button"
                             accessibilityLabel={
-                              connected ? `Remove ${tile.label}` : `Add ${tile.label}`
+                              connected ? `Disconnect ${tile.label}` : `Add ${tile.label}`
                             }
                             disabled={pending === key}
                             onPress={() => void (connected ? revoke(item) : connect(item))}
                           >
                             <Text style={connected ? styles.added : styles.link}>
-                              {pending === key ? "Working…" : connected ? "Added" : "Add"}
+                              {pending === key
+                                ? "Working…"
+                                : connected
+                                  ? "Connected · Disconnect"
+                                  : "Add"}
                             </Text>
                           </Pressable>
                         )}
@@ -461,13 +487,17 @@ export default function Integrations() {
                             <Pressable
                               accessibilityRole="button"
                               accessibilityLabel={
-                                item.connected ? `Remove ${item.name}` : `Add ${item.name}`
+                                item.connected ? `Disconnect ${item.name}` : `Add ${item.name}`
                               }
                               disabled={pending === key}
                               onPress={() => void (item.connected ? revoke(item) : connect(item))}
                             >
                               <Text style={item.connected ? styles.added : styles.link}>
-                                {pending === key ? "Working…" : item.connected ? "Added" : "Add"}
+                                {pending === key
+                                  ? "Working…"
+                                  : item.connected
+                                    ? "Connected · Disconnect"
+                                    : "Add"}
                               </Text>
                             </Pressable>
                           </View>
@@ -564,7 +594,7 @@ export default function Integrations() {
                   value={name}
                   onChangeText={setName}
                   placeholder="Display name"
-                  placeholderTextColor={native.tertiaryLabel}
+                  placeholderTextColor={palette.muted2}
                   style={styles.input}
                 />
                 {sourceKind !== "treg" ? (
@@ -578,7 +608,7 @@ export default function Integrations() {
                         ? "https://example.com/mcp"
                         : "https://example.com/openapi.json"
                     }
-                    placeholderTextColor={native.tertiaryLabel}
+                    placeholderTextColor={palette.muted2}
                     style={styles.input}
                   />
                 ) : null}
@@ -601,7 +631,7 @@ export default function Integrations() {
                     autoCapitalize="none"
                     autoCorrect={false}
                     placeholder={sourceKind === "treg" ? "Treg token" : "Bearer token"}
-                    placeholderTextColor={native.tertiaryLabel}
+                    placeholderTextColor={palette.muted2}
                     style={styles.input}
                   />
                 ) : null}
@@ -613,7 +643,7 @@ export default function Integrations() {
                     style={styles.smallButton}
                   >
                     {pending === "source" ? (
-                      <ActivityIndicator color={native.label} />
+                      <ActivityIndicator color={palette.ink} />
                     ) : (
                       <Text style={styles.buttonLabel}>Verify and add</Text>
                     )}
@@ -655,77 +685,78 @@ export default function Integrations() {
   );
 }
 
-const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: native.page },
-  content: { padding: 20, gap: 14 },
-  explanation: { color: native.secondaryLabel, fontSize: 14, lineHeight: 20 },
-  section: { color: native.secondaryLabel, fontSize: 14, fontWeight: "600", marginTop: 10 },
-  sectionRow: {
-    marginTop: 10,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-  },
-  chips: { gap: 8, paddingVertical: 4 },
-  chip: {
-    minHeight: 34,
-    paddingHorizontal: 12,
-    borderRadius: 999,
-    backgroundColor: native.fill,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  chipSelected: { backgroundColor: native.label },
-  chipLabel: { color: native.label, fontSize: 13, fontWeight: "600" },
-  chipLabelSelected: { color: native.page },
-  added: { color: "#30A24B", fontSize: 14, fontWeight: "600" },
-  actions: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
-  smallButton: {
-    minHeight: 42,
-    paddingHorizontal: 14,
-    borderRadius: 12,
-    backgroundColor: native.fill,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  buttonLabel: { color: native.label, fontSize: 14, fontWeight: "600" },
-  card: { padding: 16, borderRadius: 16, backgroundColor: native.fill, gap: 12 },
-  input: {
-    minHeight: 48,
-    borderRadius: 12,
-    backgroundColor: native.fillPressed,
-    color: native.label,
-    paddingHorizontal: 14,
-    fontSize: 15,
-  },
-  authToggle: { minHeight: 42, justifyContent: "center" },
-  catalogGrid: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
-  catalogStack: { gap: 8 },
-  catalogCell: { flexGrow: 1, flexBasis: "47%", maxWidth: "49%" },
-  row: {
-    minHeight: 56,
-    paddingHorizontal: 12,
-    paddingVertical: 12,
-    borderRadius: 14,
-    backgroundColor: native.fill,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 10,
-  },
-  grow: { flex: 1, gap: 3, minWidth: 0 },
-  title: { color: native.label, fontSize: 15, fontWeight: "600" },
-  secondary: { color: native.secondaryLabel, fontSize: 13 },
-  link: { color: native.label, fontSize: 14, fontWeight: "600" },
-  remove: { color: "#E96B6B", fontSize: 14, fontWeight: "600" },
-  error: { color: "#E96B6B", fontSize: 14 },
-  advancedToggle: {
-    marginTop: 8,
-    minHeight: 44,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-  },
-  advancedLabel: { color: native.secondaryLabel, fontSize: 14 },
-  advancedBody: { gap: 14 },
-  chevron: { color: native.secondaryLabel, fontSize: 18 },
-});
+const makeStyles = ({ palette }: ThemedStyleArgs) =>
+  StyleSheet.create({
+    screen: { flex: 1, backgroundColor: palette.page },
+    content: { padding: 20, gap: 14 },
+    explanation: { color: palette.muted, fontSize: 14, lineHeight: 20 },
+    section: { color: palette.muted, fontSize: 14, fontWeight: "600", marginTop: 10 },
+    sectionRow: {
+      marginTop: 10,
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "space-between",
+    },
+    chips: { gap: 8, paddingVertical: 4 },
+    chip: {
+      minHeight: 34,
+      paddingHorizontal: 12,
+      borderRadius: 999,
+      backgroundColor: palette.surface,
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    chipSelected: { backgroundColor: palette.solid },
+    chipLabel: { color: palette.ink, fontSize: 13, fontWeight: "600" },
+    chipLabelSelected: { color: palette.solidInk },
+    added: { color: palette.success, fontSize: 14, fontWeight: "600" },
+    actions: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
+    smallButton: {
+      minHeight: 42,
+      paddingHorizontal: 14,
+      borderRadius: 12,
+      backgroundColor: palette.surface,
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    buttonLabel: { color: palette.ink, fontSize: 14, fontWeight: "600" },
+    card: { padding: 16, borderRadius: 16, backgroundColor: palette.surface, gap: 12 },
+    input: {
+      minHeight: 48,
+      borderRadius: 12,
+      backgroundColor: palette.input,
+      color: palette.ink,
+      paddingHorizontal: 14,
+      fontSize: 15,
+    },
+    authToggle: { minHeight: 42, justifyContent: "center" },
+    catalogGrid: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
+    catalogStack: { gap: 8 },
+    catalogCell: { flexGrow: 1, flexBasis: "47%", maxWidth: "49%" },
+    row: {
+      minHeight: 56,
+      paddingHorizontal: 12,
+      paddingVertical: 12,
+      borderRadius: 14,
+      backgroundColor: palette.surface,
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 10,
+    },
+    grow: { flex: 1, gap: 3, minWidth: 0 },
+    title: { color: palette.ink, fontSize: 15, fontWeight: "600" },
+    secondary: { color: palette.muted, fontSize: 13 },
+    link: { color: palette.link, fontSize: 14, fontWeight: "600" },
+    remove: { color: palette.danger, fontSize: 14, fontWeight: "600" },
+    error: { color: palette.danger, fontSize: 14 },
+    advancedToggle: {
+      marginTop: 8,
+      minHeight: 44,
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "space-between",
+    },
+    advancedLabel: { color: palette.muted, fontSize: 14 },
+    advancedBody: { gap: 14 },
+    chevron: { color: palette.muted, fontSize: 18 },
+  });

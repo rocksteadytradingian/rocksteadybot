@@ -15,7 +15,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { NativeSymbol } from "../components/native-symbol";
 import { rpc } from "../lib/api";
 import { approvalThreadParams, fetchPendingApprovals, formatRequestedAt } from "../lib/approvals";
-import { native } from "../lib/native";
+import { type ThemedStyleArgs, useTheme, useThemedStyles } from "../lib/theme";
 
 export default function Approvals() {
   const insets = useSafeAreaInsets();
@@ -23,6 +23,8 @@ export default function Approvals() {
   const [items, setItems] = useState<PendingApproval[]>([]);
   const [loading, setLoading] = useState(true);
   const [busyId, setBusyId] = useState<string | null>(null);
+  const { palette } = useTheme();
+  const styles = useThemedStyles(makeStyles);
 
   const refresh = useCallback(async () => {
     try {
@@ -69,7 +71,7 @@ export default function Approvals() {
       contentContainerStyle={{ paddingBottom: Math.max(insets.bottom, 24) }}
     >
       {loading && items.length === 0 ? (
-        <ActivityIndicator color={native.secondaryLabel} style={styles.spinner} />
+        <ActivityIndicator color={palette.muted} style={styles.spinner} />
       ) : items.length === 0 ? (
         <Text style={styles.empty}>Nothing waiting</Text>
       ) : (
@@ -84,7 +86,7 @@ export default function Approvals() {
                   ios="exclamationmark.triangle"
                   android="warning-outline"
                   size={16}
-                  color="#F5A03C"
+                  color={palette.warning}
                 />
                 <View style={styles.cardBody}>
                   <Text style={styles.summary}>
@@ -134,88 +136,89 @@ export default function Approvals() {
   );
 }
 
-const styles = StyleSheet.create({
-  screen: {
-    flex: 1,
-    backgroundColor: "#000",
-  },
-  spinner: {
-    marginTop: 48,
-  },
-  empty: {
-    color: native.secondaryLabel,
-    fontSize: 16,
-    paddingHorizontal: 20,
-    paddingTop: 28,
-  },
-  card: {
-    marginHorizontal: 16,
-    marginTop: 12,
-    borderRadius: 14,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: "#2A2A2E",
-    backgroundColor: "#141416",
-    padding: 14,
-    gap: 12,
-  },
-  cardTop: {
-    flexDirection: "row",
-    alignItems: "flex-start",
-    gap: 10,
-  },
-  cardBody: {
-    flex: 1,
-    minWidth: 0,
-    gap: 4,
-  },
-  summary: {
-    color: native.label,
-    fontSize: 16,
-    fontWeight: "600",
-  },
-  risk: {
-    alignSelf: "flex-start",
-    overflow: "hidden",
-    borderRadius: 999,
-    backgroundColor: "rgba(245,160,60,0.16)",
-    color: "#F5A03C",
-    fontSize: 12,
-    fontWeight: "600",
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-  },
-  time: {
-    color: native.secondaryLabel,
-    fontSize: 13,
-  },
-  actions: {
-    flexDirection: "row",
-    justifyContent: "flex-end",
-    gap: 8,
-  },
-  viewButton: {
-    borderRadius: 11,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: "#3A3A40",
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-  },
-  viewLabel: {
-    color: native.label,
-    fontSize: 14,
-  },
-  approveButton: {
-    borderRadius: 11,
-    backgroundColor: "#F1F1EF",
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-  },
-  approveLabel: {
-    color: "#17171A",
-    fontSize: 14,
-    fontWeight: "600",
-  },
-  pressed: {
-    opacity: 0.6,
-  },
-});
+const makeStyles = ({ palette }: ThemedStyleArgs) =>
+  StyleSheet.create({
+    screen: {
+      flex: 1,
+      backgroundColor: palette.page,
+    },
+    spinner: {
+      marginTop: 48,
+    },
+    empty: {
+      color: palette.muted,
+      fontSize: 16,
+      paddingHorizontal: 20,
+      paddingTop: 28,
+    },
+    card: {
+      marginHorizontal: 16,
+      marginTop: 12,
+      borderRadius: 14,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: palette.hairline,
+      backgroundColor: palette.surface,
+      padding: 14,
+      gap: 12,
+    },
+    cardTop: {
+      flexDirection: "row",
+      alignItems: "flex-start",
+      gap: 10,
+    },
+    cardBody: {
+      flex: 1,
+      minWidth: 0,
+      gap: 4,
+    },
+    summary: {
+      color: palette.ink,
+      fontSize: 16,
+      fontWeight: "600",
+    },
+    risk: {
+      alignSelf: "flex-start",
+      overflow: "hidden",
+      borderRadius: 999,
+      backgroundColor: palette.surface2,
+      color: palette.warning,
+      fontSize: 12,
+      fontWeight: "600",
+      paddingHorizontal: 8,
+      paddingVertical: 3,
+    },
+    time: {
+      color: palette.muted,
+      fontSize: 13,
+    },
+    actions: {
+      flexDirection: "row",
+      justifyContent: "flex-end",
+      gap: 8,
+    },
+    viewButton: {
+      borderRadius: 11,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: palette.hairlineStrong,
+      paddingHorizontal: 12,
+      paddingVertical: 8,
+    },
+    viewLabel: {
+      color: palette.ink,
+      fontSize: 14,
+    },
+    approveButton: {
+      borderRadius: 11,
+      backgroundColor: palette.solid,
+      paddingHorizontal: 12,
+      paddingVertical: 8,
+    },
+    approveLabel: {
+      color: palette.solidInk,
+      fontSize: 14,
+      fontWeight: "600",
+    },
+    pressed: {
+      opacity: 0.6,
+    },
+  });

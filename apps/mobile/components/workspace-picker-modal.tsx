@@ -10,7 +10,7 @@ import {
   TextInput,
   View,
 } from "react-native";
-import { native } from "../lib/native";
+import { type ThemedStyleArgs, useTheme, useThemedStyles } from "../lib/theme";
 import { NativeSymbol } from "./native-symbol";
 
 export function WorkspacePickerModal({
@@ -32,6 +32,8 @@ export function WorkspacePickerModal({
   onRename: (workspaceId: string, name: string) => Promise<void>;
   onDelete: (workspaceId: string) => Promise<void>;
 }) {
+  const { palette } = useTheme();
+  const styles = useThemedStyles(makeStyles);
   const current = workspaces.find((workspace) => workspace.id === workspaceId);
   const [draft, setDraft] = useState<"create" | "rename" | null>(null);
   const [name, setName] = useState("");
@@ -84,7 +86,7 @@ export function WorkspacePickerModal({
                 onChangeText={setName}
                 maxLength={80}
                 placeholder={draft === "rename" ? "Workspace name" : "New workspace"}
-                placeholderTextColor={native.secondaryLabel}
+                placeholderTextColor={palette.muted}
                 style={styles.input}
               />
               <Pressable
@@ -154,79 +156,80 @@ export function WorkspacePickerModal({
   );
 }
 
-const styles = StyleSheet.create({
-  overlay: {
-    flex: 1,
-    justifyContent: "flex-end",
-    backgroundColor: "rgba(0,0,0,0.45)",
-  },
-  sheet: {
-    margin: 12,
-    borderRadius: 18,
-    backgroundColor: "#1C1C1E",
-    paddingHorizontal: 8,
-    paddingTop: 16,
-    paddingBottom: 12,
-    maxHeight: "80%",
-  },
-  title: {
-    color: native.label,
-    fontSize: 13,
-    fontWeight: "600",
-    paddingHorizontal: 12,
-    paddingBottom: 8,
-    textTransform: "uppercase",
-    letterSpacing: 0.4,
-  },
-  action: {
-    minHeight: 44,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    paddingHorizontal: 12,
-    gap: 12,
-  },
-  pressed: {
-    opacity: 0.55,
-  },
-  actionLabel: {
-    color: native.label,
-    fontSize: 17,
-    flex: 1,
-  },
-  danger: {
-    color: "#E24B4A",
-  },
-  newRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-    paddingHorizontal: 8,
-    paddingVertical: 8,
-  },
-  input: {
-    flex: 1,
-    height: 40,
-    borderRadius: 10,
-    backgroundColor: native.fill,
-    color: native.label,
-    paddingHorizontal: 12,
-    fontSize: 16,
-  },
-  smallAction: {
-    height: 40,
-    justifyContent: "center",
-    paddingHorizontal: 12,
-  },
-  smallActionLabel: {
-    color: native.label,
-    fontSize: 16,
-    fontWeight: "600",
-  },
-  error: {
-    color: "#E24B4A",
-    paddingHorizontal: 12,
-    paddingTop: 4,
-    paddingBottom: 8,
-  },
-});
+const makeStyles = ({ palette }: ThemedStyleArgs) =>
+  StyleSheet.create({
+    overlay: {
+      flex: 1,
+      justifyContent: "flex-end",
+      backgroundColor: palette.overlay,
+    },
+    sheet: {
+      margin: 12,
+      borderRadius: 18,
+      backgroundColor: palette.surface,
+      paddingHorizontal: 8,
+      paddingTop: 16,
+      paddingBottom: 12,
+      maxHeight: "80%",
+    },
+    title: {
+      color: palette.ink,
+      fontSize: 13,
+      fontWeight: "600",
+      paddingHorizontal: 12,
+      paddingBottom: 8,
+      textTransform: "uppercase",
+      letterSpacing: 0.4,
+    },
+    action: {
+      minHeight: 44,
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "space-between",
+      paddingHorizontal: 12,
+      gap: 12,
+    },
+    pressed: {
+      opacity: 0.55,
+    },
+    actionLabel: {
+      color: palette.ink,
+      fontSize: 17,
+      flex: 1,
+    },
+    danger: {
+      color: palette.danger,
+    },
+    newRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 8,
+      paddingHorizontal: 8,
+      paddingVertical: 8,
+    },
+    input: {
+      flex: 1,
+      height: 40,
+      borderRadius: 10,
+      backgroundColor: palette.surface2,
+      color: palette.ink,
+      paddingHorizontal: 12,
+      fontSize: 16,
+    },
+    smallAction: {
+      height: 40,
+      justifyContent: "center",
+      paddingHorizontal: 12,
+    },
+    smallActionLabel: {
+      color: palette.ink,
+      fontSize: 16,
+      fontWeight: "600",
+    },
+    error: {
+      color: palette.danger,
+      paddingHorizontal: 12,
+      paddingTop: 4,
+      paddingBottom: 8,
+    },
+  });

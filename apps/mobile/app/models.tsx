@@ -34,7 +34,7 @@ import {
   finishModelOAuthAttempt,
   waitForModelOAuth,
 } from "../lib/model-auth";
-import { native } from "../lib/native";
+import { type ThemedStyleArgs, useTheme, useThemedStyles } from "../lib/theme";
 
 type ModelSelection = {
   provider?: string;
@@ -70,6 +70,8 @@ export default function Models() {
   const probeRequestIdRef = useRef(0);
   const routerDraftRef = useRef({ fast: "", smart: "", heavy: "" });
   const routerSaveSeqRef = useRef(0);
+  const { palette } = useTheme();
+  const styles = useThemedStyles(makeStyles);
 
   const cancelOAuth = useCallback(() => {
     const loginId = oauthLoginIdRef.current;
@@ -511,7 +513,7 @@ export default function Models() {
   if (loading && catalog.length === 0) {
     return (
       <SafeAreaView edges={["bottom"]} style={[styles.screen, styles.centered]}>
-        <ActivityIndicator color={native.secondaryLabel} />
+        <ActivityIndicator color={palette.muted} />
       </SafeAreaView>
     );
   }
@@ -575,7 +577,7 @@ export default function Models() {
                       editable={!busy}
                       onChangeText={updateBaseUrl}
                       placeholder="http://127.0.0.1:8000/v1"
-                      placeholderTextColor={native.tertiaryLabel}
+                      placeholderTextColor={palette.muted2}
                       style={styles.keyInput}
                       value={baseUrl}
                     />
@@ -605,7 +607,7 @@ export default function Models() {
                       importantForAutofill="no"
                       onChangeText={updateApiKey}
                       placeholder="sk-…"
-                      placeholderTextColor={native.tertiaryLabel}
+                      placeholderTextColor={palette.muted2}
                       secureTextEntry
                       style={styles.keyInput}
                       textContentType="none"
@@ -703,7 +705,7 @@ export default function Models() {
                       editable={!busy && !probing}
                       onChangeText={setModelId}
                       placeholder="exact-model-id"
-                      placeholderTextColor={native.tertiaryLabel}
+                      placeholderTextColor={palette.muted2}
                       style={styles.keyInput}
                       value={modelId}
                     />
@@ -800,7 +802,7 @@ export default function Models() {
                         autoCorrect={false}
                         defaultValue={slot.value}
                         placeholder={slot.key === "fast" ? "qwen3:8b" : ""}
-                        placeholderTextColor={native.tertiaryLabel}
+                        placeholderTextColor={palette.muted2}
                         onEndEditing={(event) => {
                           const next = event.nativeEvent.text.trim();
                           if (next === slot.value) return;
@@ -848,7 +850,7 @@ export default function Models() {
                         autoCapitalize="none"
                         autoCorrect={false}
                         placeholder="http://localhost:53692/callback?code=…"
-                        placeholderTextColor={native.secondaryLabel}
+                        placeholderTextColor={palette.muted}
                         style={styles.keyInput}
                       />
                       <Pressable
@@ -915,7 +917,7 @@ export default function Models() {
                         importantForAutofill="no"
                         onChangeText={updateApiKey}
                         placeholder="Optional"
-                        placeholderTextColor={native.tertiaryLabel}
+                        placeholderTextColor={palette.muted2}
                         secureTextEntry
                         style={styles.keyInput}
                         textContentType="none"
@@ -941,7 +943,7 @@ export default function Models() {
                       importantForAutofill="no"
                       onChangeText={updateApiKey}
                       placeholder="sk-…"
-                      placeholderTextColor={native.tertiaryLabel}
+                      placeholderTextColor={palette.muted2}
                       secureTextEntry
                       style={styles.keyInput}
                       textContentType="none"
@@ -1015,216 +1017,217 @@ export default function Models() {
   );
 }
 
-const styles = StyleSheet.create({
-  screen: {
-    flex: 1,
-    backgroundColor: native.page,
-  },
-  centered: {
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  content: {
-    padding: 20,
-    gap: 12,
-    paddingBottom: 40,
-  },
-  activeCard: {
-    borderRadius: 16,
-    backgroundColor: native.fill,
-    padding: 18,
-    marginBottom: 8,
-  },
-  eyebrow: {
-    color: native.tertiaryLabel,
-    fontSize: 12,
-    textTransform: "uppercase",
-    letterSpacing: 1,
-  },
-  activeModel: {
-    color: native.label,
-    fontSize: 19,
-    fontWeight: "600",
-    marginTop: 6,
-  },
-  secondary: {
-    color: native.secondaryLabel,
-    fontSize: 14,
-    lineHeight: 20,
-    marginTop: 4,
-  },
-  sectionTitle: {
-    color: native.secondaryLabel,
-    fontSize: 14,
-    marginTop: 8,
-    marginBottom: 2,
-  },
-  card: {
-    borderRadius: 14,
-    backgroundColor: native.fill,
-    overflow: "hidden",
-  },
-  providerRow: {
-    minHeight: 62,
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 12,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: native.fillPressed,
-  },
-  providerCopy: {
-    flex: 1,
-  },
-  providerName: {
-    color: native.label,
-    fontSize: 16,
-    fontWeight: "600",
-  },
-  connected: {
-    color: "#4ECB71",
-    fontSize: 13,
-  },
-  modelRow: {
-    minHeight: 54,
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 12,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: native.fillPressed,
-  },
-  radio: {
-    width: 20,
-    height: 20,
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: native.secondaryLabel,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  radioDot: {
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-    backgroundColor: native.label,
-  },
-  modelLabel: {
-    flex: 1,
-    color: native.label,
-    fontSize: 15,
-  },
-  selectedRow: {
-    backgroundColor: "#222225",
-  },
-  billing: {
-    color: native.secondaryLabel,
-    fontSize: 13,
-    lineHeight: 19,
-    marginTop: 2,
-  },
-  hint: {
-    color: native.secondaryLabel,
-    fontSize: 13,
-    lineHeight: 19,
-    marginTop: 4,
-  },
-  helpLabel: {
-    color: native.secondaryLabel,
-    fontSize: 13,
-    marginTop: 8,
-    textDecorationLine: "underline",
-  },
-  credentialCard: {
-    borderRadius: 14,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: native.fillPressed,
-    padding: 16,
-    marginTop: 8,
-  },
-  credentialTitle: {
-    color: native.label,
-    fontSize: 16,
-    marginTop: 6,
-  },
-  oauthCard: {
-    borderRadius: 14,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: native.fillPressed,
-    padding: 16,
-    marginTop: 8,
-  },
-  link: {
-    color: native.label,
-    fontSize: 14,
-    textDecorationLine: "underline",
-    marginTop: 6,
-  },
-  code: {
-    color: native.label,
-    fontFamily: "monospace",
-    fontSize: 24,
-    letterSpacing: 3,
-    marginTop: 10,
-    marginBottom: 2,
-  },
-  keySection: {
-    marginTop: 4,
-  },
-  keyInput: {
-    height: 48,
-    borderRadius: 12,
-    backgroundColor: native.fill,
-    color: native.label,
-    paddingHorizontal: 14,
-    marginTop: 4,
-    fontSize: 16,
-  },
-  primaryButton: {
-    minHeight: 48,
-    borderRadius: 12,
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: native.label,
-    marginTop: 12,
-    paddingHorizontal: 16,
-  },
-  primaryLabel: {
-    color: native.page,
-    fontSize: 16,
-    fontWeight: "700",
-  },
-  outlineButton: {
-    minHeight: 48,
-    borderRadius: 12,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: native.fillPressed,
-    alignItems: "center",
-    justifyContent: "center",
-    marginTop: 12,
-    paddingHorizontal: 16,
-  },
-  outlineLabel: {
-    color: native.label,
-    fontSize: 16,
-    fontWeight: "600",
-  },
-  error: {
-    color: "#FF6961",
-    fontSize: 14,
-    marginTop: 4,
-  },
-  notice: {
-    color: "#4ECB71",
-    fontSize: 14,
-    marginTop: 4,
-  },
-  disabled: {
-    opacity: 0.45,
-  },
-  pressed: {
-    opacity: 0.7,
-  },
-});
+const makeStyles = ({ palette }: ThemedStyleArgs) =>
+  StyleSheet.create({
+    screen: {
+      flex: 1,
+      backgroundColor: palette.page,
+    },
+    centered: {
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    content: {
+      padding: 20,
+      gap: 12,
+      paddingBottom: 40,
+    },
+    activeCard: {
+      borderRadius: 16,
+      backgroundColor: palette.surface,
+      padding: 18,
+      marginBottom: 8,
+    },
+    eyebrow: {
+      color: palette.muted2,
+      fontSize: 12,
+      textTransform: "uppercase",
+      letterSpacing: 1,
+    },
+    activeModel: {
+      color: palette.ink,
+      fontSize: 19,
+      fontWeight: "600",
+      marginTop: 6,
+    },
+    secondary: {
+      color: palette.muted,
+      fontSize: 14,
+      lineHeight: 20,
+      marginTop: 4,
+    },
+    sectionTitle: {
+      color: palette.muted,
+      fontSize: 14,
+      marginTop: 8,
+      marginBottom: 2,
+    },
+    card: {
+      borderRadius: 14,
+      backgroundColor: palette.surface,
+      overflow: "hidden",
+    },
+    providerRow: {
+      minHeight: 62,
+      paddingHorizontal: 16,
+      paddingVertical: 10,
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 12,
+      borderBottomWidth: StyleSheet.hairlineWidth,
+      borderBottomColor: palette.hairline,
+    },
+    providerCopy: {
+      flex: 1,
+    },
+    providerName: {
+      color: palette.ink,
+      fontSize: 16,
+      fontWeight: "600",
+    },
+    connected: {
+      color: palette.success,
+      fontSize: 13,
+    },
+    modelRow: {
+      minHeight: 54,
+      paddingHorizontal: 16,
+      paddingVertical: 10,
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 12,
+      borderBottomWidth: StyleSheet.hairlineWidth,
+      borderBottomColor: palette.hairline,
+    },
+    radio: {
+      width: 20,
+      height: 20,
+      borderRadius: 10,
+      borderWidth: 1,
+      borderColor: palette.muted,
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    radioDot: {
+      width: 10,
+      height: 10,
+      borderRadius: 5,
+      backgroundColor: palette.ink,
+    },
+    modelLabel: {
+      flex: 1,
+      color: palette.ink,
+      fontSize: 15,
+    },
+    selectedRow: {
+      backgroundColor: palette.hover,
+    },
+    billing: {
+      color: palette.muted,
+      fontSize: 13,
+      lineHeight: 19,
+      marginTop: 2,
+    },
+    hint: {
+      color: palette.muted,
+      fontSize: 13,
+      lineHeight: 19,
+      marginTop: 4,
+    },
+    helpLabel: {
+      color: palette.muted,
+      fontSize: 13,
+      marginTop: 8,
+      textDecorationLine: "underline",
+    },
+    credentialCard: {
+      borderRadius: 14,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: palette.hairlineStrong,
+      padding: 16,
+      marginTop: 8,
+    },
+    credentialTitle: {
+      color: palette.ink,
+      fontSize: 16,
+      marginTop: 6,
+    },
+    oauthCard: {
+      borderRadius: 14,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: palette.hairlineStrong,
+      padding: 16,
+      marginTop: 8,
+    },
+    link: {
+      color: palette.link,
+      fontSize: 14,
+      textDecorationLine: "underline",
+      marginTop: 6,
+    },
+    code: {
+      color: palette.ink,
+      fontFamily: "monospace",
+      fontSize: 24,
+      letterSpacing: 3,
+      marginTop: 10,
+      marginBottom: 2,
+    },
+    keySection: {
+      marginTop: 4,
+    },
+    keyInput: {
+      height: 48,
+      borderRadius: 12,
+      backgroundColor: palette.input,
+      color: palette.ink,
+      paddingHorizontal: 14,
+      marginTop: 4,
+      fontSize: 16,
+    },
+    primaryButton: {
+      minHeight: 48,
+      borderRadius: 12,
+      alignItems: "center",
+      justifyContent: "center",
+      backgroundColor: palette.solid,
+      marginTop: 12,
+      paddingHorizontal: 16,
+    },
+    primaryLabel: {
+      color: palette.solidInk,
+      fontSize: 16,
+      fontWeight: "700",
+    },
+    outlineButton: {
+      minHeight: 48,
+      borderRadius: 12,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: palette.hairlineStrong,
+      alignItems: "center",
+      justifyContent: "center",
+      marginTop: 12,
+      paddingHorizontal: 16,
+    },
+    outlineLabel: {
+      color: palette.ink,
+      fontSize: 16,
+      fontWeight: "600",
+    },
+    error: {
+      color: palette.danger,
+      fontSize: 14,
+      marginTop: 4,
+    },
+    notice: {
+      color: palette.success,
+      fontSize: 14,
+      marginTop: 4,
+    },
+    disabled: {
+      opacity: 0.45,
+    },
+    pressed: {
+      opacity: 0.7,
+    },
+  });

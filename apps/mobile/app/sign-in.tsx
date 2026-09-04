@@ -6,6 +6,7 @@ import {
   Modal,
   Platform,
   Pressable,
+  StyleSheet,
   Text,
   TextInput,
   View,
@@ -24,6 +25,7 @@ import {
   signIn,
   usesCustomApiBase,
 } from "../lib/api";
+import { type ThemedStyleArgs, useTheme, useThemedStyles } from "../lib/theme";
 
 export default function SignIn() {
   const router = useRouter();
@@ -35,6 +37,8 @@ export default function SignIn() {
   const [hasSession, setHasSession] = useState(false);
   const [apiBase, setApiBase] = useState(() => currentApiBase());
   const [serverOpen, setServerOpen] = useState(false);
+  const { palette, colorScheme } = useTheme();
+  const styles = useThemedStyles(makeStyles);
 
   useEffect(() => {
     void loadSessionToken().then((token) => {
@@ -45,8 +49,8 @@ export default function SignIn() {
 
   if (!ready) {
     return (
-      <View style={{ flex: 1, backgroundColor: "#F7F7F4", justifyContent: "center", padding: 24 }}>
-        <Text style={{ color: "#6E6E68", textAlign: "center" }}>Loading…</Text>
+      <View style={styles.loading}>
+        <Text style={styles.loadingLabel}>Loading…</Text>
       </View>
     );
   }
@@ -68,66 +72,40 @@ export default function SignIn() {
   const custom = usesCustomApiBase(apiBase);
 
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: "#F7F7F4" }}>
-      <StatusBar style="dark" />
-      <View style={{ flex: 1, justifyContent: "center", paddingHorizontal: 24 }}>
-        <Text style={{ color: "#1B1B1E", fontSize: 32, fontWeight: "500", textAlign: "center" }}>
-          Sign in to RocksteadyBot
-        </Text>
+    <SafeAreaView style={styles.screen}>
+      <StatusBar style={colorScheme === "dark" ? "light" : "dark"} />
+      <View style={styles.body}>
+        <Text style={styles.title}>Sign in to RocksteadyBot</Text>
         <TextInput
           autoCapitalize="none"
           keyboardType="email-address"
+          keyboardAppearance={colorScheme}
           placeholder="Email"
-          placeholderTextColor="#8C8C86"
+          placeholderTextColor={palette.muted2}
           value={email}
           onChangeText={setEmail}
-          style={{
-            marginTop: 28,
-            backgroundColor: "#F1F1ED",
-            borderRadius: 13,
-            padding: 16,
-            color: "#1B1B1E",
-          }}
+          style={[styles.input, styles.inputFirst]}
         />
         <TextInput
           placeholder="Password"
-          placeholderTextColor="#8C8C86"
+          placeholderTextColor={palette.muted2}
+          keyboardAppearance={colorScheme}
           secureTextEntry
           value={password}
           onChangeText={setPassword}
-          style={{
-            marginTop: 12,
-            backgroundColor: "#F1F1ED",
-            borderRadius: 13,
-            padding: 16,
-            color: "#1B1B1E",
-          }}
+          style={styles.input}
         />
-        {error ? <Text style={{ color: "#C94244", marginTop: 12 }}>{error}</Text> : null}
-        <Pressable
-          onPress={() => void submit()}
-          disabled={pending}
-          style={{
-            marginTop: 16,
-            backgroundColor: "#121215",
-            borderRadius: 13,
-            padding: 18,
-            alignItems: "center",
-          }}
-        >
-          <Text style={{ color: "#FBFBF9", fontSize: 17 }}>
-            {pending ? "Working…" : "Continue with email"}
-          </Text>
+        {error ? <Text style={styles.error}>{error}</Text> : null}
+        <Pressable onPress={() => void submit()} disabled={pending} style={styles.primary}>
+          <Text style={styles.primaryLabel}>{pending ? "Working…" : "Continue with email"}</Text>
         </Pressable>
         <Pressable
           accessibilityRole="link"
           accessibilityLabel="Forgot password"
           onPress={() => router.push("/forgot-password")}
-          style={{ marginTop: 16, alignItems: "center" }}
+          style={styles.link}
         >
-          <Text style={{ color: "#1B1B1E", fontSize: 16, fontWeight: "500" }}>
-            Forgot password?
-          </Text>
+          <Text style={styles.linkLabel}>Forgot password?</Text>
         </Pressable>
       </View>
       <Pressable
@@ -137,17 +115,15 @@ export default function SignIn() {
         }
         hitSlop={12}
         onPress={() => setServerOpen(true)}
-        style={{ alignItems: "center", paddingHorizontal: 24, paddingBottom: 12, paddingTop: 8 }}
+        style={styles.serverButton}
       >
         {custom ? (
           <>
-            <Text style={{ color: "#A8A8A2", fontSize: 12 }}>Custom server</Text>
-            <Text style={{ color: "#6E6E68", fontSize: 13, marginTop: 2 }}>
-              {displayApiHost(apiBase)}
-            </Text>
+            <Text style={styles.serverCaption}>Custom server</Text>
+            <Text style={styles.serverHost}>{displayApiHost(apiBase)}</Text>
           </>
         ) : (
-          <Text style={{ color: "#A8A8A2", fontSize: 13 }}>Use a custom server</Text>
+          <Text style={styles.serverHint}>Use a custom server</Text>
         )}
       </Pressable>
       <ServerSheet
@@ -177,6 +153,8 @@ function ServerSheet({
   const [draft, setDraft] = useState(current);
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
+  const { palette, colorScheme } = useTheme();
+  const styles = useThemedStyles(makeStyles);
 
   useEffect(() => {
     if (!visible) return;
@@ -231,28 +209,20 @@ function ServerSheet({
       onRequestClose={onClose}
     >
       <KeyboardAvoidingView
-        style={{ flex: 1, backgroundColor: "#F7F7F4" }}
+        style={styles.screen}
         behavior={Platform.OS === "ios" ? "padding" : undefined}
       >
-        <SafeAreaView style={{ flex: 1, paddingHorizontal: 24, paddingTop: 12 }}>
-          <View
-            style={{
-              flexDirection: "row",
-              alignItems: "center",
-              justifyContent: "space-between",
-            }}
-          >
+        <SafeAreaView style={styles.sheet}>
+          <View style={styles.sheetHeader}>
             <Pressable onPress={onClose} hitSlop={8}>
-              <Text style={{ color: "#6E6E68", fontSize: 17 }}>Cancel</Text>
+              <Text style={styles.sheetCancel}>Cancel</Text>
             </Pressable>
-            <Text style={{ color: "#1B1B1E", fontSize: 17, fontWeight: "600" }}>Server</Text>
+            <Text style={styles.sheetTitle}>Server</Text>
             <Pressable onPress={() => void save()} disabled={pending} hitSlop={8}>
-              <Text style={{ color: "#1B1B1E", fontSize: 17, fontWeight: "600" }}>
-                {pending ? "Checking…" : "Save"}
-              </Text>
+              <Text style={styles.sheetTitle}>{pending ? "Checking…" : "Save"}</Text>
             </Pressable>
           </View>
-          <Text style={{ color: "#6E6E68", marginTop: 28, fontSize: 15, lineHeight: 22 }}>
+          <Text style={styles.sheetBody}>
             Point this app at your self-hosted RocksteadyBot origin — the same HTTPS URL you open in
             a browser.
           </Text>
@@ -261,36 +231,28 @@ function ServerSheet({
             autoCorrect={false}
             autoComplete="off"
             keyboardType="url"
+            keyboardAppearance={colorScheme}
             textContentType="URL"
             returnKeyType="go"
             onSubmitEditing={() => void save()}
             placeholder={defaultApiBase()}
-            placeholderTextColor="#8C8C86"
+            placeholderTextColor={palette.muted2}
             value={draft}
             onChangeText={(value) => {
               setDraft(value);
               setError(null);
             }}
-            style={{
-              marginTop: 20,
-              backgroundColor: "#F1F1ED",
-              borderRadius: 13,
-              padding: 16,
-              color: "#1B1B1E",
-              fontSize: 16,
-            }}
+            style={[styles.input, styles.sheetInput]}
           />
-          {warning ? (
-            <Text style={{ color: "#8C8C86", marginTop: 12, fontSize: 13 }}>{warning}</Text>
-          ) : null}
-          {error ? <Text style={{ color: "#C94244", marginTop: 12 }}>{error}</Text> : null}
+          {warning ? <Text style={styles.warning}>{warning}</Text> : null}
+          {error ? <Text style={styles.error}>{error}</Text> : null}
           {usesCustomApiBase(current) || draft.trim() !== current ? (
             <Pressable
               onPress={() => void restoreDefault()}
               disabled={pending}
-              style={{ marginTop: 28, alignItems: "center" }}
+              style={styles.resetButton}
             >
-              <Text style={{ color: "#6E6E68", fontSize: 15 }}>Use default server</Text>
+              <Text style={styles.sheetCancel}>Use default server</Text>
             </Pressable>
           ) : null}
         </SafeAreaView>
@@ -298,3 +260,123 @@ function ServerSheet({
     </Modal>
   );
 }
+
+const makeStyles = ({ palette }: ThemedStyleArgs) =>
+  StyleSheet.create({
+    screen: {
+      flex: 1,
+      backgroundColor: palette.page,
+    },
+    loading: {
+      flex: 1,
+      backgroundColor: palette.page,
+      justifyContent: "center",
+      padding: 24,
+    },
+    loadingLabel: {
+      color: palette.muted,
+      textAlign: "center",
+    },
+    body: {
+      flex: 1,
+      justifyContent: "center",
+      paddingHorizontal: 24,
+    },
+    title: {
+      color: palette.ink,
+      fontSize: 32,
+      fontWeight: "500",
+      textAlign: "center",
+    },
+    input: {
+      marginTop: 12,
+      backgroundColor: palette.input,
+      borderRadius: 13,
+      padding: 16,
+      color: palette.ink,
+    },
+    inputFirst: {
+      marginTop: 28,
+    },
+    error: {
+      color: palette.danger,
+      marginTop: 12,
+    },
+    warning: {
+      color: palette.muted2,
+      marginTop: 12,
+      fontSize: 13,
+    },
+    primary: {
+      marginTop: 16,
+      backgroundColor: palette.solid,
+      borderRadius: 13,
+      padding: 18,
+      alignItems: "center",
+    },
+    primaryLabel: {
+      color: palette.solidInk,
+      fontSize: 17,
+    },
+    link: {
+      marginTop: 16,
+      alignItems: "center",
+    },
+    linkLabel: {
+      color: palette.ink,
+      fontSize: 16,
+      fontWeight: "500",
+    },
+    serverButton: {
+      alignItems: "center",
+      paddingHorizontal: 24,
+      paddingBottom: 12,
+      paddingTop: 8,
+    },
+    serverCaption: {
+      color: palette.muted2,
+      fontSize: 12,
+    },
+    serverHost: {
+      color: palette.muted,
+      fontSize: 13,
+      marginTop: 2,
+    },
+    serverHint: {
+      color: palette.muted2,
+      fontSize: 13,
+    },
+    sheet: {
+      flex: 1,
+      paddingHorizontal: 24,
+      paddingTop: 12,
+    },
+    sheetHeader: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "space-between",
+    },
+    sheetCancel: {
+      color: palette.muted,
+      fontSize: 17,
+    },
+    sheetTitle: {
+      color: palette.ink,
+      fontSize: 17,
+      fontWeight: "600",
+    },
+    sheetBody: {
+      color: palette.muted,
+      marginTop: 28,
+      fontSize: 15,
+      lineHeight: 22,
+    },
+    sheetInput: {
+      marginTop: 20,
+      fontSize: 16,
+    },
+    resetButton: {
+      marginTop: 28,
+      alignItems: "center",
+    },
+  });

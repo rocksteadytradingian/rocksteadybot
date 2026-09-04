@@ -1,5 +1,6 @@
 import type { AvatarStyle, MemoryDocument } from "@rakazo/contracts";
 import { canRepairHostStack, USER_IDENTITY_PATH } from "@rakazo/core";
+import { botColors } from "@rakazo/ui-tokens";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useEffect, useState } from "react";
 import {
@@ -16,6 +17,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { useAvatarStyle } from "../components/avatar-style";
 import { BotAvatar } from "../components/bot-avatar";
 import { IdentityFileField, identityDocumentByPath } from "../components/identity-file-field";
+import { ThemePicker } from "../components/theme-picker";
 import {
   currentApiBase,
   deleteAccount,
@@ -25,7 +27,7 @@ import {
   signOut,
 } from "../lib/api";
 import { confirmDeleteBot } from "../lib/bot-lifecycle";
-import { native } from "../lib/native";
+import { type ThemedStyleArgs, useTheme, useThemedStyles } from "../lib/theme";
 
 export default function Account() {
   const router = useRouter();
@@ -46,6 +48,8 @@ export default function Account() {
   const { avatarStyle, updateAvatarStyle } = useAvatarStyle();
   const [userDoc, setUserDoc] = useState<MemoryDocument | null>(null);
   const [userFile, setUserFile] = useState("");
+  const { palette } = useTheme();
+  const styles = useThemedStyles(makeStyles);
 
   useEffect(() => {
     void rpc<MobileMe>("me")
@@ -243,7 +247,7 @@ export default function Account() {
                   ]}
                 >
                   <BotAvatar
-                    color={style === "robot" ? "#8B5CF6" : "#D62F8B"}
+                    color={style === "robot" ? botColors[3] : botColors[6]}
                     identity="avatar-preview"
                     size={42}
                     variant={style}
@@ -254,6 +258,11 @@ export default function Account() {
             })}
           </View>
           {avatarError ? <Text style={styles.error}>{avatarError}</Text> : null}
+        </View>
+
+        <View accessibilityLabel="Theme" style={styles.avatarSection}>
+          <Text style={styles.settingsTitle}>Theme</Text>
+          <ThemePicker />
         </View>
 
         <Pressable
@@ -372,7 +381,7 @@ export default function Account() {
               setError(null);
             }}
             placeholder="Current password"
-            placeholderTextColor={native.tertiaryLabel}
+            placeholderTextColor={palette.muted2}
             secureTextEntry
             style={styles.password}
             textContentType="password"
@@ -390,7 +399,7 @@ export default function Account() {
             ]}
           >
             {pending ? (
-              <ActivityIndicator color="#FFFFFF" />
+              <ActivityIndicator color={palette.dangerInk} />
             ) : (
               <Text style={styles.deleteLabel}>Delete account</Text>
             )}
@@ -401,200 +410,201 @@ export default function Account() {
   );
 }
 
-const styles = StyleSheet.create({
-  screen: {
-    flex: 1,
-    backgroundColor: native.page,
-  },
-  content: {
-    flexGrow: 1,
-    padding: 20,
-    gap: 20,
-  },
-  profile: {
-    borderRadius: 16,
-    backgroundColor: native.fill,
-    padding: 18,
-    gap: 4,
-  },
-  name: {
-    color: native.label,
-    fontSize: 20,
-    fontWeight: "600",
-  },
-  email: {
-    color: native.secondaryLabel,
-    fontSize: 15,
-  },
-  identityInput: {
-    marginTop: 10,
-    minHeight: 140,
-    borderRadius: 12,
-    backgroundColor: native.page,
-    color: native.label,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    fontSize: 15,
-    textAlignVertical: "top",
-  },
-  identitySave: {
-    marginTop: 12,
-    minHeight: 44,
-    borderRadius: 12,
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: native.label,
-  },
-  identitySaveLabel: {
-    color: native.page,
-    fontSize: 16,
-    fontWeight: "600",
-  },
-  button: {
-    minHeight: 50,
-    borderRadius: 14,
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: native.fill,
-  },
-  buttonLabel: {
-    color: native.label,
-    fontSize: 17,
-    fontWeight: "600",
-  },
-  archivedSection: {
-    borderRadius: 16,
-    backgroundColor: native.fill,
-    padding: 18,
-    gap: 14,
-  },
-  sectionTitle: {
-    color: native.secondaryLabel,
-    fontSize: 14,
-    fontWeight: "600",
-  },
-  archivedRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 14,
-  },
-  archivedName: {
-    flex: 1,
-    color: native.label,
-    fontSize: 16,
-  },
-  restoreLabel: {
-    color: native.label,
-    fontSize: 14,
-    fontWeight: "600",
-  },
-  archivedDeleteLabel: {
-    color: "#FF6961",
-    fontSize: 14,
-  },
-  settingsButton: {
-    minHeight: 62,
-    borderRadius: 14,
-    backgroundColor: native.fill,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-  },
-  avatarSection: {
-    borderRadius: 16,
-    backgroundColor: native.fill,
-    padding: 18,
-    gap: 14,
-  },
-  avatarOptions: {
-    flexDirection: "row",
-    gap: 12,
-  },
-  avatarOption: {
-    flex: 1,
-    minHeight: 86,
-    borderRadius: 14,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: native.tertiaryLabel,
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 8,
-  },
-  avatarOptionSelected: {
-    borderColor: native.label,
-    backgroundColor: native.fillPressed,
-  },
-  avatarLabel: {
-    color: native.label,
-    fontSize: 14,
-    fontWeight: "600",
-  },
-  settingsTitle: {
-    color: native.label,
-    fontSize: 17,
-    fontWeight: "600",
-  },
-  settingsExplanation: {
-    color: native.secondaryLabel,
-    fontSize: 13,
-    marginTop: 3,
-  },
-  chevron: {
-    color: native.secondaryLabel,
-    fontSize: 28,
-    fontWeight: "300",
-  },
-  dangerZone: {
-    marginTop: 12,
-    borderRadius: 16,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: "#5A2426",
-    padding: 18,
-  },
-  dangerTitle: {
-    color: "#FF6961",
-    fontSize: 17,
-    fontWeight: "600",
-  },
-  explanation: {
-    color: native.secondaryLabel,
-    fontSize: 14,
-    lineHeight: 20,
-    marginTop: 8,
-  },
-  password: {
-    height: 48,
-    borderRadius: 12,
-    backgroundColor: native.fill,
-    color: native.label,
-    paddingHorizontal: 14,
-    marginTop: 16,
-    fontSize: 16,
-  },
-  error: {
-    color: "#FF6961",
-    fontSize: 14,
-    marginTop: 10,
-  },
-  deleteButton: {
-    minHeight: 50,
-    borderRadius: 12,
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: "#C9363E",
-    marginTop: 14,
-  },
-  deleteLabel: {
-    color: "#FFFFFF",
-    fontSize: 16,
-    fontWeight: "700",
-  },
-  disabled: {
-    opacity: 0.45,
-  },
-  pressed: {
-    opacity: 0.7,
-  },
-});
+const makeStyles = ({ palette }: ThemedStyleArgs) =>
+  StyleSheet.create({
+    screen: {
+      flex: 1,
+      backgroundColor: palette.page,
+    },
+    content: {
+      flexGrow: 1,
+      padding: 20,
+      gap: 20,
+    },
+    profile: {
+      borderRadius: 16,
+      backgroundColor: palette.surface,
+      padding: 18,
+      gap: 4,
+    },
+    name: {
+      color: palette.ink,
+      fontSize: 20,
+      fontWeight: "600",
+    },
+    email: {
+      color: palette.muted,
+      fontSize: 15,
+    },
+    identityInput: {
+      marginTop: 10,
+      minHeight: 140,
+      borderRadius: 12,
+      backgroundColor: palette.input,
+      color: palette.ink,
+      paddingHorizontal: 14,
+      paddingVertical: 12,
+      fontSize: 15,
+      textAlignVertical: "top",
+    },
+    identitySave: {
+      marginTop: 12,
+      minHeight: 44,
+      borderRadius: 12,
+      alignItems: "center",
+      justifyContent: "center",
+      backgroundColor: palette.solid,
+    },
+    identitySaveLabel: {
+      color: palette.solidInk,
+      fontSize: 16,
+      fontWeight: "600",
+    },
+    button: {
+      minHeight: 50,
+      borderRadius: 14,
+      alignItems: "center",
+      justifyContent: "center",
+      backgroundColor: palette.surface,
+    },
+    buttonLabel: {
+      color: palette.ink,
+      fontSize: 17,
+      fontWeight: "600",
+    },
+    archivedSection: {
+      borderRadius: 16,
+      backgroundColor: palette.surface,
+      padding: 18,
+      gap: 14,
+    },
+    sectionTitle: {
+      color: palette.muted,
+      fontSize: 14,
+      fontWeight: "600",
+    },
+    archivedRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 14,
+    },
+    archivedName: {
+      flex: 1,
+      color: palette.ink,
+      fontSize: 16,
+    },
+    restoreLabel: {
+      color: palette.ink,
+      fontSize: 14,
+      fontWeight: "600",
+    },
+    archivedDeleteLabel: {
+      color: palette.danger,
+      fontSize: 14,
+    },
+    settingsButton: {
+      minHeight: 62,
+      borderRadius: 14,
+      backgroundColor: palette.surface,
+      paddingHorizontal: 16,
+      paddingVertical: 12,
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "space-between",
+    },
+    avatarSection: {
+      borderRadius: 16,
+      backgroundColor: palette.surface,
+      padding: 18,
+      gap: 14,
+    },
+    avatarOptions: {
+      flexDirection: "row",
+      gap: 12,
+    },
+    avatarOption: {
+      flex: 1,
+      minHeight: 86,
+      borderRadius: 14,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: palette.hairlineStrong,
+      alignItems: "center",
+      justifyContent: "center",
+      gap: 8,
+    },
+    avatarOptionSelected: {
+      borderColor: palette.ink,
+      backgroundColor: palette.hover,
+    },
+    avatarLabel: {
+      color: palette.ink,
+      fontSize: 14,
+      fontWeight: "600",
+    },
+    settingsTitle: {
+      color: palette.ink,
+      fontSize: 17,
+      fontWeight: "600",
+    },
+    settingsExplanation: {
+      color: palette.muted,
+      fontSize: 13,
+      marginTop: 3,
+    },
+    chevron: {
+      color: palette.muted,
+      fontSize: 28,
+      fontWeight: "300",
+    },
+    dangerZone: {
+      marginTop: 12,
+      borderRadius: 16,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: palette.danger,
+      padding: 18,
+    },
+    dangerTitle: {
+      color: palette.danger,
+      fontSize: 17,
+      fontWeight: "600",
+    },
+    explanation: {
+      color: palette.muted,
+      fontSize: 14,
+      lineHeight: 20,
+      marginTop: 8,
+    },
+    password: {
+      height: 48,
+      borderRadius: 12,
+      backgroundColor: palette.input,
+      color: palette.ink,
+      paddingHorizontal: 14,
+      marginTop: 16,
+      fontSize: 16,
+    },
+    error: {
+      color: palette.danger,
+      fontSize: 14,
+      marginTop: 10,
+    },
+    deleteButton: {
+      minHeight: 50,
+      borderRadius: 12,
+      alignItems: "center",
+      justifyContent: "center",
+      backgroundColor: palette.danger,
+      marginTop: 14,
+    },
+    deleteLabel: {
+      color: palette.dangerInk,
+      fontSize: 16,
+      fontWeight: "700",
+    },
+    disabled: {
+      opacity: 0.45,
+    },
+    pressed: {
+      opacity: 0.7,
+    },
+  });
