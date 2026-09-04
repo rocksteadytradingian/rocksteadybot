@@ -246,6 +246,10 @@ export function PluginsOverlay({
   }
 
   async function revoke(item: ConnectionCatalogItem) {
+    const confirmed = window.confirm(
+      t`Disconnect ${item.name}? Bots will lose access to its tools until it is reconnected.`,
+    );
+    if (!confirmed) return;
     setCatalogError(null);
     const key = itemKey(item);
     setPending(key);
@@ -258,8 +262,16 @@ export function PluginsOverlay({
         matches.find((entry) => entry.status === "connected") ??
         matches.find((entry) => entry.status === "pending") ??
         matches.find((entry) => entry.status === "error");
-      if (!row) throw new Error(t`No connection record found for ${item.name}.`);
-      await rpc.connections.revoke({ connectionId: row.id });
+      if (row) {
+        await rpc.connections.revoke({ connectionId: row.id });
+      } else {
+        // Catalog reports `connected` account-wide; the revocable row may live in
+        // another workspace. Revoke by provider so it works from anywhere.
+        await rpc.connections.revokeByProvider({
+          connectorId: item.connectorId,
+          provider: item.slug,
+        });
+      }
       setItemConnected(item, false);
     } catch (err) {
       setCatalogError(err instanceof Error ? err.message : t`Could not revoke connection`);
@@ -848,7 +860,7 @@ function PluginRow({
   const { t } = useLingui();
   return (
     <div
-      className={`flex min-w-0 items-center gap-3 rounded-[13px] px-2.5 py-2 ${disabled ? "opacity-70" : ""}`}
+      className={`group flex min-w-0 items-center gap-3 rounded-[13px] px-2.5 py-2 ${disabled ? "opacity-70" : ""}`}
     >
       {logo ? (
         <img
@@ -870,25 +882,36 @@ function PluginRow({
       {onToggle ? (
         <button
           type="button"
-          aria-label={connected ? t`Remove ${name}` : t`Add ${name}`}
+          aria-label={connected ? t`Disconnect ${name}` : t`Add ${name}`}
+          title={connected ? t`Disconnect ${name}` : undefined}
           disabled={pending || disabled}
           onClick={onToggle}
           className={
             connected
-              ? "flex shrink-0 items-center gap-1.5 text-[13px] font-medium text-[var(--rk-success)] disabled:opacity-60"
+              ? "flex shrink-0 items-center gap-1.5 text-[13px] font-medium text-[var(--rk-success)] hover:text-[var(--rk-danger)] group-hover:text-[var(--rk-danger)] focus-visible:text-[var(--rk-danger)] disabled:opacity-60"
               : "shrink-0 rounded-full border border-[var(--rk-hairline-strong)] px-3 py-1 text-[13px] font-medium text-[var(--rk-ink)] hover:bg-[var(--rk-hover)] disabled:opacity-60"
           }
         >
           {pending ? (
             connected ? (
-              <Trans>Removing…</Trans>
+              <Trans>Disconnecting…</Trans>
             ) : (
               <Trans>Adding…</Trans>
             )
           ) : connected ? (
             <>
-              <Check size={14} strokeWidth={2.6} aria-hidden />
-              <Trans>Added</Trans>
+              <Check
+                size={14}
+                strokeWidth={2.6}
+                aria-hidden
+                className="group-hover:hidden group-focus-within:hidden"
+              />
+              <span className="group-hover:hidden group-focus-within:hidden">
+                <Trans>Added</Trans>
+              </span>
+              <span className="hidden group-hover:inline group-focus-within:inline">
+                <Trans>Disconnect</Trans>
+              </span>
             </>
           ) : (
             <Trans>Add</Trans>

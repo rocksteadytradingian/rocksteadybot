@@ -508,6 +508,15 @@ export const appContract = {
       .input(z.object({ connectionId: Id, code: z.string().optional() }))
       .output(ConnectionSchema),
     revoke: oc.input(z.object({ connectionId: Id })).output(z.object({ ok: z.literal(true) })),
+    /**
+     * Revoke by connector + provider across every workspace the user owns.
+     * The catalog reports `connected` from the account-wide provider view, so a
+     * connection made in another workspace has no revocable row in the current
+     * one; this path closes that gap.
+     */
+    revokeByProvider: oc
+      .input(z.object({ connectorId: z.string(), provider: z.string() }))
+      .output(z.object({ ok: z.literal(true) })),
     projectKey: oc.output(ComposioProjectKeyStatusSchema),
     setProjectKey: oc
       .input(z.object({ apiKey: z.string().min(8).max(512) }))

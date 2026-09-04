@@ -33,7 +33,7 @@ The set-password CLI updates the local replica and, when those variables are set
 ## Docker Compose (single machine)
 
 1. Copy `.env.example` to `.env` and set `BETTER_AUTH_SECRET` and `ENCRYPTION_KEY` to long random strings. Rakazo refuses placeholder or missing secrets outside `development` / `test` (or when `RAKAZO_ALLOW_DEV_SECRETS=1` is set).
-2. Set `OPENROUTER_API_KEY` (and `COMPOSIO_API_KEY` if you want Plugins).
+2. Set `OPENROUTER_API_KEY` (and a plugin connector — `COMPOSIO_API_KEY` or the `PIPEDREAM_*` set, see [Plugins](#plugins-connectors) — if you want Plugins).
 3. Build the computer image: `pnpm sandbox:build` (Compose also builds it via the `computer` service).
 4. `docker compose --env-file .env -f infra/compose/docker-compose.yml up --build`
 5. Open the web origin (`http://127.0.0.1:5173` by default). The first registered user becomes the deployment owner.
@@ -112,6 +112,18 @@ MCP_STDIO_ALLOWED_COMMANDS=docker,mempalace
 ```
 
 Stdio is off by default. Only allowlist binaries you install and trust. MemPalace is not a Rakazo provider, has no workspace tenancy, and is not available on mobile.
+
+## Plugins (connectors)
+
+Plugins are supplied by interchangeable managed connector backends, registered together for both the API and the worker. Set the same values on both processes (Compose passes `.env` through to each):
+
+- **Composio** — set `COMPOSIO_API_KEY` (or let each user save their own key in **Plugins**). Broadest catalog.
+- **Pipedream** — set `PIPEDREAM_CLIENT_ID`, `PIPEDREAM_CLIENT_SECRET`, `PIPEDREAM_PROJECT_ID`, and `PIPEDREAM_ENVIRONMENT` (`development` or `production`). No Composio account needed; covers Microsoft OneDrive / Outlook / Teams, YouTube (`youtube_data_api`), and most of the same apps. `ENCRYPTION_KEY` must be set — it derives the per-user Pipedream Connect identity.
+- **MCP servers** — add any remote MCP server per workspace in **Settings → MCP** (OAuth or static token). Fully vendor-neutral; use this for a Microsoft Graph or YouTube MCP when you want neither hosted broker.
+
+Any combination can run at once — catalog entries carry their `connectorId` and the connect/auth flow routes to the matching backend. After connecting an app it must also be attached to a bot (the per-bot toggle in **Plugins**) before that bot sees its tools.
+
+Connecting a Microsoft app over OAuth can still require Azure AD tenant admin consent for some Graph scopes. That gate is on Microsoft's side and is independent of which connector backend you use.
 
 ## Choosing a computer provider
 

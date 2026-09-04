@@ -424,6 +424,35 @@ describeWithDatabase("Composio catalog reconciliation", () => {
     ).resolves.toBeNull();
   });
 
+  it("revokes a connection by provider from a workspace that has no local row", async () => {
+    const cookie = await signup(app, `cross-ws-revoke-${stamp}@rakazo.test`, "Cross Workspace");
+    const actor = await rpc<Actor>(app, cookie, "me");
+    await connectRemote(composio, actor, "NOTION");
+    const local = await createConnection(actor, "NOTION");
+    // reconcile the pending row to connected via the catalog pass
+    await rpc(app, cookie, "connections/catalog");
+    await expect(statuses([local.id])).resolves.toEqual([{ id: local.id, status: "connected" }]);
+
+    // move to a brand-new workspace, which starts with no connection rows
+    const moved = await rpc<Actor>(app, cookie, "workspaces/create", { name: "Second" });
+    expect(moved.workspaceId).not.toBe(actor.workspaceId);
+    await expect(rpc(app, cookie, "connections/list")).resolves.toEqual([]);
+
+    // the catalog still reports NOTION connected (account-wide), and revoke works
+    await rpc(app, cookie, "connections/revokeByProvider", {
+      connectorId: "composio",
+      provider: "NOTION",
+    });
+
+    await expect(statuses([local.id])).resolves.toEqual([{ id: local.id, status: "revoked" }]);
+    const catalog = await rpc<Array<{ slug: string; connected: boolean }>>(
+      app,
+      cookie,
+      "connections/catalog",
+    );
+    expect(catalog).toContainEqual(expect.objectContaining({ slug: "NOTION", connected: false }));
+  });
+
   async function createConnection(owner: Actor, provider: string) {
     return handles.prisma.connection.create({
       data: {

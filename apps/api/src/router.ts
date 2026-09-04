@@ -2758,6 +2758,54 @@ export function createRouter(deps: RouterDeps) {
         });
         return { ok: true as const };
       }),
+      revokeByProvider: authed.connections.revokeByProvider.handler(async ({ context, input }) => {
+        const connector = deps.connectors.managed(input.connectorId);
+        if (!connector) {
+          throw new ORPCError("BAD_REQUEST", {
+            message: `Connector ${input.connectorId} is not configured`,
+          });
+        }
+        const rows = await deps.prisma.connection.findMany({
+          where: {
+            userId: context.actor.userId,
+            connectorId: input.connectorId,
+            provider: input.provider,
+          },
+        });
+        // Prefer a live row, and revoke through the workspace it was created in
+        // so per-workspace providers (Pipedream identities) resolve correctly.
+        const target =
+          rows.find((row) => row.status === "connected") ??
+          rows.find((row) => row.status === "pending") ??
+          rows.find((row) => row.status === "error") ??
+          rows[0];
+        try {
+          await connector.revoke(
+            input.provider,
+            connectionContext(
+              {
+                workspaceId: target?.workspaceId ?? context.actor.workspaceId,
+                userId: context.actor.userId,
+              },
+              "connections.revokeByProvider",
+              context.signal,
+            ),
+          );
+        } catch (error) {
+          throw new ORPCError("BAD_REQUEST", { message: sanitizeComposioError(error) });
+        }
+        if (rows.length > 0) {
+          await deps.prisma.connection.updateMany({
+            where: {
+              userId: context.actor.userId,
+              connectorId: input.connectorId,
+              provider: input.provider,
+            },
+            data: { status: "revoked" },
+          });
+        }
+        return { ok: true as const };
+      }),
       projectKey: authed.connections.projectKey.handler(async ({ context }) =>
         readComposioProjectKeyStatus(
           { prisma: deps.prisma, secrets: deps.secrets, envApiKey: deps.env.composioApiKey },
