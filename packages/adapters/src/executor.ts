@@ -240,7 +240,7 @@ export interface ExecutorDeps {
   dataDir?: string;
   notifications?: NotificationProvider;
   jobs: JobPublisher;
-  listConnectedPluginSlugs?: (userId: string) => Promise<string[]>;
+  listConnectedPluginSlugs?: (userId: string, workspaceId: string) => Promise<string[]>;
 }
 
 export async function deferFutureRoutine(
@@ -256,10 +256,11 @@ export async function deferFutureRoutine(
 async function loadLivePluginSlugs(
   listConnectedPluginSlugs: ExecutorDeps["listConnectedPluginSlugs"],
   userId: string,
+  workspaceId: string,
 ): Promise<{ ok: true; slugs: string[] } | { ok: false }> {
   if (!listConnectedPluginSlugs) return { ok: false };
   try {
-    return { ok: true, slugs: await listConnectedPluginSlugs(userId) };
+    return { ok: true, slugs: await listConnectedPluginSlugs(userId, workspaceId) };
   } catch {
     return { ok: false };
   }
@@ -671,7 +672,11 @@ export function createRunExecutor(deps: ExecutorDeps) {
         );
         let liveSlugs: string[] = [];
         if (needsLivePluginSync(composioRows)) {
-          const listing = await loadLivePluginSlugs(deps.listConnectedPluginSlugs, run.userId);
+          const listing = await loadLivePluginSlugs(
+            deps.listConnectedPluginSlugs,
+            run.userId,
+            run.workspaceId,
+          );
           if (listing.ok) {
             liveSlugs = listing.slugs;
             await persistLivePluginConnections(deps.prisma, run, composioRows, listing.slugs).catch(

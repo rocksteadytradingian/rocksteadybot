@@ -77,7 +77,8 @@ export type ComposioCatalogItem = Omit<ConnectorCatalogItem, "connectorId">;
 
 export interface ComposioProvider extends ManagedConnectorProvider {
   warmDirectory(): Promise<void>;
-  listConnectedSlugs(userId: string): Promise<string[]>;
+  /** Connected toolkit slugs for one workspace's own Composio identity, not the whole account. */
+  listConnectedSlugs(userId: string, workspaceId: string): Promise<string[]>;
   invalidateUser?(userId: string): void;
 }
 
@@ -235,6 +236,9 @@ export function planLiveConnectionSync(
 export class ComposioConnector implements ComposioProvider {
   private readonly clients = new Map<string, Composio>();
   private readonly catalogSessions = new Map<string, string>();
+  // Keyed by entityId(userId, workspaceId) — one Composio identity per workspace,
+  // so two workspaces can hold two different connected accounts for the same app.
+  private readonly workspaceSessions = new Map<string, string>();
   private readonly executeSessions = new Map<string, { sessionId: string; key: string }>();
   private readonly directoryCaches = new Map<
     string,
@@ -254,7 +258,13 @@ export class ComposioConnector implements ComposioProvider {
 
   invalidateUser(userId: string): void {
     this.catalogSessions.delete(userId);
-    this.executeSessions.delete(userId);
+    const prefix = `${userId}:`;
+    for (const key of this.workspaceSessions.keys()) {
+      if (key.startsWith(prefix)) this.workspaceSessions.delete(key);
+    }
+    for (const key of this.executeSessions.keys()) {
+      if (key.startsWith(prefix)) this.executeSessions.delete(key);
+    }
     this.directoryCaches.get(userId)?.invalidate();
   }
 
@@ -264,6 +274,11 @@ export class ComposioConnector implements ComposioProvider {
     return this.options.envApiKey;
   }
 
+  private entityId(userId: string, workspaceId: string): string {
+    return `${userId}:${workspaceId}`;
+  }
+
+  /** Shared per-user session for the app directory only — no connection state, safe to share. */
   async sessionFor(userId: string): Promise<ComposioSession> {
     const composio = await this.sdkFor(userId);
     const existing = this.catalogSessions.get(userId);
@@ -282,25 +297,50 @@ export class ComposioConnector implements ComposioProvider {
     return session;
   }
 
-  async sessionForExecute(userId: string, toolkits: string[]): Promise<ComposioSession> {
-    const key = executeSessionKey(toolkits);
-    if (!key) return this.sessionFor(userId);
+  /** Per-workspace Composio identity — this is what owns connected accounts. */
+  private async sessionForWorkspace(userId: string, workspaceId: string): Promise<ComposioSession> {
+    const entity = this.entityId(userId, workspaceId);
     const composio = await this.sdkFor(userId);
-    const existing = this.executeSessions.get(userId);
+    const existing = this.workspaceSessions.get(entity);
+    if (existing) {
+      try {
+        return await composio.sessions.use(existing);
+      } catch {
+        this.workspaceSessions.delete(entity);
+      }
+    }
+    const session = await composio.create(entity, {
+      manageConnections: false,
+      sandbox: { enable: false },
+    });
+    this.workspaceSessions.set(entity, session.sessionId);
+    return session;
+  }
+
+  async sessionForExecute(
+    userId: string,
+    workspaceId: string,
+    toolkits: string[],
+  ): Promise<ComposioSession> {
+    const key = executeSessionKey(toolkits);
+    if (!key) return this.sessionForWorkspace(userId, workspaceId);
+    const entity = this.entityId(userId, workspaceId);
+    const composio = await this.sdkFor(userId);
+    const existing = this.executeSessions.get(entity);
     if (existing?.key === key) {
       try {
         return await composio.sessions.use(existing.sessionId);
       } catch {
-        this.executeSessions.delete(userId);
+        this.executeSessions.delete(entity);
       }
     }
-    const session = await composio.create(userId, {
+    const session = await composio.create(entity, {
       manageConnections: false,
       sandbox: { enable: false },
       toolkits: key.split(","),
       sessionPreset: "direct_tools",
     });
-    this.executeSessions.set(userId, { sessionId: session.sessionId, key });
+    this.executeSessions.set(entity, { sessionId: session.sessionId, key });
     return session;
   }
 
@@ -309,7 +349,7 @@ export class ComposioConnector implements ComposioProvider {
       const directory = await this.directory(context.userId);
       let connected: string[] = [];
       try {
-        connected = await this.listConnectedSlugs(context.userId);
+        connected = await this.listConnectedSlugs(context.userId, context.workspaceId);
       } catch {
         connected = [];
       }
@@ -362,10 +402,10 @@ export class ComposioConnector implements ComposioProvider {
     }
   }
 
-  async listConnectedSlugs(userId: string): Promise<string[]> {
+  async listConnectedSlugs(userId: string, workspaceId: string): Promise<string[]> {
     try {
       if (!(await this.resolveApiKey(userId))) return [];
-      const session = await this.sessionFor(userId);
+      const session = await this.sessionForWorkspace(userId, workspaceId);
       const connected = await collectPages((cursor) =>
         session.toolkits({ isConnected: true, limit: 50, cursor }),
       );
@@ -376,13 +416,13 @@ export class ComposioConnector implements ComposioProvider {
   }
 
   async listConnectedExternalIds(context: AdapterContext): Promise<string[]> {
-    return this.listConnectedSlugs(context.userId);
+    return this.listConnectedSlugs(context.userId, context.workspaceId);
   }
 
   async discoverTools(context: AdapterContext): Promise<ConnectorTool[]> {
     const toolkits = connectedComposioExternalIds(context);
     if (toolkits.length === 0) return [];
-    const session = await this.sessionForExecute(context.userId, toolkits);
+    const session = await this.sessionForExecute(context.userId, context.workspaceId, toolkits);
     const raw = await session.tools();
     return asConnectorTools(raw);
   }
@@ -391,6 +431,7 @@ export class ComposioConnector implements ComposioProvider {
     try {
       const session = await this.sessionForExecute(
         context.userId,
+        context.workspaceId,
         connectedComposioExternalIds(context),
       );
       const result = await session.execute(call.tool, call.args ?? {});
@@ -415,7 +456,7 @@ export class ComposioConnector implements ComposioProvider {
     request: { provider: string; redirectUrl: string },
     context: AdapterContext,
   ): Promise<{ authorizationUrl: string | null; state: string }> {
-    const session = await this.sessionFor(context.userId);
+    const session = await this.sessionForWorkspace(context.userId, context.workspaceId);
     try {
       const connectionRequest = await session.authorize(request.provider, {
         callbackUrl: request.redirectUrl,
@@ -436,7 +477,7 @@ export class ComposioConnector implements ComposioProvider {
   }
 
   async connectionReady(context: AdapterContext, slug: string): Promise<boolean> {
-    const session = await this.sessionFor(context.userId);
+    const session = await this.sessionForWorkspace(context.userId, context.workspaceId);
     const page = await session.toolkits({ search: slug, limit: 50 });
     const match = page.items.find((item) => item.slug === slug);
     if (!match) return false;
@@ -451,12 +492,20 @@ export class ComposioConnector implements ComposioProvider {
   }
 
   async revoke(connectionRef: string, context: AdapterContext): Promise<void> {
-    const accountId = await this.connectedAccountId(context.userId, connectionRef);
+    const accountId = await this.connectedAccountId(
+      context.userId,
+      context.workspaceId,
+      connectionRef,
+    );
     if (accountId) await (await this.sdkFor(context.userId)).connectedAccounts.delete(accountId);
   }
 
-  async connectedAccountId(userId: string, slug: string): Promise<string | undefined> {
-    const session = await this.sessionFor(userId);
+  async connectedAccountId(
+    userId: string,
+    workspaceId: string,
+    slug: string,
+  ): Promise<string | undefined> {
+    const session = await this.sessionForWorkspace(userId, workspaceId);
     const toolkits = await session.toolkits({ isConnected: true });
     return toolkits.items.find((item) => item.slug === slug)?.connection?.connectedAccount?.id;
   }

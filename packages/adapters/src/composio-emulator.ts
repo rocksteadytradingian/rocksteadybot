@@ -21,7 +21,9 @@ const DEFAULT_CATALOG: ReadonlyArray<Omit<ComposioCatalogItem, "connected">> = [
 
 /** Deterministic, offline Composio catalog and connection emulator for product tests. */
 export class ComposioEmulator implements ComposioProvider {
-  private readonly connectedByUser = new Map<string, Set<string>>();
+  // Keyed by entityId(userId, workspaceId) — mirrors the real connector's per-workspace
+  // Composio identity, so tests can prove two workspaces hold separate connections.
+  private readonly connectedByEntity = new Map<string, Set<string>>();
   readonly executions: Array<{
     userId: string;
     tool: string;
@@ -43,8 +45,14 @@ export class ComposioEmulator implements ComposioProvider {
     };
   }
 
+  private entityId(userId: string, workspaceId: string): string {
+    return `${userId}:${workspaceId}`;
+  }
+
   async catalog(context: AdapterContext, query?: string) {
-    const connected = this.connectedByUser.get(context.userId) ?? new Set<string>();
+    const connected =
+      this.connectedByEntity.get(this.entityId(context.userId, context.workspaceId)) ??
+      new Set<string>();
     return filterCatalog(
       this.directory.map((item) => ({ ...item, connected: connected.has(item.slug) })),
       query ?? "",
@@ -53,12 +61,12 @@ export class ComposioEmulator implements ComposioProvider {
 
   async warmDirectory(): Promise<void> {}
 
-  async listConnectedSlugs(userId: string): Promise<string[]> {
-    return [...(this.connectedByUser.get(userId) ?? [])];
+  async listConnectedSlugs(userId: string, workspaceId: string): Promise<string[]> {
+    return [...(this.connectedByEntity.get(this.entityId(userId, workspaceId)) ?? [])];
   }
 
   async listConnectedExternalIds(context: AdapterContext): Promise<string[]> {
-    return this.listConnectedSlugs(context.userId);
+    return this.listConnectedSlugs(context.userId, context.workspaceId);
   }
 
   async discoverTools(context: AdapterContext): Promise<ConnectorTool[]> {
@@ -87,14 +95,18 @@ export class ComposioEmulator implements ComposioProvider {
     request: { provider: string; redirectUrl: string },
     context: AdapterContext,
   ): Promise<{ authorizationUrl: string | null; state: string }> {
-    const connected = this.connectedByUser.get(context.userId) ?? new Set<string>();
+    const entity = this.entityId(context.userId, context.workspaceId);
+    const connected = this.connectedByEntity.get(entity) ?? new Set<string>();
     connected.add(request.provider);
-    this.connectedByUser.set(context.userId, connected);
+    this.connectedByEntity.set(entity, connected);
     return { authorizationUrl: null, state: request.provider };
   }
 
   async connectionReady(context: AdapterContext, slug: string): Promise<boolean> {
-    return this.connectedByUser.get(context.userId)?.has(slug) ?? false;
+    return (
+      this.connectedByEntity.get(this.entityId(context.userId, context.workspaceId))?.has(slug) ??
+      false
+    );
   }
 
   async complete(
@@ -105,6 +117,8 @@ export class ComposioEmulator implements ComposioProvider {
   }
 
   async revoke(connectionRef: string, context: AdapterContext): Promise<void> {
-    this.connectedByUser.get(context.userId)?.delete(connectionRef);
+    this.connectedByEntity
+      .get(this.entityId(context.userId, context.workspaceId))
+      ?.delete(connectionRef);
   }
 }

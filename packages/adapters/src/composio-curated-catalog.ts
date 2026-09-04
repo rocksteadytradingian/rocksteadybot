@@ -69,7 +69,7 @@ export class CuratedComposioCatalog implements ManagedConnectorProvider {
   }
 
   async catalog(context: AdapterContext, query?: string): Promise<ConnectorCatalogItem[]> {
-    const connected = await this.listConnectedSlugs(context.userId);
+    const connected = await this.listConnectedSlugs(context.userId, context.workspaceId);
     return filterDirectory(
       mergeCatalogWithConnected([...CURATED_COMPOSIO_TOOLKITS], connected),
       query ?? "",
@@ -78,12 +78,12 @@ export class CuratedComposioCatalog implements ManagedConnectorProvider {
 
   async warmDirectory(): Promise<void> {}
 
-  async listConnectedSlugs(_userId: string): Promise<string[]> {
+  async listConnectedSlugs(_userId: string, _workspaceId: string): Promise<string[]> {
     return [];
   }
 
   async listConnectedExternalIds(context: AdapterContext): Promise<string[]> {
-    return this.listConnectedSlugs(context.userId);
+    return this.listConnectedSlugs(context.userId, context.workspaceId);
   }
 
   async discoverTools(_context: AdapterContext): Promise<ConnectorTool[]> {
