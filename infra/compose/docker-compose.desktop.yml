@@ -1,10 +1,11 @@
-# Desktop launches this stack so a leftover host process on :3100 cannot block
-# Compose. The shell talks to the web origin on loopback :5173; the API stays on
-# the Compose network. Checkout sources are bind-mounted so Electron and sign-in
-# use this tree instead of a baked image.
+# The desktop shell talks to the web origin on loopback :5173; the web container
+# proxies to api over the Compose network, so the desktop flow never needs the
+# host :3100 publish. It is left in place (from the base compose file) so the
+# mobile dev loop can reach the API on the LAN even when the stack was last
+# started by a desktop launcher shortcut. Checkout sources are bind-mounted so
+# Electron and sign-in use this tree instead of a baked image.
 services:
   api:
-    ports: !override []
     environment:
       BETTER_AUTH_URL: http://127.0.0.1:5173
       WEB_ORIGIN: http://127.0.0.1:5173
