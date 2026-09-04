@@ -6,7 +6,9 @@ import {
   enrichPluginCatalogItem,
   pluginDescriptionFor,
   presentPluginCategories,
+  presentPluginSources,
   selectPluginEntries,
+  selectPluginEntriesBySource,
 } from "./plugin-catalog.js";
 
 function item(
@@ -132,5 +134,27 @@ describe("plugin catalog marketplace", () => {
     expect(selectPluginEntries(entries, { filter: "installed" }).map((row) => row.slug)).toEqual([
       "gmail",
     ]);
+  });
+
+  it("only presents source tabs that are actually in the catalog", () => {
+    expect(presentPluginSources([item("gmail", "Gmail")])).toEqual(["composio"]);
+    expect(
+      presentPluginSources([
+        item("gmail", "Gmail"),
+        item("linear", "Linear", { connectorId: "pipedream" }),
+      ]),
+    ).toEqual(["composio", "pipedream"]);
+    expect(presentPluginSources([])).toEqual([]);
+  });
+
+  it("filters entries down to one source, or passes everything through for all", () => {
+    const entries = [item("gmail", "Gmail"), item("linear", "Linear", { connectorId: "pipedream" })];
+    expect(selectPluginEntriesBySource(entries, "composio").map((row) => row.slug)).toEqual([
+      "gmail",
+    ]);
+    expect(selectPluginEntriesBySource(entries, "pipedream").map((row) => row.slug)).toEqual([
+      "linear",
+    ]);
+    expect(selectPluginEntriesBySource(entries, "all")).toEqual(entries);
   });
 });

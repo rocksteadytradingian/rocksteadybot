@@ -46,6 +46,28 @@ export type PluginCatalogEntry = ConnectionCatalogItem & {
   category: PluginCategoryId;
 };
 
+/** Marketplace apps come from one of these providers; each keeps its own connected account. */
+export type PluginSourceId = "composio" | "pipedream";
+export type PluginSourceFilter = "all" | PluginSourceId;
+
+const PLUGIN_SOURCE_ORDER: readonly PluginSourceId[] = ["composio", "pipedream"];
+
+/** Which source tabs to show, in display order — only sources actually present in the catalog. */
+export function presentPluginSources(
+  entries: readonly Pick<ConnectionCatalogItem, "connectorId">[],
+): PluginSourceId[] {
+  const present = new Set(entries.map((item) => item.connectorId));
+  return PLUGIN_SOURCE_ORDER.filter((id) => present.has(id));
+}
+
+export function selectPluginEntriesBySource<T extends Pick<ConnectionCatalogItem, "connectorId">>(
+  entries: readonly T[],
+  source: PluginSourceFilter,
+): T[] {
+  if (source === "all") return [...entries];
+  return entries.filter((item) => item.connectorId === source);
+}
+
 export type PluginMarketplaceSection = {
   id: PluginMarketplaceFilter;
   items: PluginCatalogEntry[];

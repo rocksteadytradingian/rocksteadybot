@@ -12,9 +12,12 @@ import {
   enrichPluginCatalogItem,
   type PluginCatalogEntry,
   type PluginMarketplaceFilter,
+  type PluginSourceFilter,
   pluginDescriptionFor,
   presentPluginCategories,
+  presentPluginSources,
   selectPluginEntries,
+  selectPluginEntriesBySource,
 } from "@rakazo/core";
 import { Button } from "@rakazo/ui-web";
 import { Check, Search } from "lucide-react";
@@ -68,6 +71,7 @@ export function PluginsOverlay({
   const { t } = useLingui();
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<OverlayFilter>("all");
+  const [source, setSource] = useState<PluginSourceFilter>("all");
   const [catalog, setCatalog] = useState<ConnectionCatalogItem[]>([]);
   const [sources, setSources] = useState<CapabilityInstall[]>([]);
   const [sourceKind, setSourceKind] = useState<SourceKind | null>(null);
@@ -122,6 +126,22 @@ export function PluginsOverlay({
     }
   }
 
+  function sourceLabel(id: PluginSourceFilter): string {
+    switch (id) {
+      case "all":
+        return t`All sources`;
+      case "composio":
+        return "Composio";
+      case "pipedream":
+        return "Pipedream";
+    }
+  }
+
+  function selectSource(next: PluginSourceFilter) {
+    setSource(next);
+    setFilter("all");
+  }
+
   async function refresh() {
     const [items, installs, keyStatus] = await Promise.all([
       rpc.connections.catalog({}),
@@ -143,13 +163,24 @@ export function PluginsOverlay({
     return () => connectionAttempt.current?.abort();
   }, []);
 
-  const entries = useMemo(() => catalog.map(enrichPluginCatalogItem), [catalog]);
-  const featuredTiles = useMemo(() => buildFeaturedConnectorTiles(catalog), [catalog]);
+  const availableSources = useMemo(() => presentPluginSources(catalog), [catalog]);
+  const sourceScopedCatalog = useMemo(
+    () => selectPluginEntriesBySource(catalog, source),
+    [catalog, source],
+  );
+  const entries = useMemo(
+    () => sourceScopedCatalog.map(enrichPluginCatalogItem),
+    [sourceScopedCatalog],
+  );
+  const featuredTiles = useMemo(
+    () => buildFeaturedConnectorTiles(sourceScopedCatalog),
+    [sourceScopedCatalog],
+  );
   const installed = useMemo(() => entries.filter((item) => item.connected), [entries]);
   const searching = query.trim().length > 0;
   const chips = useMemo(
-    () => marketplaceChips(presentPluginCategories(entries), sources.length > 0),
-    [entries, sources.length],
+    () => marketplaceChips(presentPluginCategories(entries), source === "all" && sources.length > 0),
+    [entries, source, sources.length],
   );
   const catalogFilter: PluginMarketplaceFilter = filter === "mcp" ? "all" : filter;
   const sections = useMemo(
@@ -161,20 +192,23 @@ export function PluginsOverlay({
     [catalogFilter, entries, filter, query],
   );
   const visibleSources = useMemo(() => {
+    // Tool sources (MCP/API) are neither Composio nor Pipedream — only show them
+    // when no specific source tab is selected.
+    if (source !== "all") return [];
     const needle = query.trim().toLowerCase();
-    const scoped = sources.filter((source) => {
+    const scoped = sources.filter((install) => {
       if (!needle) return true;
       return (
-        source.name.toLowerCase().includes(needle) ||
-        source.source.toLowerCase().includes(needle) ||
-        source.kind.toLowerCase().includes(needle)
+        install.name.toLowerCase().includes(needle) ||
+        install.source.toLowerCase().includes(needle) ||
+        install.kind.toLowerCase().includes(needle)
       );
     });
     if (filter === "mcp" || filter === "installed" || (filter === "all" && !searching)) {
       return scoped;
     }
     return needle ? scoped : [];
-  }, [filter, query, searching, sources]);
+  }, [filter, query, searching, source, sources]);
   const showFeatured =
     !searching && (filter === "all" || filter === "featured") && featuredTiles.length > 0;
   const showCategorySections = !searching && filter === "all";
@@ -401,6 +435,29 @@ export function PluginsOverlay({
             ✕
           </button>
         </div>
+
+        {!loading && availableSources.length > 1 ? (
+          <div className="flex gap-5 border-b border-[var(--rk-hairline)] px-6 sm:px-8">
+            {(["all", ...availableSources] as const).map((id) => {
+              const selected = source === id;
+              return (
+                <button
+                  key={id}
+                  type="button"
+                  aria-pressed={selected}
+                  onClick={() => selectSource(id)}
+                  className={`-mb-px border-b-2 px-1 pb-2.5 pt-1 text-[13.5px] font-medium ${
+                    selected
+                      ? "border-[var(--rk-ink)] text-[var(--rk-ink)]"
+                      : "border-transparent text-[var(--rk-muted)] hover:text-[var(--rk-ink)]"
+                  }`}
+                >
+                  {sourceLabel(id)}
+                </button>
+              );
+            })}
+          </div>
+        ) : null}
 
         <div className="px-6 pt-4 sm:px-8">
           <label className="relative block">
