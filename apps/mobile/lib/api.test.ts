@@ -480,6 +480,27 @@ describe("mobile thread event reduction", () => {
     });
   });
 
+  it("carries a message timestamp from the event onto the created message", () => {
+    const fromPayload = applyMobileThreadEvent(snapshot(), {
+      type: "thread.message.created",
+      createdAt: "2026-09-04T10:00:00.000Z",
+      payload: {
+        messageId: "message-1",
+        role: "bot",
+        blocks: [{ kind: "text", text: "Done" }],
+        createdAt: "2026-09-04T09:59:58.000Z",
+      },
+    });
+    expect(fromPayload?.messages.at(-1)?.createdAt).toBe("2026-09-04T09:59:58.000Z");
+
+    const fromEvent = applyMobileThreadEvent(snapshot(), {
+      type: "thread.message.created",
+      createdAt: "2026-09-04T10:00:00.000Z",
+      payload: { messageId: "message-2", role: "bot", blocks: [{ kind: "text", text: "Done" }] },
+    });
+    expect(fromEvent?.messages.at(-1)?.createdAt).toBe("2026-09-04T10:00:00.000Z");
+  });
+
   it("updates a waiting group run without replacing the newer active run", () => {
     const initial: MobileSnapshot = {
       ...snapshot(),

@@ -104,6 +104,7 @@ import {
 import {
   type ClipboardEvent,
   type DragEvent,
+  Fragment,
   lazy,
   type MutableRefObject,
   memo,
@@ -143,6 +144,11 @@ import { dictation } from "../lib/dictation";
 import { isComputerBusyForThread, liveStatusForBot } from "../lib/live-bot-status";
 import { localTimezone } from "../lib/local-timezone";
 import { connectMcpOauth } from "../lib/mcp-connect";
+import {
+  formatMessageBreak,
+  formatMessageClock,
+  shouldBreakBefore,
+} from "../lib/message-timestamps";
 import { revokePendingAttachmentPreviews } from "../lib/pending-attachments";
 import { markAfterPaint, markOnce } from "../lib/performance";
 import { rpc } from "../lib/rpc";
@@ -3669,7 +3675,7 @@ const Transcript = memo(function Transcript({
   speakingMessageId: string | null;
   onSpeak: (message: ThreadMessage) => void;
 }) {
-  const { t } = useLingui();
+  const { t, i18n } = useLingui();
   const [atEnd, setAtEnd] = useState(true);
   const contentRef = useRef<HTMLDivElement>(null);
   const pinning = useRef(false);
@@ -3817,37 +3823,68 @@ const Transcript = memo(function Transcript({
               {loadingOlder ? t`Loading…` : t`Load earlier messages`}
             </button>
           ) : null}
-          {messages.map((message) => (
-            <div
-              key={message.id}
-              data-message-id={message.id}
-              className="group/message relative pt-9 hover:z-20"
-            >
-              <MessageHoverActions message={message} onReply={onReply} />
-              <MessageView
-                artifactTarget={artifactTarget}
-                message={message}
-                canAnswer={message.id === answerableAskMessageId}
-                onOpenBot={onOpenBot}
-                onOpenPeerMessages={onOpenPeerMessages}
-                onAnswer={onAnswer}
-                speakerName={message.role === "bot" ? memberName?.(message.botId) : undefined}
-                memberName={memberName}
-                peerBot={peerBot}
-                replyPreview={
-                  message.replyToMessageId ? messageById.get(message.replyToMessageId) : undefined
-                }
-                replyToMessageId={message.replyToMessageId}
-                onJumpToMessage={onJumpToMessage}
-                onRefresh={onRefresh}
-                onBotChanged={onBotChanged}
-                onAddRoutine={onAddRoutine}
-                voiceReady={voiceReady}
-                speaking={speakingMessageId === message.id}
-                onSpeak={() => onSpeak(message)}
-              />
-            </div>
-          ))}
+          {messages.map((message, index, rows) => {
+            const isProgress = message.id.startsWith("progress:");
+            const showBreak =
+              !isProgress && shouldBreakBefore(rows[index - 1]?.createdAt, message.createdAt);
+            const clock = isProgress
+              ? ""
+              : formatMessageClock(message.createdAt, i18n.locale || "en");
+            return (
+              <Fragment key={message.id}>
+                {showBreak ? (
+                  <div className="flex justify-center pt-3 pb-1">
+                    <span className="rounded-full bg-[var(--rk-surface-2)] px-2.5 py-0.5 text-[12px] font-medium text-[var(--rk-muted)]">
+                      {formatMessageBreak(
+                        message.createdAt,
+                        { yesterday: t`Yesterday` },
+                        i18n.locale || "en",
+                      )}
+                    </span>
+                  </div>
+                ) : null}
+                <div
+                  data-message-id={message.id}
+                  className="group/message relative pt-9 hover:z-20"
+                >
+                  <MessageHoverActions message={message} onReply={onReply} />
+                  <MessageView
+                    artifactTarget={artifactTarget}
+                    message={message}
+                    canAnswer={message.id === answerableAskMessageId}
+                    onOpenBot={onOpenBot}
+                    onOpenPeerMessages={onOpenPeerMessages}
+                    onAnswer={onAnswer}
+                    speakerName={message.role === "bot" ? memberName?.(message.botId) : undefined}
+                    memberName={memberName}
+                    peerBot={peerBot}
+                    replyPreview={
+                      message.replyToMessageId
+                        ? messageById.get(message.replyToMessageId)
+                        : undefined
+                    }
+                    replyToMessageId={message.replyToMessageId}
+                    onJumpToMessage={onJumpToMessage}
+                    onRefresh={onRefresh}
+                    onBotChanged={onBotChanged}
+                    onAddRoutine={onAddRoutine}
+                    voiceReady={voiceReady}
+                    speaking={speakingMessageId === message.id}
+                    onSpeak={() => onSpeak(message)}
+                  />
+                  {clock ? (
+                    <div
+                      className={`mt-1 flex ${
+                        message.role === "user" ? "justify-end" : "justify-start"
+                      }`}
+                    >
+                      <span className="text-[11px] text-[var(--rk-muted)]">{clock}</span>
+                    </div>
+                  ) : null}
+                </div>
+              </Fragment>
+            );
+          })}
           {running &&
           !messages.some(
             (message) =>

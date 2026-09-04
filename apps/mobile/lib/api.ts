@@ -206,6 +206,7 @@ export type MobileMessage = {
   role: "user" | "bot" | "system";
   botId?: string;
   replyToMessageId?: string;
+  createdAt?: string;
   blocks: MessageBlock[];
 };
 
@@ -297,6 +298,7 @@ type ThreadEvent = {
   type: string;
   seq?: number;
   runId?: string;
+  createdAt?: string;
   payload?: Record<string, unknown>;
 };
 
@@ -419,6 +421,9 @@ export function applyMobileThreadEvent(
       }),
       ...(event.botId ? { botId: event.botId } : {}),
       ...(event.runId ? { runId: event.runId } : {}),
+      ...(previous?.createdAt || event.createdAt
+        ? { createdAt: previous?.createdAt ?? event.createdAt }
+        : {}),
     };
     return {
       ...prev,
@@ -438,6 +443,9 @@ export function applyMobileThreadEvent(
       }),
       ...(event.botId ? { botId: event.botId } : {}),
       ...(event.runId ? { runId: event.runId } : {}),
+      ...(previous?.createdAt || event.createdAt
+        ? { createdAt: previous?.createdAt ?? event.createdAt }
+        : {}),
     };
     return {
       ...prev,
@@ -453,6 +461,7 @@ export function applyMobileThreadEvent(
       role: "bot",
       ...(event.botId ? { botId: event.botId } : {}),
       ...(event.runId ? { runId: event.runId } : {}),
+      ...(event.createdAt ? { createdAt: event.createdAt } : {}),
       blocks: [
         {
           kind: "subagent",
@@ -482,6 +491,9 @@ export function applyMobileThreadEvent(
       replyToMessageId: event.payload?.replyToMessageId
         ? String(event.payload.replyToMessageId)
         : undefined,
+      createdAt: event.payload?.createdAt
+        ? String(event.payload.createdAt)
+        : (event.createdAt ?? undefined),
     };
     return {
       ...prev,
