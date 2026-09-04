@@ -5232,7 +5232,15 @@ function BotSettings({
   const [soul, setSoul] = useState("");
   const [identity, setIdentity] = useState("");
   const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const savedTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (savedTimeout.current) clearTimeout(savedTimeout.current);
+    };
+  }, []);
 
   useEffect(() => {
     void rpc.voice
@@ -5481,7 +5489,9 @@ function BotSettings({
           disabled={saving}
           onClick={() => {
             setSaving(true);
+            setSaved(false);
             setError(null);
+            if (savedTimeout.current) clearTimeout(savedTimeout.current);
             const selected = modelKey ? parseModelOptionKey(modelKey) : null;
             void (async () => {
               const writes: Array<Promise<void>> = [];
@@ -5526,13 +5536,15 @@ function BotSettings({
                     }
                   : {}),
               });
+              setSaved(true);
+              savedTimeout.current = setTimeout(() => setSaved(false), 2000);
             })()
               .catch((err) => setError(err instanceof Error ? err.message : t`Could not save`))
               .finally(() => setSaving(false));
           }}
           className="rounded-[11px] bg-[var(--rk-solid)] px-4 py-2 text-[var(--rk-solid-ink)] disabled:opacity-40"
         >
-          <Trans>Save</Trans>
+          {saving ? t`Saving…` : saved ? t`Saved` : t`Save`}
         </button>
         <button
           type="button"
