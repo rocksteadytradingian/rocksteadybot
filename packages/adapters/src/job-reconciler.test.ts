@@ -27,10 +27,12 @@ function fakePrisma(
     controlLeaseExpiresAt: Date | null;
     updatedAt: Date;
   }> = [],
+  sentinels: Array<{ id: string; nextRunAt: Date | null }> = [],
 ) {
   return {
     run: { findMany: vi.fn(async () => runs) },
     routine: { findMany: vi.fn(async () => routines) },
+    sentinel: { findMany: vi.fn(async () => sentinels) },
     computer: { findMany: vi.fn(async () => controls) },
   } as unknown as PrismaClient;
 }
@@ -51,6 +53,7 @@ describe("createJobReconciler", () => {
           updatedAt: new Date(),
         },
       ],
+      [{ id: "sentinel-1", nextRunAt: scheduledFor }],
     );
     const { jobs, enqueue } = publisher();
     const reconciler = createJobReconciler({ prisma, jobs });
@@ -67,6 +70,12 @@ describe("createJobReconciler", () => {
       payload: { routineId: "routine-1", scheduledFor: scheduledFor.toISOString() },
       availableAt: scheduledFor,
       replaceKey: "routine:routine-1",
+    });
+    expect(enqueue).toHaveBeenCalledWith({
+      name: "sentinel.wakeup",
+      payload: { sentinelId: "sentinel-1", scheduledFor: scheduledFor.toISOString() },
+      availableAt: scheduledFor,
+      replaceKey: "sentinel:sentinel-1",
     });
     expect(enqueue).toHaveBeenCalledWith({
       name: "computer.control-expire",
@@ -130,6 +139,7 @@ describe("createJobReconciler", () => {
     const prisma = {
       run: { findMany: vi.fn(async () => []) },
       routine: { findMany: vi.fn(async () => []) },
+      sentinel: { findMany: vi.fn(async () => []) },
       computer: { findMany: computerFindMany },
     } as unknown as PrismaClient;
     const { jobs, enqueue } = publisher();
@@ -192,6 +202,7 @@ describe("createJobReconciler", () => {
     const prisma = {
       run: { findMany: runFindMany },
       routine: { findMany: routineFindMany },
+      sentinel: { findMany: vi.fn(async () => []) },
       computer: { findMany: vi.fn(async () => []) },
     } as unknown as PrismaClient;
     const { jobs, enqueue } = publisher();

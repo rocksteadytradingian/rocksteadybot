@@ -65,6 +65,14 @@ export async function createSentinelFromTool(
   if (!spec.success) {
     return { error: spec.error.issues[0]?.message ?? "Invalid sentinel." };
   }
+  // A wakeup runs without a computer or a bot turn, so only the checks and actions that
+  // work in that context are accepted for now.
+  if (spec.data.check.kind !== "http-ok") {
+    return { error: 'Only "http-ok" sentinel checks are supported right now.' };
+  }
+  if (spec.data.onFire.kind !== "notify") {
+    return { error: 'Sentinels can only "notify" right now, not start a run.' };
+  }
 
   const timezone = String(input.timezone ?? "UTC");
   const resolved = resolveScheduleTiming(input.schedule, timezone);

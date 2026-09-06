@@ -192,6 +192,11 @@ import { redactObservation, type ScreenRedaction } from "./screen-redaction.js";
 import { inferScript } from "./scripted-runtime.js";
 import type { EncryptedSecretStore } from "./secrets.js";
 import {
+  cancelSentinelFromTool,
+  createSentinelFromTool,
+  listSentinelsFromTool,
+} from "./sentinel-tools.js";
+import {
   listAgentSkillRecords,
   skillCreateFromTool,
   skillDeleteFromTool,
@@ -220,6 +225,7 @@ const READ_ONLY_AGENT_TOOLS = new Set([
   "recall_memory",
   "schedule_list",
   "scratchpad_list",
+  "sentinel_list",
   "skill_read",
 ]);
 const MAX_MODEL_FILE_BYTES = 250_000;
@@ -1513,6 +1519,41 @@ export function createRunExecutor(deps: ExecutorDeps) {
               botId: bot.id,
               userId: run.userId,
               routineId: args.routineId ? String(args.routineId) : undefined,
+              name: args.name ? String(args.name) : undefined,
+            });
+            return finish(cancelled);
+          }
+          if (name === "sentinel_create") {
+            const created = await createSentinelFromTool(deps, {
+              workspaceId: run.workspaceId,
+              botId: bot.id,
+              userId: run.userId,
+              threadId: thread.id,
+              spec: {
+                name: String(args.name ?? ""),
+                check: { kind: "http-ok", url: String(args.url ?? "") },
+                trigger: String(args.trigger ?? ""),
+                window: args.window ? String(args.window) : undefined,
+                onFire: { kind: "notify", message: String(args.message ?? "") },
+              },
+              timezone: args.timezone ? String(args.timezone) : undefined,
+              schedule: { cron: args.cron, every: args.every, unit: args.unit },
+            });
+            return finish(created);
+          }
+          if (name === "sentinel_list") {
+            return listSentinelsFromTool(deps, {
+              workspaceId: run.workspaceId,
+              botId: bot.id,
+              userId: run.userId,
+            });
+          }
+          if (name === "sentinel_cancel") {
+            const cancelled = await cancelSentinelFromTool(deps, {
+              workspaceId: run.workspaceId,
+              botId: bot.id,
+              userId: run.userId,
+              sentinelId: args.sentinelId ? String(args.sentinelId) : undefined,
               name: args.name ? String(args.name) : undefined,
             });
             return finish(cancelled);

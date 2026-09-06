@@ -23,7 +23,9 @@ export function filterBuiltinToolsForThread<T extends { name: string }>(
       // In a group the room is the shared surface: hand the stage to a member
       // rather than starting a private thread off to one side.
       (!groupId || tool.name !== "message_bot") &&
-      (!groupId || !SCHEDULE_TOOL_NAMES.has(tool.name)),
+      (!groupId || !SCHEDULE_TOOL_NAMES.has(tool.name)) &&
+      // Sentinels post into a specific thread; keep them to 1:1 like schedules.
+      (!groupId || !tool.name.startsWith("sentinel_")),
   );
 }
 

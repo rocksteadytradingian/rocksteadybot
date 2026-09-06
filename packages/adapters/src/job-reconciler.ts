@@ -1,4 +1,9 @@
-import { type JobPublisher, routineWakeupJob, runContinueJob } from "@rakazo/adapter-kit";
+import {
+  type JobPublisher,
+  routineWakeupJob,
+  runContinueJob,
+  sentinelWakeupJob,
+} from "@rakazo/adapter-kit";
 import type { Pool, PrismaClient } from "@rakazo/db";
 import type { PoolClient } from "pg";
 import { scheduleComputerControlExpiry } from "./computer-control.js";
@@ -6,6 +11,7 @@ import { scheduleComputerControlExpiry } from "./computer-control.js";
 const DEFAULT_INTERVAL_MS = 30_000;
 const DEFAULT_BATCH_SIZE = 100;
 const ROUTINE_LOOKAHEAD_MS = 60_000;
+const SENTINEL_LOOKAHEAD_MS = 60_000;
 const CONTROL_LOOKAHEAD_MS = 60_000;
 // Two keys give Rakazo's lock a namespace without relying on a hash that might collide
 // with an application using the one-key advisory-lock API.
@@ -103,6 +109,7 @@ export function createJobReconciler(
   let reconciling: Promise<void> | undefined;
   let runCursor: Cursor | undefined;
   let routineCursor: Cursor | undefined;
+  let sentinelCursor: Cursor | undefined;
   let controlCursor: ControlCursor | undefined;
   let controlScanDeadline: Date | undefined;
 
@@ -129,6 +136,14 @@ export function createJobReconciler(
             ],
           }
         : undefined;
+      const sentinelCursorFilter = sentinelCursor
+        ? {
+            OR: [
+              { nextRunAt: { gt: sentinelCursor.at } },
+              { nextRunAt: sentinelCursor.at, id: { gt: sentinelCursor.id } },
+            ],
+          }
+        : undefined;
       const controlCursorFilter = controlCursor
         ? controlCursor.at
           ? {
@@ -143,7 +158,7 @@ export function createJobReconciler(
             }
           : { controlLeaseExpiresAt: null, id: { gt: controlCursor.id } }
         : undefined;
-      const [runs, routines, controls] = await Promise.all([
+      const [runs, routines, sentinels, controls] = await Promise.all([
         deps.prisma.run.findMany({
           where: {
             AND: [
@@ -171,6 +186,20 @@ export function createJobReconciler(
                 nextRunAt: { lte: new Date(now.getTime() + ROUTINE_LOOKAHEAD_MS) },
               },
               ...(routineCursorFilter ? [routineCursorFilter] : []),
+            ],
+          },
+          orderBy: [{ nextRunAt: "asc" }, { id: "asc" }],
+          take: batchSize,
+          select: { id: true, nextRunAt: true },
+        }),
+        deps.prisma.sentinel.findMany({
+          where: {
+            AND: [
+              {
+                active: true,
+                nextRunAt: { lte: new Date(now.getTime() + SENTINEL_LOOKAHEAD_MS) },
+              },
+              ...(sentinelCursorFilter ? [sentinelCursorFilter] : []),
             ],
           },
           orderBy: [{ nextRunAt: "asc" }, { id: "asc" }],
@@ -212,6 +241,11 @@ export function createJobReconciler(
             ? [deps.jobs.enqueue(routineWakeupJob(routine.id, routine.nextRunAt))]
             : [],
         ),
+        ...sentinels.flatMap((sentinel) =>
+          sentinel.nextRunAt
+            ? [deps.jobs.enqueue(sentinelWakeupJob(sentinel.id, sentinel.nextRunAt))]
+            : [],
+        ),
         ...controls.flatMap((computer) =>
           computer.controlBotId
             ? [
@@ -235,6 +269,11 @@ export function createJobReconciler(
       routineCursor =
         routines.length === batchSize && lastRoutine?.nextRunAt
           ? { at: lastRoutine.nextRunAt, id: lastRoutine.id }
+          : undefined;
+      const lastSentinel = sentinels.at(-1);
+      sentinelCursor =
+        sentinels.length === batchSize && lastSentinel?.nextRunAt
+          ? { at: lastSentinel.nextRunAt, id: lastSentinel.id }
           : undefined;
       const lastControl = controls.at(-1);
       controlCursor =
