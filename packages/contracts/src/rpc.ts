@@ -399,6 +399,10 @@ export const appContract = {
     create: oc.input(CreateAgentSkillInput).output(AgentSkillSchema),
     update: oc.input(UpdateAgentSkillInput).output(AgentSkillSchema),
     remove: oc.input(z.object({ skillId: Id })).output(z.object({ ok: z.literal(true) })),
+    /** User skills that have a proposed revision awaiting review (with full content). */
+    revisions: oc.output(z.array(AgentSkillSchema)),
+    applyRevision: oc.input(z.object({ skillId: Id })).output(AgentSkillSchema),
+    dismissRevision: oc.input(z.object({ skillId: Id })).output(AgentSkillSchema),
   },
   capabilities: {
     list: oc.output(z.array(CapabilityInstallSchema)),

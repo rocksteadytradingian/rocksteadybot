@@ -1,8 +1,14 @@
 import { ORPCError } from "@orpc/server";
 import { BUILTIN_AGENT_SKILLS } from "@rakazo/adapters";
-import type { Actor, AgentSkill, AgentSkillSource } from "@rakazo/contracts";
+import {
+  type Actor,
+  type AgentSkill,
+  type AgentSkillRevision,
+  AgentSkillRevisionSchema,
+  type AgentSkillSource,
+} from "@rakazo/contracts";
 import { buildSkillMd, isSkillReadOnly, parseSkillMd, type SkillSource } from "@rakazo/core";
-import { IsolationError, type PrismaClient } from "@rakazo/db";
+import { IsolationError, Prisma, type PrismaClient } from "@rakazo/db";
 
 type AgentSkillRow = {
   id: string;
@@ -10,9 +16,20 @@ type AgentSkillRow = {
   description: string;
   content: string;
   source: string;
+  uses: number;
+  successCount: number;
+  failCount: number;
+  lastUsedAt: Date | null;
+  pendingRevision: Prisma.JsonValue;
   createdAt: Date;
   updatedAt: Date;
 };
+
+function parsePendingRevision(value: Prisma.JsonValue): AgentSkillRevision | null {
+  if (!value || typeof value !== "object") return null;
+  const parsed = AgentSkillRevisionSchema.safeParse(value);
+  return parsed.success ? parsed.data : null;
+}
 
 function asSource(value: string): AgentSkillSource {
   if (value === "builtin" || value === "plugin" || value === "user") return value;
@@ -28,6 +45,11 @@ export function mapAgentSkill(row: AgentSkillRow): AgentSkill {
     content: row.content,
     source,
     readOnly: isSkillReadOnly(source as SkillSource),
+    uses: row.uses,
+    successCount: row.successCount,
+    failCount: row.failCount,
+    lastUsedAt: row.lastUsedAt?.toISOString() ?? null,
+    pendingRevision: parsePendingRevision(row.pendingRevision),
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
   };
@@ -41,6 +63,11 @@ function builtinCatalog(): AgentSkill[] {
     content: skill.content,
     source: "builtin" as const,
     readOnly: true,
+    uses: 0,
+    successCount: 0,
+    failCount: 0,
+    lastUsedAt: null,
+    pendingRevision: null,
     createdAt: new Date(0).toISOString(),
     updatedAt: new Date(0).toISOString(),
   }));
@@ -295,6 +322,78 @@ export function createAgentSkillsService(prisma: PrismaClient) {
       });
       if (deleted.count !== 1) throw new IsolationError();
       return { ok: true };
+    },
+
+    async revisions(actor: Actor): Promise<AgentSkill[]> {
+      const rows = await prisma.agentSkill.findMany({
+        where: {
+          workspaceId: actor.workspaceId,
+          userId: actor.userId,
+          source: "user",
+          NOT: { pendingRevision: { equals: Prisma.DbNull } },
+        },
+        orderBy: [{ updatedAt: "desc" }, { id: "asc" }],
+      });
+      return rows.map(mapAgentSkill).filter((skill) => skill.pendingRevision !== null);
+    },
+
+    async applyRevision(actor: Actor, input: { skillId: string }): Promise<AgentSkill> {
+      const existing = await owned(actor, input.skillId);
+      if (isSkillReadOnly(asSource(existing.source) as SkillSource)) {
+        throw new ORPCError("BAD_REQUEST", { message: "Builtin and plugin skills are read-only." });
+      }
+      const revision = parsePendingRevision(existing.pendingRevision);
+      if (!revision) {
+        throw new ORPCError("NOT_FOUND", { message: "This skill has no pending revision." });
+      }
+      const resolved = resolveSkillContent({ content: revision.content });
+      if (resolved.name.toLowerCase() !== existing.name.toLowerCase()) {
+        const clash = await prisma.agentSkill.findFirst({
+          where: {
+            workspaceId: actor.workspaceId,
+            userId: actor.userId,
+            name: { equals: resolved.name, mode: "insensitive" },
+            NOT: { id: existing.id },
+          },
+        });
+        if (
+          clash ||
+          builtinCatalog().some((s) => s.name.toLowerCase() === resolved.name.toLowerCase())
+        ) {
+          throw new ORPCError("CONFLICT", { message: "A skill with that name already exists." });
+        }
+      }
+      const updated = await prisma.agentSkill.updateMany({
+        where: {
+          id: existing.id,
+          workspaceId: actor.workspaceId,
+          userId: actor.userId,
+          source: "user",
+        },
+        data: {
+          name: resolved.name,
+          description: resolved.description,
+          content: resolved.content,
+          pendingRevision: Prisma.DbNull,
+        },
+      });
+      if (updated.count !== 1) throw new IsolationError();
+      return mapAgentSkill(await owned(actor, existing.id));
+    },
+
+    async dismissRevision(actor: Actor, input: { skillId: string }): Promise<AgentSkill> {
+      const existing = await owned(actor, input.skillId);
+      const updated = await prisma.agentSkill.updateMany({
+        where: {
+          id: existing.id,
+          workspaceId: actor.workspaceId,
+          userId: actor.userId,
+          source: "user",
+        },
+        data: { pendingRevision: Prisma.DbNull },
+      });
+      if (updated.count !== 1) throw new IsolationError();
+      return mapAgentSkill(await owned(actor, existing.id));
     },
   };
 }
