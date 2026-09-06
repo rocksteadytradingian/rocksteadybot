@@ -7,7 +7,7 @@ import type {
 } from "@rakazo/adapter-kit";
 import { redactionEnabled, redactionSummary } from "@rakazo/contracts";
 import { readWorkspaceRedactionPolicy } from "@rakazo/db";
-import { RegexTextRedactor } from "./regex-text-redactor.js";
+import { BoxFillScreenRedactor } from "./box-fill-redactor.js";
 
 /** The executor's screen-redaction dependency: one redactor plus the per-workspace policy. */
 export interface ScreenRedaction {
@@ -17,12 +17,13 @@ export interface ScreenRedaction {
 
 /**
  * Wire a ScreenRedaction from the database: `policyFor` reads the workspace's stored policy,
- * `redactor` defaults to the dependency-free text redactor (window titles / accessibility
- * text). Pass a stronger provider once one exists. For `createRunExecutor({ screenRedaction })`.
+ * `redactor` defaults to {@link BoxFillScreenRedactor} — text scrubbing works out of the box;
+ * image box-fill activates once a region detector is passed to it. For
+ * `createRunExecutor({ screenRedaction })`.
  */
 export function createScreenRedaction(
   prisma: Parameters<typeof readWorkspaceRedactionPolicy>[0],
-  redactor: ScreenRedactor = new RegexTextRedactor(),
+  redactor: ScreenRedactor = new BoxFillScreenRedactor(),
 ): ScreenRedaction {
   return {
     redactor,
