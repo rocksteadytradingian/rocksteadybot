@@ -1,4 +1,6 @@
-import type { ConnectionCatalogItem, SandboxKind } from "@rakazo/contracts";
+import type { ConnectionCatalogItem, SandboxKind, VerdictTier } from "@rakazo/contracts";
+
+export type { OutcomeClaim, OutcomeClaimKind, Verdict, VerdictTier } from "@rakazo/contracts";
 
 export interface AdapterContext {
   operationId: string;
@@ -451,4 +453,18 @@ export interface NotificationMessage {
   body: string;
   botId: string;
   threadId: string;
+}
+
+export interface OutcomeVerifierCapabilities {
+  /** Verdict tiers this verifier can produce, strongest first. */
+  tiers: VerdictTier[];
+}
+
+/**
+ * A `text-on-screen` claim is checked against the run's live computer; the other claim kinds
+ * do not need one, so `computer` is optional and a verifier returns an `unconfirmed` verdict
+ * when a claim needs it and it is absent.
+ */
+export interface OutcomeVerifyContext extends AdapterContext {
+  computer?: ComputerRef;
 }

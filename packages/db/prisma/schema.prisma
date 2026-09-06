@@ -428,6 +428,10 @@ model Run {
   modelProvider String?
   modelId       String?
   error         String?
+  // Independent verification of the run's declared outcomes (see @rakazo/contracts RunOutcome).
+  // Null until a run that called declare_outcome finishes.
+  outcomeStatus String?
+  outcomeVerdicts Json?
   leaseOwner    String?
   leaseFence    Int       @default(0)
   leaseExpiresAt DateTime?
