@@ -11,6 +11,7 @@ import { scheduleComputerSleep, sleepComputerIfIdle } from "./computer-idle.js";
 import type { createRunExecutor } from "./executor.js";
 import { compactHistory } from "./history-compaction.js";
 import type { MemoryProviderResolver } from "./memory-provider-factory.js";
+import { reflectRunMemory } from "./memory-reflect-job.js";
 import type { EncryptedSecretStore } from "./secrets.js";
 import { expireTaughtSkillTeaching } from "./teaching-session.js";
 
@@ -56,6 +57,18 @@ export function createBackgroundJobHandlers(deps: {
           ...(deps.executor.resolveModel ? { resolveModel: deps.executor.resolveModel } : {}),
         },
         payload.threadId,
+      );
+    },
+    "memory.reflect": async (payload) => {
+      await reflectRunMemory(
+        {
+          prisma: deps.prisma,
+          runtime: deps.runtime,
+          memoryProviders: deps.memoryProviders,
+          deploymentModelKey: deps.deploymentModelKey,
+          ...(deps.executor.resolveModel ? { resolveModel: deps.executor.resolveModel } : {}),
+        },
+        payload.runId,
       );
     },
   };

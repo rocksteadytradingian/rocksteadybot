@@ -40,6 +40,7 @@ export * from "./mcp-oauth.js";
 export * from "./mcp-server-tool.js";
 export * from "./mcp-transport.js";
 export * from "./memory-provider-factory.js";
+export * from "./memory-reflection.js";
 export * from "./model-connect.js";
 export * from "./model-vision.js";
 export * from "./openai-compatible-url.js";

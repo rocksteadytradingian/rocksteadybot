@@ -19,6 +19,7 @@ const payloadSchemas = {
   }),
   "skill.teaching-expire": z.object({ skillId: z.string().min(1) }),
   "history.compact": z.object({ threadId: z.string().min(1) }),
+  "memory.reflect": z.object({ runId: z.string().min(1) }),
 } satisfies { [Name in BackgroundJobName]: z.ZodType<BackgroundJobPayloads[Name]> };
 
 export function parseBackgroundJob(name: string, payload: unknown): BackgroundJob {
@@ -117,5 +118,17 @@ export function historyCompactJob(threadId: string): BackgroundJob {
     name: "history.compact",
     payload: { threadId },
     replaceKey: historyCompactJobKey(threadId),
+  };
+}
+
+export function memoryReflectJobKey(runId: string): string {
+  return `memory.reflect:${runId}`;
+}
+
+export function memoryReflectJob(runId: string): BackgroundJob {
+  return {
+    name: "memory.reflect",
+    payload: { runId },
+    replaceKey: memoryReflectJobKey(runId),
   };
 }
