@@ -11,6 +11,7 @@ import {
   type ConnectorRegistry,
   createBackgroundJobHandlers,
   createConnectorStack,
+  createHttpSentinelCheckRunner,
   createJobReconciler,
   createRunExecutor,
   createRunSandbox,
@@ -40,6 +41,7 @@ import {
   ScriptedAgentRuntime,
   setWhisperEngine,
   WorkspaceMemoryProviderResolver,
+  wakeSentinel,
 } from "@rakazo/adapters";
 import { blockedAuthPaths, createAuth } from "@rakazo/auth";
 import { createDb, createThreadEvents, type PrismaClient, requireMembership } from "@rakazo/db";
@@ -212,6 +214,7 @@ export async function createApp(
     events,
   });
 
+  const httpSentinelCheck = createHttpSentinelCheckRunner();
   const jobHandlers = createBackgroundJobHandlers({
     executor,
     prisma,
@@ -224,6 +227,20 @@ export async function createApp(
     secretStore: secrets,
     memoryProviders,
     deploymentModelKey: env.deploymentModelKey,
+    sentinelWake: (sentinelId, scheduledFor) =>
+      wakeSentinel(
+        {
+          prisma,
+          jobs,
+          events,
+          runCheck: httpSentinelCheck,
+          startRun: async () => {
+            throw new Error("sentinel run actions are not enabled");
+          },
+        },
+        sentinelId,
+        scheduledFor,
+      ).then(() => undefined),
   });
   if (inMemoryJobs) {
     await inMemoryJobs.start(jobHandlers);

@@ -63,6 +63,7 @@ export * from "./scratchpad-tools.js";
 export * from "./scripted-runtime.js";
 export * from "./scripted-voice.js";
 export * from "./secrets.js";
+export * from "./sentinel-check.js";
 export * from "./sentinel-runner.js";
 export * from "./sentinel-tools.js";
 export * from "./sentinel-wake.js";

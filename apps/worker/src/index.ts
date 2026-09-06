@@ -6,6 +6,7 @@ loadRootEnv();
 import {
   createBackgroundJobHandlers,
   createConnectorStack,
+  createHttpSentinelCheckRunner,
   createJobReconciler,
   createPostgresReconciliationLeadership,
   createRunExecutor,
@@ -32,6 +33,7 @@ import {
   ScriptedAgentRuntime,
   setWhisperEngine,
   WorkspaceMemoryProviderResolver,
+  wakeSentinel,
 } from "@rakazo/adapters";
 import { resolveEncryptionKey } from "@rakazo/core";
 import { createDb, createThreadEvents } from "@rakazo/db";
@@ -122,6 +124,7 @@ async function main() {
     events,
   });
 
+  const httpSentinelCheck = createHttpSentinelCheckRunner();
   const jobHandlers = createBackgroundJobHandlers({
     executor,
     prisma,
@@ -134,6 +137,20 @@ async function main() {
     secretStore: secrets,
     memoryProviders,
     deploymentModelKey,
+    sentinelWake: (sentinelId, scheduledFor) =>
+      wakeSentinel(
+        {
+          prisma,
+          jobs,
+          events,
+          runCheck: httpSentinelCheck,
+          startRun: async () => {
+            throw new Error("sentinel run actions are not enabled");
+          },
+        },
+        sentinelId,
+        scheduledFor,
+      ).then(() => undefined),
   });
   await jobHost.start(jobHandlers);
   const reconciler = createJobReconciler({
