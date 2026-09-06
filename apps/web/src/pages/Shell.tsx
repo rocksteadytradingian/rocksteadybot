@@ -146,6 +146,7 @@ import { ActivityList } from "./ActivityList";
 import type { ContextMenuPosition } from "./BotContextMenu";
 import { CreateGroupForm, GroupSettings, memberName } from "./GroupPanel";
 import { HostComputerPrompt } from "./HostComputerPrompt";
+import { SkillPromotionCard } from "./SkillPromotionCard";
 import { WindowChrome } from "./WindowChrome";
 import { WorkspaceSearchResults } from "./WorkspaceSearch";
 
@@ -2263,6 +2264,9 @@ export function ShellPage() {
           <div className="px-6 pb-2 text-center text-[13px] text-[#E65707]">
             <Trans>Teaching in progress — stop teaching before sending a new message.</Trans>
           </div>
+        ) : null}
+        {active && !inGroup && !recordingSkill ? (
+          <SkillPromotionCard botId={active.id} onCreated={refreshAgentSkills} />
         ) : null}
         <Composer
           key={inGroup ? `group:${groupId}` : `bot:${active?.id}`}
