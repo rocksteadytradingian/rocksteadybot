@@ -1903,6 +1903,15 @@ export function createRouter(deps: RouterDeps) {
       remove: authed.agentSkills.remove.handler(async ({ context, input }) =>
         agentSkills.remove(context.actor, input.skillId),
       ),
+      revisions: authed.agentSkills.revisions.handler(async ({ context }) =>
+        agentSkills.revisions(context.actor),
+      ),
+      applyRevision: authed.agentSkills.applyRevision.handler(async ({ context, input }) =>
+        agentSkills.applyRevision(context.actor, input),
+      ),
+      dismissRevision: authed.agentSkills.dismissRevision.handler(async ({ context, input }) =>
+        agentSkills.dismissRevision(context.actor, input),
+      ),
     },
     capabilities: {
       list: authed.capabilities.list.handler(async ({ context }) => {

@@ -286,6 +286,15 @@ export type TaughtSkill = z.infer<typeof TaughtSkillSchema>;
 export const AgentSkillSourceSchema = z.enum(["user", "builtin", "plugin"]);
 export type AgentSkillSource = z.infer<typeof AgentSkillSourceSchema>;
 
+/** A proposed SKILL.md edit drafted after a run that leaned on this skill failed its check. */
+export const AgentSkillRevisionSchema = z.object({
+  content: z.string(),
+  reason: z.string(),
+  runId: z.string(),
+  createdAt: z.string(),
+});
+export type AgentSkillRevision = z.infer<typeof AgentSkillRevisionSchema>;
+
 export const AgentSkillSchema = z.object({
   id: Id,
   name: z.string(),
@@ -293,6 +302,12 @@ export const AgentSkillSchema = z.object({
   content: z.string(),
   source: AgentSkillSourceSchema,
   readOnly: z.boolean(),
+  /** Retrieval health folded from the outcome of runs that invoked this skill. */
+  uses: z.number().int().nonnegative().default(0),
+  successCount: z.number().int().nonnegative().default(0),
+  failCount: z.number().int().nonnegative().default(0),
+  lastUsedAt: z.string().nullable().default(null),
+  pendingRevision: AgentSkillRevisionSchema.nullable().default(null),
   createdAt: z.string(),
   updatedAt: z.string(),
 });

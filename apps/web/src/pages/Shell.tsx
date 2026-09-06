@@ -185,6 +185,11 @@ const RedactionSettingsOverlay = lazy(() =>
     default: module.RedactionSettingsOverlay,
   })),
 );
+const SkillRevisionsOverlay = lazy(() =>
+  import("./SkillRevisionsOverlay").then((module) => ({
+    default: module.SkillRevisionsOverlay,
+  })),
+);
 const CallView = lazy(() => import("./CallView").then((module) => ({ default: module.CallView })));
 const ScratchpadSection = lazy(() =>
   import("./ScratchpadSection").then((module) => ({ default: module.ScratchpadSection })),
@@ -303,6 +308,7 @@ export function ShellPage() {
   const [modelsOpen, setModelsOpen] = useState(false);
   const [memorySettingsOpen, setMemorySettingsOpen] = useState(false);
   const [redactionOpen, setRedactionOpen] = useState(false);
+  const [skillRevisionsOpen, setSkillRevisionsOpen] = useState(false);
   const [memoryProviderConfig, setMemoryProviderConfig] = useState<
     WorkspaceMemoryConfig | null | undefined
   >(undefined);
@@ -2091,6 +2097,19 @@ export function ShellPage() {
               </button>
               <button
                 type="button"
+                onClick={() => {
+                  setMenuOpen(false);
+                  setSkillRevisionsOpen(true);
+                }}
+                className="flex w-full items-center gap-3 rounded-[11px] px-3 py-2.5 hover:bg-[#232327]"
+              >
+                <span className="text-[#9A9AA0]">✎</span>
+                <span className="flex-1 text-start text-[14.5px] text-[#ECECEE]">
+                  <Trans>Skill revisions</Trans>
+                </span>
+              </button>
+              <button
+                type="button"
                 className="flex w-full items-center gap-3 rounded-[11px] px-3 py-2.5 hover:bg-[#232327]"
                 onClick={async () => {
                   setUsage(await rpc.usage.summary());
@@ -2937,6 +2956,12 @@ export function ShellPage() {
       <Suspense fallback={null}>
         {redactionOpen ? (
           <RedactionSettingsOverlay onClose={() => setRedactionOpen(false)} />
+        ) : null}
+      </Suspense>
+
+      <Suspense fallback={null}>
+        {skillRevisionsOpen ? (
+          <SkillRevisionsOverlay onClose={() => setSkillRevisionsOpen(false)} />
         ) : null}
       </Suspense>
 
