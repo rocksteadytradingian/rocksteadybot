@@ -96,8 +96,10 @@ import {
   Prisma,
   type PrismaClient,
   parseComputerMode,
+  readWorkspaceRedactionPolicy,
   type ThreadEvents,
   touchGroupUpdatedAt,
+  writeWorkspaceRedactionPolicy,
 } from "@rakazo/db";
 import { createAgentSkillsService } from "./agent-skills.js";
 import { createOwnedArtifact, getOwnedArtifact, getWorkspaceArtifact } from "./artifacts.js";
@@ -2825,6 +2827,20 @@ export function createRouter(deps: RouterDeps) {
       list: authed.runs.list.handler(async ({ context, input }) => ({
         runs: await listWorkspaceRuns(deps.prisma, context.actor, input.filter),
       })),
+    },
+    redaction: {
+      get: authed.redaction.get.handler(({ context }) =>
+        readWorkspaceRedactionPolicy(deps.prisma, context.actor.workspaceId),
+      ),
+      set: authed.redaction.set.handler(async ({ context, input }) => {
+        if (!context.actor.isDeploymentOwner) {
+          throw new ORPCError("FORBIDDEN", {
+            message: "Only the deployment owner can change the screen-scrubbing policy.",
+          });
+        }
+        await writeWorkspaceRedactionPolicy(deps.prisma, context.actor.workspaceId, input);
+        return readWorkspaceRedactionPolicy(deps.prisma, context.actor.workspaceId);
+      }),
     },
     voice: {
       catalog: authed.voice.catalog.handler(async () => listVoiceCatalog()),
