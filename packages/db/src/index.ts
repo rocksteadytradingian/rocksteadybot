@@ -5,6 +5,7 @@ export * from "./groups.js";
 export * from "./memory-config.js";
 export * from "./messages.js";
 export * from "./model-credentials.js";
+export * from "./redaction-config.js";
 export * from "./repos.js";
 export * from "./run-outcomes.js";
 export * from "./scope.js";

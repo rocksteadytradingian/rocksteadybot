@@ -15,6 +15,7 @@ import {
   createRunExecutor,
   createRunSandbox,
   createRunSecretWriter,
+  createScreenRedaction,
   createWhisperCliEngine,
   type DestinationEmulator,
   destroyBot,
@@ -210,6 +211,7 @@ export async function createApp(
     notifications,
     jobs,
     events,
+    screenRedaction: createScreenRedaction(prisma),
   });
 
   const jobHandlers = createBackgroundJobHandlers({

@@ -1,7 +1,7 @@
 import type { ComputerObservation } from "@rakazo/adapter-kit";
 import { REDACTION_OFF, REGULATED_REDACTION_POLICY } from "@rakazo/contracts";
 import { describe, expect, it, vi } from "vitest";
-import { redactObservation } from "./screen-redaction.js";
+import { createScreenRedaction, redactObservation } from "./screen-redaction.js";
 import { NoopScreenRedactor, ScriptedScreenRedactor } from "./screen-redactor.js";
 
 const ctx = {
@@ -79,5 +79,28 @@ describe("redactObservation", () => {
     expect(out.observation).toBe(original);
     expect(out.regions).toEqual([]);
     expect(out.note).toBe("");
+  });
+});
+
+describe("createScreenRedaction", () => {
+  it("reads the policy from the database and defaults to the no-op redactor", async () => {
+    const findUnique = vi.fn().mockResolvedValue({ redactionPolicy: REGULATED_REDACTION_POLICY });
+    const prisma = { organization: { findUnique } } as unknown as Parameters<
+      typeof createScreenRedaction
+    >[0];
+
+    const redaction = createScreenRedaction(prisma);
+    expect(redaction.redactor).toBeInstanceOf(NoopScreenRedactor);
+    await expect(redaction.policyFor("ws-1")).resolves.toEqual(REGULATED_REDACTION_POLICY);
+    expect(findUnique).toHaveBeenCalledWith({
+      where: { id: "ws-1" },
+      select: { redactionPolicy: true },
+    });
+  });
+
+  it("takes an injected redactor", () => {
+    const redactor = new ScriptedScreenRedactor();
+    const redaction = createScreenRedaction({} as never, redactor);
+    expect(redaction.redactor).toBe(redactor);
   });
 });

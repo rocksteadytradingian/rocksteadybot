@@ -11,6 +11,7 @@ import {
   createRunExecutor,
   createRunSandbox,
   createRunSecretWriter,
+  createScreenRedaction,
   createWhisperCliEngine,
   EncryptedSecretStore,
   ExpoPushProvider,
@@ -120,6 +121,7 @@ async function main() {
     notifications: new ExpoPushProvider(dataDir),
     jobs,
     events,
+    screenRedaction: createScreenRedaction(prisma),
   });
 
   const jobHandlers = createBackgroundJobHandlers({
