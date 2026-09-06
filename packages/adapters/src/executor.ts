@@ -23,6 +23,7 @@ import {
   routineJobKey,
   routineWakeupJob,
   runContinueJob,
+  skillReviseJob,
 } from "@rakazo/adapter-kit";
 import type { MessageBlock, RunStatus } from "@rakazo/contracts";
 import { ATTACHMENT_MAX_BYTES, isAttachmentImageMimeType } from "@rakazo/contracts";
@@ -196,6 +197,8 @@ import {
   createSentinelFromTool,
   listSentinelsFromTool,
 } from "./sentinel-tools.js";
+import { invokedUserSkillIds, selectCatalogSkills, skillOutcomeFromRun } from "./skill-catalog.js";
+import { recordSkillOutcome } from "./skill-evolution.js";
 import {
   listAgentSkillRecords,
   skillCreateFromTool,
@@ -2072,7 +2075,12 @@ export function createRunExecutor(deps: ExecutorDeps) {
                   "\n",
                 )}\nWhen the user asks to run a taught skill by name, follow that skill's playbook exactly. The full playbook is included in the user task when they invoke it.`
             : undefined;
-        const agentSkillsLine = formatSkillsCatalogInstruction(agentSkills);
+        // With more than a handful of skills the model can only act on the few most relevant,
+        // so rank them against the task and list those (explicit /Name or @Name mentions are
+        // always kept — they still expand into the prompt below).
+        const agentSkillsLine = formatSkillsCatalogInstruction(
+          selectCatalogSkills(agentSkills, task.prompt),
+        );
         const taskPrompt = expandSkillReferencesInPrompt(
           [task.prompt, attachedFilesPrompt].filter(Boolean).join("\n\n"),
           agentSkills,
@@ -2080,6 +2088,9 @@ export function createRunExecutor(deps: ExecutorDeps) {
         const invokedSkill = savedSkills.find((skill) =>
           promptInvokesSkill(taskPrompt, skill.name || skill.goal),
         );
+        // User AgentSkills this run leaned on — their retrieval stats get folded from the
+        // run's outcome, and a contradicted run queues a proposed revision.
+        const invokedAgentSkillIds = invokedUserSkillIds(agentSkills, task.prompt);
 
         // Replay the recorded inputs deterministically before the model runs; the model then
         // verifies, fills what the recording could not, and recovers from any drift.
@@ -2569,6 +2580,26 @@ export function createRunExecutor(deps: ExecutorDeps) {
                   error instanceof Error ? error.message : String(error)
                 }`,
               );
+            }
+          }
+
+          // Fold this run's outcome into the retrieval stats of the skills it used, and queue a
+          // proposed revision for any skill a contradicted run leaned on. Never fatal.
+          if (invokedAgentSkillIds.length > 0) {
+            const skillOutcome = skillOutcomeFromRun(contradicted, runOutcome?.outcome.rolledUp);
+            for (const skillId of invokedAgentSkillIds) {
+              try {
+                await recordSkillOutcome(deps.prisma, skillId, skillOutcome);
+                if (skillOutcome === "contradicted") {
+                  await deps.jobs.enqueue(skillReviseJob(skillId, runId));
+                }
+              } catch (error) {
+                console.error(
+                  `recording skill outcome failed for ${skillId} on run ${runId}: ${
+                    error instanceof Error ? error.message : String(error)
+                  }`,
+                );
+              }
             }
           }
 

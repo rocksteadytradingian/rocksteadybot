@@ -72,6 +72,7 @@ export * from "./sentinel-check.js";
 export * from "./sentinel-runner.js";
 export * from "./sentinel-tools.js";
 export * from "./sentinel-wake.js";
+export * from "./skill-catalog.js";
 export * from "./skill-evolution.js";
 export * from "./skill-retrieval-store.js";
 export * from "./skill-revise-job.js";
