@@ -13,6 +13,7 @@ import { compactHistory } from "./history-compaction.js";
 import type { MemoryProviderResolver } from "./memory-provider-factory.js";
 import { reflectRunMemory } from "./memory-reflect-job.js";
 import type { EncryptedSecretStore } from "./secrets.js";
+import { reviseSkill } from "./skill-revise-job.js";
 import { expireTaughtSkillTeaching } from "./teaching-session.js";
 
 export function createBackgroundJobHandlers(deps: {
@@ -50,6 +51,17 @@ export function createBackgroundJobHandlers(deps: {
     },
     "skill.teaching-expire": async (payload) => {
       await expireTaughtSkillTeaching(deps, payload.skillId);
+    },
+    "skill.revise": async (payload) => {
+      await reviseSkill(
+        {
+          prisma: deps.prisma,
+          runtime: deps.runtime,
+          ...(deps.executor.resolveModel ? { resolveModel: deps.executor.resolveModel } : {}),
+          ...(deps.deploymentModelKey ? { deploymentModelKey: deps.deploymentModelKey } : {}),
+        },
+        payload,
+      );
     },
     "history.compact": async (payload) => {
       await compactHistory(
