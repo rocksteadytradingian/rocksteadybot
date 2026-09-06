@@ -13,6 +13,16 @@ function statusColor(status: RunActivityRow["status"]): string {
   return "#8B5CF6";
 }
 
+// Only the outcomes that need the reader's attention get a badge; verified / none stay quiet.
+// Hex values match this file's palette; folds into the --rk-* token pass when that lands.
+function outcomeBadge(
+  outcomeStatus: RunActivityRow["outcomeStatus"],
+): { label: string; color: string } | null {
+  if (outcomeStatus === "contradicted") return { label: t`unverified`, color: "#FF5364" };
+  if (outcomeStatus === "needs_review") return { label: t`needs review`, color: "#F5A03C" };
+  return null;
+}
+
 type ActivityListProps = {
   onOpenRun: (run: RunActivityRow) => void;
 };
@@ -94,7 +104,8 @@ function ActivityRow({ run, onOpen }: { run: RunActivityRow; onOpen: () => void 
   const { t } = useLingui();
   const title = run.groupName ? `${run.botName} · ${run.groupName}` : run.botName;
   const label = statusLabel(run.status);
-  const activityLabel = t`${title}, ${label}`;
+  const badge = outcomeBadge(run.outcomeStatus);
+  const activityLabel = badge ? t`${title}, ${label}, ${badge.label}` : t`${title}, ${label}`;
   return (
     <button
       type="button"
@@ -120,8 +131,18 @@ function ActivityRow({ run, onOpen }: { run: RunActivityRow; onOpen: () => void 
               {run.promptSnippet}
             </span>
           ) : null}
-          <span className="ms-auto shrink-0 text-[12px]" style={{ color: statusColor(run.status) }}>
-            {label}
+          <span className="ms-auto flex shrink-0 items-baseline gap-2">
+            {badge ? (
+              <span
+                className="rounded px-1.5 py-px text-[11px] font-medium"
+                style={{ color: badge.color, backgroundColor: `${badge.color}1f` }}
+              >
+                {badge.label}
+              </span>
+            ) : null}
+            <span className="text-[12px]" style={{ color: statusColor(run.status) }}>
+              {label}
+            </span>
           </span>
         </div>
       </div>
