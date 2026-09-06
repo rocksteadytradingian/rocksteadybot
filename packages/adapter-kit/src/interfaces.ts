@@ -29,6 +29,9 @@ import type {
   MemorySearchResult,
   MemorySnapshot,
   NotificationMessage,
+  OutcomeClaim,
+  OutcomeVerifierCapabilities,
+  OutcomeVerifyContext,
   PortableFile,
   ProcessEvent,
   SandboxCapabilities,
@@ -43,6 +46,7 @@ import type {
   SemanticMemorySaveRequest,
   SnapshotRef,
   SpeechClip,
+  Verdict,
   VoiceCapabilities,
   VoiceInfo,
   VoiceSynthesizeRequest,
@@ -261,4 +265,15 @@ export interface VoiceProvider {
   listVoices(apiKey: string, context: AdapterContext): Promise<VoiceInfo[]>;
   synthesize(request: VoiceSynthesizeRequest, context: AdapterContext): Promise<SpeechClip>;
   transcribe?(request: VoiceTranscribeRequest, context: AdapterContext): Promise<{ text: string }>;
+}
+
+/**
+ * Independently confirms a run's declared outcomes. Given one `OutcomeClaim` it returns a
+ * `Verdict` — `verified`, `unconfirmed` (could not check), or `contradicted` (checked, and the
+ * effect did not happen) — along with the tier it reached and human-readable evidence. It never
+ * throws for an unmeetable claim; that is an `unconfirmed` verdict.
+ */
+export interface OutcomeVerifier {
+  describe(): AdapterDescriptor<OutcomeVerifierCapabilities>;
+  verify(claim: OutcomeClaim, context: OutcomeVerifyContext): Promise<Verdict>;
 }

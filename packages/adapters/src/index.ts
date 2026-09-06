@@ -28,6 +28,7 @@ export * from "./e2b-sandbox.js";
 export * from "./elevenlabs-voice.js";
 export * from "./executor.js";
 export * from "./expo-push.js";
+export * from "./fake-outcome-verifier.js";
 export * from "./fake-sandbox.js";
 export * from "./group-handoff.js";
 export * from "./home.js";
