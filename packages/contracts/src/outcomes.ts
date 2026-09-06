@@ -75,15 +75,22 @@ export const VerdictSchema = z.object({
 });
 export type Verdict = z.infer<typeof VerdictSchema>;
 
-/** Verdicts attached to a finished run, for storage and for the approvals UI. */
+/** The one run-level word for how verification went; also shown as a badge on run rows. */
+export const OutcomeRollupSchema = z.enum([
+  "verified",
+  "needs_review",
+  "contradicted",
+  "unverified",
+]);
+export type OutcomeRollup = z.infer<typeof OutcomeRollupSchema>;
+
+/** Verdicts attached to a finished run, for storage and for run-activity surfaces. */
 export const RunOutcomeSchema = z.object({
   runId: Id,
   verdicts: z.array(VerdictSchema),
-  rolledUp: z.enum(["verified", "needs_review", "contradicted", "unverified"]),
+  rolledUp: OutcomeRollupSchema,
 });
 export type RunOutcome = z.infer<typeof RunOutcomeSchema>;
-
-export type OutcomeRollup = RunOutcome["rolledUp"];
 
 /**
  * Collapse per-claim verdicts into one run-level outcome:
