@@ -87,6 +87,9 @@ model Organization {
   logo        String?
   createdAt   DateTime
   metadata    String?
+  // Screen-scrubbing policy for this workspace (see @rakazo/contracts RedactionPolicy).
+  // Null / absent means scrubbing is off.
+  redactionPolicy Json?
   members     Member[]
   invitations Invitation[]
   bots        Bot[]

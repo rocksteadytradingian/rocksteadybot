@@ -56,6 +56,7 @@ import {
 } from "./domain.js";
 import { ProductEventSchema } from "./events.js";
 import { Id } from "./ids.js";
+import { RedactionPolicySchema } from "./redaction.js";
 import { RunsListOutputSchema } from "./runs.js";
 import { SearchQueryOutputSchema } from "./search.js";
 
@@ -541,6 +542,12 @@ export const appContract = {
   },
   runs: {
     list: oc.input(z.object({ filter: z.enum(["active", "recent"]) })).output(RunsListOutputSchema),
+  },
+  redaction: {
+    /** The workspace's effective screen-scrubbing policy (off when unset). */
+    get: oc.output(RedactionPolicySchema),
+    /** Replace it. Deployment-owner only. */
+    set: oc.input(RedactionPolicySchema).output(RedactionPolicySchema),
   },
   voice: {
     catalog: oc.output(z.array(VoiceCatalogEntrySchema)),

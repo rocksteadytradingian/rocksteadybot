@@ -15,6 +15,7 @@ import {
   createRunExecutor,
   createRunSandbox,
   createRunSecretWriter,
+  createScreenRedaction,
   createWhisperCliEngine,
   type DestinationEmulator,
   destroyBot,
@@ -39,6 +40,7 @@ import {
   type RemoteConnectorDependencies,
   ScriptedAgentRuntime,
   setWhisperEngine,
+  tesseractOcrEngine,
   WorkspaceMemoryProviderResolver,
 } from "@rakazo/adapters";
 import { blockedAuthPaths, createAuth } from "@rakazo/auth";
@@ -210,6 +212,9 @@ export async function createApp(
     notifications,
     jobs,
     events,
+    screenRedaction: createScreenRedaction(prisma, {
+      ocr: process.env.RAKAZO_SCREEN_OCR === "tesseract" ? tesseractOcrEngine : undefined,
+    }),
   });
 
   const jobHandlers = createBackgroundJobHandlers({

@@ -180,6 +180,11 @@ const RoutineSchedules = lazy(() =>
 const VoiceSettingsOverlay = lazy(() =>
   import("./VoiceSettingsOverlay").then((module) => ({ default: module.VoiceSettingsOverlay })),
 );
+const RedactionSettingsOverlay = lazy(() =>
+  import("./RedactionSettingsOverlay").then((module) => ({
+    default: module.RedactionSettingsOverlay,
+  })),
+);
 const CallView = lazy(() => import("./CallView").then((module) => ({ default: module.CallView })));
 const ScratchpadSection = lazy(() =>
   import("./ScratchpadSection").then((module) => ({ default: module.ScratchpadSection })),
@@ -297,6 +302,7 @@ export function ShellPage() {
   const [accountSettingsFocusUsage, setAccountSettingsFocusUsage] = useState(false);
   const [modelsOpen, setModelsOpen] = useState(false);
   const [memorySettingsOpen, setMemorySettingsOpen] = useState(false);
+  const [redactionOpen, setRedactionOpen] = useState(false);
   const [memoryProviderConfig, setMemoryProviderConfig] = useState<
     WorkspaceMemoryConfig | null | undefined
   >(undefined);
@@ -2072,6 +2078,19 @@ export function ShellPage() {
               </button>
               <button
                 type="button"
+                onClick={() => {
+                  setMenuOpen(false);
+                  setRedactionOpen(true);
+                }}
+                className="flex w-full items-center gap-3 rounded-[11px] px-3 py-2.5 hover:bg-[#232327]"
+              >
+                <span className="text-[#9A9AA0]">▧</span>
+                <span className="flex-1 text-start text-[14.5px] text-[#ECECEE]">
+                  <Trans>Screen privacy</Trans>
+                </span>
+              </button>
+              <button
+                type="button"
                 className="flex w-full items-center gap-3 rounded-[11px] px-3 py-2.5 hover:bg-[#232327]"
                 onClick={async () => {
                   setUsage(await rpc.usage.summary());
@@ -2912,6 +2931,12 @@ export function ShellPage() {
               setMemoryProviderConfig(config);
             }}
           />
+        ) : null}
+      </Suspense>
+
+      <Suspense fallback={null}>
+        {redactionOpen ? (
+          <RedactionSettingsOverlay onClose={() => setRedactionOpen(false)} />
         ) : null}
       </Suspense>
 

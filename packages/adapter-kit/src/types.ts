@@ -1,6 +1,20 @@
-import type { ConnectionCatalogItem, SandboxKind, VerdictTier } from "@rakazo/contracts";
+import type {
+  ConnectionCatalogItem,
+  RedactionRegion,
+  SandboxKind,
+  VerdictTier,
+} from "@rakazo/contracts";
 
-export type { OutcomeClaim, OutcomeClaimKind, Verdict, VerdictTier } from "@rakazo/contracts";
+export type {
+  OutcomeClaim,
+  OutcomeClaimKind,
+  RedactionEntity,
+  RedactionMode,
+  RedactionPolicy,
+  RedactionRegion,
+  Verdict,
+  VerdictTier,
+} from "@rakazo/contracts";
 
 export interface AdapterContext {
   operationId: string;
@@ -469,4 +483,27 @@ export interface OutcomeVerifierCapabilities {
  */
 export interface OutcomeVerifyContext extends AdapterContext {
   computer?: ComputerRef;
+}
+
+export interface ScreenRedactorCapabilities {
+  /** Can blank regions of a raster frame. */
+  image: boolean;
+  /** Can redact entities from a string. */
+  text: boolean;
+  /** Recognises text in the pixels itself (rather than only structured/accessibility text). */
+  ocr: boolean;
+}
+
+/** A raster frame handed to a redactor. The subset of ComputerObservation it needs. */
+export interface RedactableFrame {
+  image: Uint8Array;
+  mimeType: "image/png" | "image/jpeg";
+  width: number;
+  height: number;
+}
+
+export interface RedactedFrame {
+  /** The frame with detected regions blanked. Identical bytes when nothing matched. */
+  image: Uint8Array;
+  regions: RedactionRegion[];
 }

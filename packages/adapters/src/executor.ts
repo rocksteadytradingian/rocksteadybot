@@ -13,6 +13,7 @@ import type {
   NotificationMessage,
   NotificationProvider,
   OutcomeClaim,
+  RedactionPolicy,
   SandboxProvider,
   SemanticMemoryProvider,
 } from "@rakazo/adapter-kit";
@@ -187,6 +188,7 @@ import {
   removeScratchpadItemFromTool,
   updateScratchpadItemFromTool,
 } from "./scratchpad-tools.js";
+import { redactObservation, type ScreenRedaction } from "./screen-redaction.js";
 import { inferScript } from "./scripted-runtime.js";
 import type { EncryptedSecretStore } from "./secrets.js";
 import {
@@ -244,6 +246,8 @@ export interface ExecutorDeps {
   notifications?: NotificationProvider;
   jobs: JobPublisher;
   listConnectedPluginSlugs?: (userId: string) => Promise<string[]>;
+  /** Opt-in: scrub personal / protected data from computer screenshots before a model sees them. */
+  screenRedaction?: ScreenRedaction;
 }
 
 export async function deferFutureRoutine(
@@ -897,6 +901,8 @@ export function createRunExecutor(deps: ExecutorDeps) {
         let lastComputerFrameId: string | undefined;
         // Outcomes the run declares via declare_outcome; verified once, after it finishes.
         const declaredOutcomeClaims: OutcomeClaim[] = [];
+        // Resolved once, the first time this run looks at the screen.
+        let redactionPolicy: RedactionPolicy | undefined;
         let terminalCheckpointComplete = false;
         let approvalPausePending = false;
         let progressRedactor = createStreamingRedactor(runSecrets);
@@ -920,12 +926,26 @@ export function createRunExecutor(deps: ExecutorDeps) {
           pendingProgress = "";
           lastProgressAt = Date.now();
         };
-        const formatObservation = (
+        const formatObservation = async (
           observation: Awaited<ReturnType<SandboxProvider["observe"]>>,
           note?: string,
         ) => {
-          const result = observationToolResult(observation, note, lastComputerFrameId);
-          lastComputerFrameId = observation.frameId;
+          let frame = observation;
+          let finalNote = note;
+          // Skip redaction for a frame identical to the last one — its image is dropped anyway.
+          if (deps.screenRedaction && observation.frameId !== lastComputerFrameId) {
+            redactionPolicy ??= await deps.screenRedaction.policyFor(run.workspaceId);
+            const redacted = await redactObservation(
+              observation,
+              deps.screenRedaction.redactor,
+              redactionPolicy,
+              context,
+            );
+            frame = redacted.observation;
+            if (redacted.note) finalNote = `${note ?? "computer observed"} — ${redacted.note}`;
+          }
+          const result = observationToolResult(frame, finalNote, lastComputerFrameId);
+          lastComputerFrameId = frame.frameId;
           return result;
         };
 

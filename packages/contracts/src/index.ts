@@ -6,6 +6,7 @@ export * from "./ids.js";
 export * from "./mcp.js";
 export * from "./openai-compatible-ui.js";
 export * from "./outcomes.js";
+export * from "./redaction.js";
 export * from "./rpc.js";
 export * from "./runs.js";
 export * from "./search.js";
