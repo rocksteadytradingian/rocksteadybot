@@ -26,6 +26,7 @@ export * from "./secrets-guard.js";
 export * from "./self-update.js";
 export * from "./sentinel.js";
 export * from "./signup-policy.js";
+export * from "./skill-retrieval.js";
 export * from "./speech-text.js";
 export * from "./teach-playbook.js";
 export * from "./teach-recording.js";
