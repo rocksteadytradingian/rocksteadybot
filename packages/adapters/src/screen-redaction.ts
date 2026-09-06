@@ -7,7 +7,7 @@ import type {
 } from "@rakazo/adapter-kit";
 import { redactionEnabled, redactionSummary } from "@rakazo/contracts";
 import { readWorkspaceRedactionPolicy } from "@rakazo/db";
-import { NoopScreenRedactor } from "./screen-redactor.js";
+import { RegexTextRedactor } from "./regex-text-redactor.js";
 
 /** The executor's screen-redaction dependency: one redactor plus the per-workspace policy. */
 export interface ScreenRedaction {
@@ -17,12 +17,12 @@ export interface ScreenRedaction {
 
 /**
  * Wire a ScreenRedaction from the database: `policyFor` reads the workspace's stored policy,
- * `redactor` defaults to the no-op until a detector-backed one is available. Pass this to
- * `createRunExecutor({ screenRedaction })`.
+ * `redactor` defaults to the dependency-free text redactor (window titles / accessibility
+ * text). Pass a stronger provider once one exists. For `createRunExecutor({ screenRedaction })`.
  */
 export function createScreenRedaction(
   prisma: Parameters<typeof readWorkspaceRedactionPolicy>[0],
-  redactor: ScreenRedactor = new NoopScreenRedactor(),
+  redactor: ScreenRedactor = new RegexTextRedactor(),
 ): ScreenRedaction {
   return {
     redactor,

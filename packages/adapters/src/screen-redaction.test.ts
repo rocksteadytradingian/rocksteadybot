@@ -1,6 +1,7 @@
 import type { ComputerObservation } from "@rakazo/adapter-kit";
 import { REDACTION_OFF, REGULATED_REDACTION_POLICY } from "@rakazo/contracts";
 import { describe, expect, it, vi } from "vitest";
+import { RegexTextRedactor } from "./regex-text-redactor.js";
 import { createScreenRedaction, redactObservation } from "./screen-redaction.js";
 import { NoopScreenRedactor, ScriptedScreenRedactor } from "./screen-redactor.js";
 
@@ -83,14 +84,14 @@ describe("redactObservation", () => {
 });
 
 describe("createScreenRedaction", () => {
-  it("reads the policy from the database and defaults to the no-op redactor", async () => {
+  it("reads the policy from the database and defaults to the regex text redactor", async () => {
     const findUnique = vi.fn().mockResolvedValue({ redactionPolicy: REGULATED_REDACTION_POLICY });
     const prisma = { organization: { findUnique } } as unknown as Parameters<
       typeof createScreenRedaction
     >[0];
 
     const redaction = createScreenRedaction(prisma);
-    expect(redaction.redactor).toBeInstanceOf(NoopScreenRedactor);
+    expect(redaction.redactor).toBeInstanceOf(RegexTextRedactor);
     await expect(redaction.policyFor("ws-1")).resolves.toEqual(REGULATED_REDACTION_POLICY);
     expect(findUnique).toHaveBeenCalledWith({
       where: { id: "ws-1" },
