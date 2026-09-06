@@ -1,4 +1,4 @@
-import type { Actor, RunActivityRow } from "@rakazo/contracts";
+import type { Actor, OutcomeRollup, RunActivityRow } from "@rakazo/contracts";
 import { ACTIVE_RUN_STATUSES } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
 
@@ -51,6 +51,7 @@ export async function listWorkspaceRuns(
     threadId: row.threadId,
     status: row.status as RunActivityRow["status"],
     trigger: row.trigger as RunActivityRow["trigger"],
+    outcomeStatus: (row.outcomeStatus as OutcomeRollup | null) ?? null,
     promptSnippet: promptSnippet(row.task.prompt),
     updatedAt: (filter === "recent" && row.completedAt
       ? row.completedAt
