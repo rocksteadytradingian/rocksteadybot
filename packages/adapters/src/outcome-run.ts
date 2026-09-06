@@ -15,6 +15,8 @@ export const DECLARE_OUTCOME_TOOL_NAME = "declare_outcome";
 export const MAX_DECLARED_OUTCOMES = 12;
 /** `outcome.verified` is appended once per run that declared anything. */
 export const OUTCOME_VERIFIED_EVENT = "outcome.verified" as const;
+/** Verification runs on the run's completion path; bound it so it can't stall a finished run. */
+export const OUTCOME_VERIFY_TIMEOUT_MS = 20_000;
 
 /**
  * Lets the agent state a checkable result it expects the task to have produced. The executor
