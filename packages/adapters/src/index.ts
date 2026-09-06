@@ -67,6 +67,7 @@ export * from "./sentinel-runner.js";
 export * from "./sentinel-tools.js";
 export * from "./sentinel-wake.js";
 export * from "./skill-evolution.js";
+export * from "./skill-retrieval-store.js";
 export * from "./skill-revise-job.js";
 export * from "./skill-tools.js";
 export { SupermemoryMemoryProvider } from "./supermemory-memory-provider.js";
