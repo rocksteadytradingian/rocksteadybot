@@ -663,6 +663,10 @@ export const VoiceCatalogEntrySchema = z.object({
   name: z.string(),
   description: z.string(),
   transcribe: z.boolean(),
+  /** Can produce speech (TTS). Absent is treated as true for older entries. */
+  synthesize: z.boolean().optional(),
+  /** No API key: verified/enabled by the deployment, not a stored credential. */
+  keyless: z.boolean().optional(),
 });
 export type VoiceCatalogEntry = z.infer<typeof VoiceCatalogEntrySchema>;
 
