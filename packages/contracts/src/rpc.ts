@@ -40,6 +40,7 @@ import {
   ScratchpadItemSchema,
   ScratchpadItemStatusSchema,
   SkillPlaybookSchema,
+  SkillPromotionSuggestionSchema,
   TaughtSkillSchema,
   TeachRecordingEventSchema,
   ThreadMessagePageSchema,
@@ -403,6 +404,10 @@ export const appContract = {
     revisions: oc.output(z.array(AgentSkillSchema)),
     applyRevision: oc.input(z.object({ skillId: Id })).output(AgentSkillSchema),
     dismissRevision: oc.input(z.object({ skillId: Id })).output(AgentSkillSchema),
+    /** Recurring tool-call sequences in this bot's recent runs, offered as skills to save. */
+    promotionSuggestions: oc
+      .input(z.object({ botId: Id }))
+      .output(z.array(SkillPromotionSuggestionSchema)),
   },
   capabilities: {
     list: oc.output(z.array(CapabilityInstallSchema)),

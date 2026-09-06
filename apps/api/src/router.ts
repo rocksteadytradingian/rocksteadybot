@@ -114,6 +114,7 @@ import { listWorkspaceRuns } from "./runs.js";
 import { addScreenProxyCapability } from "./screen-proxy.js";
 import { queryWorkspaceSearch } from "./search.js";
 import { withSerializableRetry } from "./serializable-retry.js";
+import { createSkillPromotionService } from "./skill-promotion.js";
 import { assertTeachingSendAllowed, createTaughtSkillsService } from "./taught-skills.js";
 import { loadAllMessages, loadMessagePage } from "./thread-message-pages.js";
 import {
@@ -327,6 +328,7 @@ export function createRouter(deps: RouterDeps) {
     dataDir: deps.dataDir,
   });
   const agentSkills = createAgentSkillsService(deps.prisma);
+  const skillPromotion = createSkillPromotionService(deps.prisma);
 
   const authed = os.use(async ({ context, next }) => {
     if (!context.actor) throw new ORPCError("UNAUTHORIZED");
@@ -1911,6 +1913,9 @@ export function createRouter(deps: RouterDeps) {
       ),
       dismissRevision: authed.agentSkills.dismissRevision.handler(async ({ context, input }) =>
         agentSkills.dismissRevision(context.actor, input),
+      ),
+      promotionSuggestions: authed.agentSkills.promotionSuggestions.handler(
+        async ({ context, input }) => skillPromotion.suggestions(context.actor, input),
       ),
     },
     capabilities: {

@@ -322,6 +322,18 @@ export const AgentSkillCatalogEntrySchema = AgentSkillSchema.pick({
 });
 export type AgentSkillCatalogEntry = z.infer<typeof AgentSkillCatalogEntrySchema>;
 
+/** A recurring tool-call sequence across a bot's recent runs, offered as a skill to save. */
+export const SkillPromotionSuggestionSchema = z.object({
+  /** Stable id for this sequence, so a dismissed suggestion does not return. */
+  hash: z.string(),
+  tools: z.array(z.string()).min(2),
+  /** How many recent runs contained the sequence. */
+  runCount: z.number().int().positive(),
+  /** A ready-to-edit SKILL.md draft built from the sequence. */
+  draft: z.string(),
+});
+export type SkillPromotionSuggestion = z.infer<typeof SkillPromotionSuggestionSchema>;
+
 export const CreateAgentSkillInput = z
   .object({
     content: z.string().min(1).max(100_000).optional(),
