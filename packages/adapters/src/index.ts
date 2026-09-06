@@ -59,6 +59,8 @@ export * from "./scripted-runtime.js";
 export * from "./scripted-voice.js";
 export * from "./secrets.js";
 export * from "./sentinel-runner.js";
+export * from "./sentinel-tools.js";
+export * from "./sentinel-wake.js";
 export * from "./skill-tools.js";
 export { SupermemoryMemoryProvider } from "./supermemory-memory-provider.js";
 export * from "./teaching-session.js";

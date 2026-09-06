@@ -97,6 +97,7 @@ model Organization {
   tasks       Task[]
   runs        Run[]
   routines    Routine[]
+  sentinels   Sentinel[]
   scratchpadItems ScratchpadItem[]
   taughtSkills TaughtSkill[]
   agentSkills AgentSkill[]
@@ -246,6 +247,7 @@ model Bot {
   modelId        String?
   thinkingLevel  String?
   routines       Routine[]
+  sentinels      Sentinel[]
   scratchpadItems ScratchpadItem[]
   taughtSkills   TaughtSkill[]
   memoryDocuments MemoryDocument[]
@@ -510,6 +512,32 @@ model Routine {
   @@index([active, nextRunAt])
   @@index([workspaceId, botId])
   @@map("routines")
+}
+
+model Sentinel {
+  id          String    @id @default(cuid())
+  workspaceId String
+  workspace   Organization @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  botId       String
+  bot         Bot       @relation(fields: [botId], references: [id], onDelete: Cascade)
+  userId      String
+  name        String
+  check       Json
+  trigger     String
+  windowMs    Int?
+  onFire      Json
+  active      Boolean   @default(true)
+  state       Json?
+  cron        String
+  timezone    String    @default("UTC")
+  lastCheckedAt DateTime?
+  nextRunAt   DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([active, nextRunAt])
+  @@index([workspaceId, botId])
+  @@map("sentinels")
 }
 
 model ScratchpadItem {
