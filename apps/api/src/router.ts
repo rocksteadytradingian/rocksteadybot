@@ -125,6 +125,7 @@ import {
   listVoiceCatalog,
   loadDefaultVoiceCredential,
   loadVoiceCredential,
+  localDictationAvailable,
   persistVoiceCredential,
   prepareVoice,
   toVoiceCredential,
@@ -2829,7 +2830,9 @@ export function createRouter(deps: RouterDeps) {
       catalog: authed.voice.catalog.handler(async () => listVoiceCatalog()),
       status: authed.voice.status.handler(async ({ context }) => {
         const cred = await findDefaultVoiceCredential(deps.prisma, context.actor);
-        return toVoiceStatus(cred);
+        const localDictation = await localDictationAvailable(context.actor);
+        const base = toVoiceStatus(cred);
+        return { ...base, transcribe: base.transcribe || localDictation, localDictation };
       }),
       credentials: authed.voice.credentials.handler(async ({ context }) => {
         const rows = await deps.prisma.userVoiceCredential.findMany({

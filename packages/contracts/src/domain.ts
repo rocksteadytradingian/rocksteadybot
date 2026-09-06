@@ -693,6 +693,8 @@ export const VoiceStatusSchema = z.object({
   transcribe: z.boolean(),
   provider: z.string().nullable(),
   voiceId: z.string(),
+  /** On-device dictation is available even without a connected provider. */
+  localDictation: z.boolean().optional(),
 });
 export type VoiceStatus = z.infer<typeof VoiceStatusSchema>;
 
