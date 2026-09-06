@@ -6,6 +6,7 @@ import type {
 } from "@rakazo/adapter-kit";
 import type { RunOutcome } from "@rakazo/contracts";
 import { describe, expect, it } from "vitest";
+import { builtinAgentTools } from "./builtin-tools.js";
 import { FakeOutcomeVerifier, outcomeClaimKey } from "./fake-outcome-verifier.js";
 import {
   createSandboxOutcomeVerifier,
@@ -78,9 +79,10 @@ describe("declareOutcomeToolResult", () => {
 });
 
 describe("DECLARE_OUTCOME_TOOL", () => {
-  it("is a well-formed tool definition that is not yet a builtin", () => {
+  it("is a well-formed tool definition and is registered as a builtin", () => {
     expect(DECLARE_OUTCOME_TOOL.name).toBe("declare_outcome");
     expect(DECLARE_OUTCOME_TOOL.inputSchema.required).toEqual(["claims"]);
+    expect(builtinAgentTools).toContain(DECLARE_OUTCOME_TOOL);
   });
 });
 

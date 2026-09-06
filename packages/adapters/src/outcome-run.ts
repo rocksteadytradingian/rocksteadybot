@@ -18,9 +18,9 @@ export const OUTCOME_VERIFIED_EVENT = "outcome.verified" as const;
 
 /**
  * Lets the agent state a checkable result it expects the task to have produced. The executor
- * verifies each declaration independently once the run finishes and appends an
- * `outcome.verified` event carrying the `RunOutcome`. Not yet added to `builtinAgentTools` —
- * the executor wiring lands with the next unit.
+ * accumulates declarations during the run, verifies each one independently once the run
+ * finishes, writes the verdicts to the run row, and appends an `outcome.verified` event.
+ * Registered in `builtinAgentTools`.
  */
 export const DECLARE_OUTCOME_TOOL: ConnectorTool = {
   name: DECLARE_OUTCOME_TOOL_NAME,

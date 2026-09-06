@@ -12,6 +12,7 @@ import type {
   MemoryStore,
   NotificationMessage,
   NotificationProvider,
+  OutcomeClaim,
   SandboxProvider,
   SemanticMemoryProvider,
 } from "@rakazo/adapter-kit";
@@ -63,6 +64,7 @@ import {
   type PrismaClient,
   parseComputerMode,
   type ThreadEvents,
+  writeRunOutcome,
 } from "@rakazo/db";
 import { buildApprovalAskBlock } from "./approval-ask.js";
 import {
@@ -134,6 +136,13 @@ import {
   MODEL_CANNOT_SEE_MESSAGE,
   modelAcceptsImageInput,
 } from "./model-vision.js";
+import {
+  createSandboxOutcomeVerifier,
+  DECLARE_OUTCOME_TOOL_NAME,
+  declareOutcomeToolResult,
+  finalizeRunOutcomes,
+  parseDeclaredOutcomes,
+} from "./outcome-run.js";
 import { toOAuthCredential } from "./pi-credentials.js";
 import {
   parseModelSecret,
@@ -879,6 +888,8 @@ export function createRunExecutor(deps: ExecutorDeps) {
         let hasStreamedText = false;
         let toolCallStreak: ToolCallStreak = { key: undefined, count: 0 };
         let lastComputerFrameId: string | undefined;
+        // Outcomes the run declares via declare_outcome; verified once, after it finishes.
+        const declaredOutcomeClaims: OutcomeClaim[] = [];
         let terminalCheckpointComplete = false;
         let approvalPausePending = false;
         let progressRedactor = createStreamingRedactor(runSecrets);
@@ -1388,6 +1399,11 @@ export function createRunExecutor(deps: ExecutorDeps) {
               context,
             );
             return finish({ ok: true });
+          }
+          if (name === DECLARE_OUTCOME_TOOL_NAME) {
+            const parsed = parseDeclaredOutcomes(args, declaredOutcomeClaims.length);
+            declaredOutcomeClaims.push(...parsed.claims);
+            return declareOutcomeToolResult(parsed, declaredOutcomeClaims.length);
           }
           if (name === "scratchpad_list") {
             return listScratchpadItemsFromTool(deps, {
@@ -2397,6 +2413,35 @@ export function createRunExecutor(deps: ExecutorDeps) {
             blocks,
           });
           if (!completed) return;
+          // Independent verification of any outcomes the run declared. Never fatal: the run is
+          // already finalized, so a failure here must not reach the catch block below.
+          if (declaredOutcomeClaims.length > 0) {
+            try {
+              const finalized = await finalizeRunOutcomes({
+                runId,
+                claims: declaredOutcomeClaims,
+                verifier: createSandboxOutcomeVerifier(deps.sandbox, computer),
+                context,
+              });
+              if (finalized) {
+                await writeRunOutcome(deps.prisma, finalized.outcome);
+                await deps.events.append({
+                  workspaceId: run.workspaceId,
+                  threadId: thread.id,
+                  botId: bot.id,
+                  type: "outcome.verified",
+                  runId,
+                  payload: finalized.event.payload as unknown as Record<string, unknown>,
+                });
+              }
+            } catch (error) {
+              console.error(
+                `outcome verification failed for run ${runId}: ${
+                  error instanceof Error ? error.message : String(error)
+                }`,
+              );
+            }
+          }
           if (bot.notifyOnFinish && text) {
             await notifyRun(deps, run, {
               kind: "completion",
