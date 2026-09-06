@@ -419,6 +419,7 @@ export interface BackgroundJobPayloads {
   "computer.sleep": { computerId: string };
   "computer.control-expire": { computerId: string; leaseId: string };
   "skill.teaching-expire": { skillId: string };
+  "skill.revise": { skillId: string; runId: string };
   "history.compact": { threadId: string };
   "memory.reflect": { runId: string };
 }

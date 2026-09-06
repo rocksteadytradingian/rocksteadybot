@@ -22,6 +22,7 @@ const payloadSchemas = {
     leaseId: z.string().min(1),
   }),
   "skill.teaching-expire": z.object({ skillId: z.string().min(1) }),
+  "skill.revise": z.object({ skillId: z.string().min(1), runId: z.string().min(1) }),
   "history.compact": z.object({ threadId: z.string().min(1) }),
   "memory.reflect": z.object({ runId: z.string().min(1) }),
 } satisfies { [Name in BackgroundJobName]: z.ZodType<BackgroundJobPayloads[Name]> };
@@ -67,6 +68,18 @@ export function computerControlExpireJobKey(computerId: string, leaseId?: string
 
 export function skillTeachingExpireJobKey(skillId: string): string {
   return `skill.teaching-expire:${skillId}`;
+}
+
+export function skillReviseJobKey(skillId: string): string {
+  return `skill.revise:${skillId}`;
+}
+
+export function skillReviseJob(skillId: string, runId: string): BackgroundJob {
+  return {
+    name: "skill.revise",
+    payload: { skillId, runId },
+    replaceKey: skillReviseJobKey(skillId),
+  };
 }
 
 export function runContinueJob(runId: string): BackgroundJob {
