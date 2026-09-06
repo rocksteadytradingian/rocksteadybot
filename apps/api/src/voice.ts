@@ -1,5 +1,5 @@
 import { ORPCError } from "@orpc/server";
-import type { AdapterContext } from "@rakazo/adapter-kit";
+import type { AdapterContext, VoiceProvider } from "@rakazo/adapter-kit";
 import {
   createVoiceProvider,
   type EncryptedSecretStore,
@@ -31,6 +31,8 @@ export { listVoiceCatalog };
 
 const SPEAK_TIMEOUT_MS = 60_000;
 
+type TranscribeFn = NonNullable<VoiceProvider["transcribe"]>;
+
 export function voiceContext(actor: Actor, signal?: AbortSignal): AdapterContext {
   return {
     operationId: "voice",
@@ -39,6 +41,11 @@ export function voiceContext(actor: Actor, signal?: AbortSignal): AdapterContext
     userId: actor.userId,
     signal: signal ?? new AbortController().signal,
   };
+}
+
+/** Whether on-device dictation (local-whisper) is available in this deployment. */
+export async function localDictationAvailable(actor: Actor): Promise<boolean> {
+  return (await createVoiceProvider("local-whisper").verify("", voiceContext(actor))).ok;
 }
 
 export function catalogEntry(provider: string) {
@@ -236,22 +243,41 @@ export async function transcribeVoice(
   actor: Actor,
   input: { audio: Uint8Array; mimeType: string; signal?: AbortSignal },
 ) {
-  const loaded = await loadDefaultVoiceCredential(deps, actor);
-  if (!loaded) throw new NoVoiceConfigured("key");
-  const provider = createVoiceProvider(loaded.cred.provider);
-  if (!provider.transcribe) {
-    throw new ORPCError("BAD_REQUEST", {
-      message: "This voice provider does not transcribe audio. Use on-device dictation instead.",
-    });
-  }
   if (input.audio.byteLength === 0 || input.audio.byteLength > MAX_TRANSCRIBE_BYTES) {
     throw new ORPCError("BAD_REQUEST", { message: "That recording is empty or too large." });
   }
-  return provider.transcribe(
+
+  const loaded = await loadDefaultVoiceCredential(deps, actor);
+
+  // Prefer a configured cloud transcriber; fall back to on-device dictation when there is none.
+  let transcriber: { transcribe: TranscribeFn; apiKey: string } | null = null;
+  if (loaded) {
+    const cloud = createVoiceProvider(loaded.cred.provider);
+    if (cloud.transcribe)
+      transcriber = { transcribe: cloud.transcribe.bind(cloud), apiKey: loaded.apiKey };
+  }
+  if (!transcriber) {
+    const local = createVoiceProvider("local-whisper");
+    if (local.transcribe && (await local.verify("", voiceContext(actor))).ok) {
+      transcriber = { transcribe: local.transcribe.bind(local), apiKey: "" };
+    }
+  }
+
+  if (!transcriber) {
+    if (loaded) {
+      throw new ORPCError("BAD_REQUEST", {
+        message:
+          "This voice provider does not transcribe audio, and on-device dictation is unavailable here.",
+      });
+    }
+    throw new NoVoiceConfigured("key");
+  }
+
+  return transcriber.transcribe(
     {
       audio: input.audio,
       mimeType: input.mimeType || "audio/webm",
-      apiKey: loaded.apiKey,
+      apiKey: transcriber.apiKey,
       signal: input.signal,
     },
     voiceContext(actor, input.signal),

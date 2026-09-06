@@ -1,6 +1,7 @@
 import type { VoiceProvider } from "@rakazo/adapter-kit";
 import { CartesiaVoiceProvider } from "./cartesia-voice.js";
 import { ElevenLabsVoiceProvider } from "./elevenlabs-voice.js";
+import { LocalWhisperVoiceProvider } from "./local-whisper-voice.js";
 import { OpenAIVoiceProvider } from "./openai-voice.js";
 import { SCRIPTED_VOICE_CATALOG_ENTRY, ScriptedVoiceProvider } from "./scripted-voice.js";
 
@@ -10,18 +11,33 @@ export const VOICE_CATALOG = [
     name: "ElevenLabs",
     description: "Highest quality and cloning. Flash v2.5 for conversational calls.",
     transcribe: true,
+    synthesize: true,
+    keyless: false,
   },
   {
     id: "openai",
     name: "OpenAI",
     description: "Simple TTS plus Whisper-class transcription. Reuse an OpenAI key.",
     transcribe: true,
+    synthesize: true,
+    keyless: false,
   },
   {
     id: "cartesia",
     name: "Cartesia",
     description: "Lowest-latency Sonic voices for interruptible calls.",
     transcribe: false,
+    synthesize: true,
+    keyless: false,
+  },
+  {
+    id: "local-whisper",
+    name: "Local Whisper",
+    description:
+      "On-device dictation via whisper.cpp. No key, no network. Transcribe-only; desktop.",
+    transcribe: true,
+    synthesize: false,
+    keyless: true,
   },
 ] as const;
 
@@ -58,13 +74,17 @@ export function createVoiceProvider(kind: string): VoiceProvider {
       return new OpenAIVoiceProvider();
     case "cartesia":
       return new CartesiaVoiceProvider();
+    case "local-whisper":
+      return new LocalWhisperVoiceProvider();
     case "scripted":
       if (!scriptedVoiceEnabled()) break;
       return new ScriptedVoiceProvider();
     default:
       break;
   }
-  throw new Error(`Unknown voice provider "${kind}". Use elevenlabs | openai | cartesia.`);
+  throw new Error(
+    `Unknown voice provider "${kind}". Use elevenlabs | openai | cartesia | local-whisper.`,
+  );
 }
 
 export class NoVoiceConfigured extends Error {

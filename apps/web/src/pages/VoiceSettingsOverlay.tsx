@@ -160,6 +160,11 @@ export function VoiceSettingsOverlay({ onClose }: { onClose: () => void }) {
               <Trans>Connect ElevenLabs, OpenAI, or Cartesia</Trans>
             )}
           </div>
+          {status?.localDictation ? (
+            <div className="mt-2 text-[12.5px] text-[#4ECB71]">
+              <Trans>On-device dictation is available — no key or setup needed.</Trans>
+            </div>
+          ) : null}
         </div>
 
         <div className="flex min-h-0 flex-1 flex-col gap-6 overflow-hidden px-6 py-6 sm:px-8 md:flex-row">

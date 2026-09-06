@@ -663,6 +663,10 @@ export const VoiceCatalogEntrySchema = z.object({
   name: z.string(),
   description: z.string(),
   transcribe: z.boolean(),
+  /** Can produce speech (TTS). Absent is treated as true for older entries. */
+  synthesize: z.boolean().optional(),
+  /** No API key: verified/enabled by the deployment, not a stored credential. */
+  keyless: z.boolean().optional(),
 });
 export type VoiceCatalogEntry = z.infer<typeof VoiceCatalogEntrySchema>;
 
@@ -689,6 +693,8 @@ export const VoiceStatusSchema = z.object({
   transcribe: z.boolean(),
   provider: z.string().nullable(),
   voiceId: z.string(),
+  /** On-device dictation is available even without a connected provider. */
+  localDictation: z.boolean().optional(),
 });
 export type VoiceStatus = z.infer<typeof VoiceStatusSchema>;
 

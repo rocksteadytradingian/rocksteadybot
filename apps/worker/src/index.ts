@@ -11,6 +11,7 @@ import {
   createRunExecutor,
   createRunSandbox,
   createRunSecretWriter,
+  createWhisperCliEngine,
   EncryptedSecretStore,
   ExpoPushProvider,
   GraphileJobPublisher,
@@ -29,6 +30,7 @@ import {
   pipedreamConfigFromEnv,
   resolveDeploymentModel,
   ScriptedAgentRuntime,
+  setWhisperEngine,
   WorkspaceMemoryProviderResolver,
 } from "@rakazo/adapters";
 import { resolveEncryptionKey } from "@rakazo/core";
@@ -93,6 +95,7 @@ async function main() {
   ]);
   const connector = stack.destination;
   await connector.start();
+  if (process.env.RAKAZO_WHISPER_BIN) setWhisperEngine(createWhisperCliEngine());
   const memoryProviders = new WorkspaceMemoryProviderResolver(prisma, secrets);
   const home = new LocalAgentHomeStore(dataDir);
   const artifacts = new LocalArtifactStore(dataDir);
