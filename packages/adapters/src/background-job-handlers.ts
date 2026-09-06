@@ -26,6 +26,8 @@ export function createBackgroundJobHandlers(deps: {
   secretStore: EncryptedSecretStore;
   memoryProviders: MemoryProviderResolver;
   deploymentModelKey?: string;
+  /** Sample one sentinel and act on a transition. Wired once a deployment enables sentinels. */
+  sentinelWake?: (sentinelId: string, scheduledFor: string) => Promise<void>;
 }): BackgroundJobHandlers {
   return {
     "run.continue": async (payload) => {
@@ -33,6 +35,9 @@ export function createBackgroundJobHandlers(deps: {
     },
     "routine.wakeup": async (payload) => {
       await deps.executor.wakeRoutine(payload.routineId, payload.scheduledFor);
+    },
+    "sentinel.wakeup": async (payload) => {
+      await deps.sentinelWake?.(payload.sentinelId, payload.scheduledFor);
     },
     "computer.sleep": async (payload) => {
       await sleepComputerIfIdle(deps, payload.computerId);

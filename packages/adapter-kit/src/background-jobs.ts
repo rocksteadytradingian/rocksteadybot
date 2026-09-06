@@ -12,6 +12,10 @@ const payloadSchemas = {
     routineId: z.string().min(1),
     scheduledFor: z.string().datetime({ offset: true }),
   }),
+  "sentinel.wakeup": z.object({
+    sentinelId: z.string().min(1),
+    scheduledFor: z.string().datetime({ offset: true }),
+  }),
   "computer.sleep": z.object({ computerId: z.string().min(1) }),
   "computer.control-expire": z.object({
     computerId: z.string().min(1),
@@ -46,6 +50,10 @@ export function routineJobKey(routineId: string): string {
   return `routine:${routineId}`;
 }
 
+export function sentinelJobKey(sentinelId: string): string {
+  return `sentinel:${sentinelId}`;
+}
+
 export function computerSleepJobKey(computerId: string): string {
   return `computer.sleep:${computerId}`;
 }
@@ -74,6 +82,15 @@ export function routineWakeupJob(routineId: string, scheduledFor: Date): Backgro
     payload: { routineId, scheduledFor: scheduledFor.toISOString() },
     availableAt: scheduledFor,
     replaceKey: routineJobKey(routineId),
+  };
+}
+
+export function sentinelWakeupJob(sentinelId: string, scheduledFor: Date): BackgroundJob {
+  return {
+    name: "sentinel.wakeup",
+    payload: { sentinelId, scheduledFor: scheduledFor.toISOString() },
+    availableAt: scheduledFor,
+    replaceKey: sentinelJobKey(sentinelId),
   };
 }
 
