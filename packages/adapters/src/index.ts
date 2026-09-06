@@ -60,6 +60,7 @@ export * from "./run-secret.js";
 export * from "./sandbox-factory.js";
 export * from "./scratchpad-context.js";
 export * from "./scratchpad-tools.js";
+export * from "./screen-redaction.js";
 export * from "./screen-redactor.js";
 export * from "./scripted-runtime.js";
 export * from "./scripted-voice.js";
