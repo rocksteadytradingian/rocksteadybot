@@ -4,7 +4,9 @@ import {
   SentinelActionSchema,
   SentinelCheckSchema,
   SentinelSpecSchema,
+  SentinelStateSchema,
   SentinelTriggerSchema,
+  type StoredSentinel,
 } from "@rakazo/contracts";
 import { parseWindowMs } from "@rakazo/core";
 import type { Prisma, PrismaClient, ThreadEvents } from "@rakazo/db";
@@ -52,6 +54,42 @@ function shapeSentinel(row: {
   };
 }
 
+/** Full Prisma `Sentinel` row → the wire `StoredSentinel`, JSON columns re-validated. */
+export function toStoredSentinel(row: {
+  id: string;
+  workspaceId: string;
+  botId: string;
+  name: string;
+  check: unknown;
+  trigger: string;
+  windowMs: number | null;
+  onFire: unknown;
+  active: boolean;
+  state: unknown;
+  lastCheckedAt: Date | null;
+  nextRunAt: Date | null;
+  createdAt: Date;
+}): StoredSentinel {
+  const state = SentinelStateSchema.nullable()
+    .catch(null)
+    .parse(row.state ?? null);
+  return {
+    id: row.id,
+    workspaceId: row.workspaceId,
+    botId: row.botId,
+    name: row.name,
+    check: SentinelCheckSchema.parse(row.check),
+    trigger: SentinelTriggerSchema.parse(row.trigger),
+    windowMs: row.windowMs,
+    onFire: SentinelActionSchema.parse(row.onFire),
+    active: row.active,
+    state,
+    lastCheckedAt: row.lastCheckedAt?.toISOString() ?? null,
+    nextRunAt: row.nextRunAt?.toISOString() ?? null,
+    createdAt: row.createdAt.toISOString(),
+  };
+}
+
 export async function createSentinelFromTool(
   deps: SentinelToolDeps,
   input: SentinelToolContext & {
@@ -65,13 +103,9 @@ export async function createSentinelFromTool(
   if (!spec.success) {
     return { error: spec.error.issues[0]?.message ?? "Invalid sentinel." };
   }
-  // A wakeup runs without a computer or a bot turn, so only the checks and actions that
-  // work in that context are accepted for now.
+  // A wakeup runs without a live computer, so screen checks are not reachable yet.
   if (spec.data.check.kind !== "http-ok") {
     return { error: 'Only "http-ok" sentinel checks are supported right now.' };
-  }
-  if (spec.data.onFire.kind !== "notify") {
-    return { error: 'Sentinels can only "notify" right now, not start a run.' };
   }
 
   const timezone = String(input.timezone ?? "UTC");

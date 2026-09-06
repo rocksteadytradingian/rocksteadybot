@@ -191,6 +191,9 @@ const SkillRevisionsOverlay = lazy(() =>
     default: module.SkillRevisionsOverlay,
   })),
 );
+const SentinelsOverlay = lazy(() =>
+  import("./SentinelsOverlay").then((module) => ({ default: module.SentinelsOverlay })),
+);
 const CallView = lazy(() => import("./CallView").then((module) => ({ default: module.CallView })));
 const ScratchpadSection = lazy(() =>
   import("./ScratchpadSection").then((module) => ({ default: module.ScratchpadSection })),
@@ -310,6 +313,7 @@ export function ShellPage() {
   const [memorySettingsOpen, setMemorySettingsOpen] = useState(false);
   const [redactionOpen, setRedactionOpen] = useState(false);
   const [skillRevisionsOpen, setSkillRevisionsOpen] = useState(false);
+  const [sentinelsOpen, setSentinelsOpen] = useState(false);
   const [memoryProviderConfig, setMemoryProviderConfig] = useState<
     WorkspaceMemoryConfig | null | undefined
   >(undefined);
@@ -2109,6 +2113,21 @@ export function ShellPage() {
                   <Trans>Skill revisions</Trans>
                 </span>
               </button>
+              {active && !inGroup ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMenuOpen(false);
+                    setSentinelsOpen(true);
+                  }}
+                  className="flex w-full items-center gap-3 rounded-[11px] px-3 py-2.5 hover:bg-[#232327]"
+                >
+                  <span className="text-[#9A9AA0]">◎</span>
+                  <span className="flex-1 text-start text-[14.5px] text-[#ECECEE]">
+                    <Trans>Sentinels</Trans>
+                  </span>
+                </button>
+              ) : null}
               <button
                 type="button"
                 className="flex w-full items-center gap-3 rounded-[11px] px-3 py-2.5 hover:bg-[#232327]"
@@ -2966,6 +2985,12 @@ export function ShellPage() {
       <Suspense fallback={null}>
         {skillRevisionsOpen ? (
           <SkillRevisionsOverlay onClose={() => setSkillRevisionsOpen(false)} />
+        ) : null}
+      </Suspense>
+
+      <Suspense fallback={null}>
+        {sentinelsOpen && active && !inGroup ? (
+          <SentinelsOverlay botId={active.id} onClose={() => setSentinelsOpen(false)} />
         ) : null}
       </Suspense>
 

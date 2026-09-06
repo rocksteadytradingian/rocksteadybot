@@ -33,6 +33,18 @@ export const RunStatus = z.enum([
 ]);
 export type RunStatus = z.infer<typeof RunStatus>;
 
+export const RunTrigger = z.enum([
+  "user",
+  "routine",
+  "sentinel",
+  "resume",
+  "follow_up",
+  "spawn",
+  "skill",
+  "bot_message",
+]);
+export type RunTrigger = z.infer<typeof RunTrigger>;
+
 export const MemoryScope = z.enum(["bot", "user"]);
 export type MemoryScope = z.infer<typeof MemoryScope>;
 

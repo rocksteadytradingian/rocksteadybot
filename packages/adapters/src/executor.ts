@@ -1527,6 +1527,10 @@ export function createRunExecutor(deps: ExecutorDeps) {
             return finish(cancelled);
           }
           if (name === "sentinel_create") {
+            const prompt = args.prompt ? String(args.prompt) : "";
+            const onFire = prompt
+              ? { kind: "run", prompt }
+              : { kind: "notify", message: String(args.message ?? "") };
             const created = await createSentinelFromTool(deps, {
               workspaceId: run.workspaceId,
               botId: bot.id,
@@ -1537,7 +1541,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
                 check: { kind: "http-ok", url: String(args.url ?? "") },
                 trigger: String(args.trigger ?? ""),
                 window: args.window ? String(args.window) : undefined,
-                onFire: { kind: "notify", message: String(args.message ?? "") },
+                onFire,
               },
               timezone: args.timezone ? String(args.timezone) : undefined,
               schedule: { cron: args.cron, every: args.every, unit: args.unit },
