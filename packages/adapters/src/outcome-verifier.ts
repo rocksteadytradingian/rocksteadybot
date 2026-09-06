@@ -9,11 +9,11 @@ import type {
 } from "@rakazo/adapter-kit";
 import { combineSignals } from "./connector-safety.js";
 
-/** Reads a file the run may have produced. Resolves `null` when the path does not exist. */
-export type OutcomeFileReader = (
+/** Stats a file the run may have produced. Resolves `null` when the path does not exist. */
+export type OutcomeFileStat = (
   path: string,
   context: OutcomeVerifyContext,
-) => Promise<Uint8Array | null>;
+) => Promise<{ size: number } | null>;
 
 /** One read of the run's screen for `text-on-screen`: whatever text the sandbox can name. */
 export type OutcomeScreenReader = (
@@ -24,7 +24,7 @@ export interface StandardOutcomeVerifierDeps {
   /** Defaults to the global `fetch`. */
   fetch?: typeof fetch;
   /** Enables the `file-exists` tier. Without it that claim resolves `unconfirmed`. */
-  readFile?: OutcomeFileReader;
+  statFile?: OutcomeFileStat;
   /** Enables the `text-on-screen` tier. Without it that claim resolves `unconfirmed`. */
   readScreen?: OutcomeScreenReader;
   /** Frozen clock for deterministic tests. */
@@ -176,32 +176,32 @@ export class StandardOutcomeVerifier implements OutcomeVerifier {
     claim: Extract<OutcomeClaim, { kind: "file-exists" }>,
     context: OutcomeVerifyContext,
   ): Promise<Verdict> {
-    if (!this.deps.readFile) {
+    if (!this.deps.statFile) {
       return this.make(claim, "unconfirmed", "assertion", "no file reader configured for this run");
     }
-    let bytes: Uint8Array | null;
+    let stat: { size: number } | null;
     try {
-      bytes = await this.deps.readFile(claim.path, context);
+      stat = await this.deps.statFile(claim.path, context);
     } catch (error) {
       return this.make(
         claim,
         "unconfirmed",
         "assertion",
-        `could not read ${claim.path}: ${errText(error)}`,
+        `could not check ${claim.path}: ${errText(error)}`,
       );
     }
-    if (bytes == null) {
+    if (stat == null) {
       return this.make(claim, "contradicted", "assertion", `${claim.path} does not exist`);
     }
-    if (claim.minBytes != null && bytes.length < claim.minBytes) {
+    if (claim.minBytes != null && stat.size < claim.minBytes) {
       return this.make(
         claim,
         "contradicted",
         "assertion",
-        `${claim.path} is ${bytes.length} bytes, expected at least ${claim.minBytes}`,
+        `${claim.path} is ${stat.size} bytes, expected at least ${claim.minBytes}`,
       );
     }
-    return this.make(claim, "verified", "assertion", `${claim.path} is ${bytes.length} bytes`);
+    return this.make(claim, "verified", "assertion", `${claim.path} is ${stat.size} bytes`);
   }
 
   private async verifyScreen(

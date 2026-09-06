@@ -129,22 +129,19 @@ describe("file-exists", () => {
   const claim: OutcomeClaim = { kind: "file-exists", path: "/home/rakazo/out.csv" };
 
   it("verifies an existing file and reports its size", async () => {
-    const v = await verifier({ readFile: async () => new Uint8Array(4242) }).verify(
-      claim,
-      context(),
-    );
+    const v = await verifier({ statFile: async () => ({ size: 4242 }) }).verify(claim, context());
     expect(v.status).toBe("verified");
     expect(v.evidence).toContain("4242 bytes");
   });
 
   it("contradicts a missing file", async () => {
-    const v = await verifier({ readFile: async () => null }).verify(claim, context());
+    const v = await verifier({ statFile: async () => null }).verify(claim, context());
     expect(v.status).toBe("contradicted");
     expect(v.evidence).toMatch(/does not exist/);
   });
 
   it("contradicts a file below minBytes", async () => {
-    const v = await verifier({ readFile: async () => new Uint8Array(10) }).verify(
+    const v = await verifier({ statFile: async () => ({ size: 10 }) }).verify(
       { ...claim, minBytes: 100 },
       context(),
     );
@@ -152,10 +149,10 @@ describe("file-exists", () => {
     expect(v.evidence).toContain("expected at least 100");
   });
 
-  it("is unconfirmed with no reader and when the reader throws", async () => {
+  it("is unconfirmed with no reader and when the stat throws", async () => {
     expect((await verifier().verify(claim, context())).status).toBe("unconfirmed");
     const threw = await verifier({
-      readFile: async () => {
+      statFile: async () => {
         throw new Error("EACCES");
       },
     }).verify(claim, context());
@@ -226,7 +223,7 @@ describe("verifyOutcomes + rollUpVerdicts", () => {
     ];
     const verdicts = await verifyOutcomes(
       verifier({
-        readFile: async () => new Uint8Array(8),
+        statFile: async () => ({ size: 8 }),
         fetch: async () => new Response(null, { status: 503 }),
       }),
       claims,
@@ -239,7 +236,7 @@ describe("verifyOutcomes + rollUpVerdicts", () => {
   it("rolls all-verified up to verified", async () => {
     const verdicts = await verifyOutcomes(
       verifier({
-        readFile: async () => new Uint8Array(1),
+        statFile: async () => ({ size: 1 }),
         fetch: async () => new Response(null, { status: 200 }),
       }),
       [
