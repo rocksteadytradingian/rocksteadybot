@@ -28,6 +28,36 @@ const PATTERNS: Partial<Record<RedactionEntity, RegExp>> = {
   CREDIT_CARD: /\b(?:\d[ -]?){12,18}\d\b/g,
 };
 
+export interface EntitySpan {
+  entity: RedactionEntity;
+  /** Character offsets into the text that was scanned. */
+  start: number;
+  end: number;
+  text: string;
+}
+
+/**
+ * Every supported-entity match in `text`, honouring the policy's entity set, its allowlist,
+ * and the CREDIT_CARD Luhn check. Ordered by position. Shared by the text redactor and the
+ * OCR region detector so both find exactly the same things.
+ */
+export function findEntitySpans(text: string, policy: RedactionPolicy): EntitySpan[] {
+  if (policy.mode === "off" || !text) return [];
+  const allow = new Set(policy.allowlist ?? []);
+  const spans: EntitySpan[] = [];
+  for (const entity of policy.entities) {
+    const pattern = PATTERNS[entity];
+    if (!pattern) continue;
+    for (const match of text.matchAll(new RegExp(pattern.source, pattern.flags))) {
+      const value = match[0];
+      if (allow.has(value)) continue;
+      if (entity === "CREDIT_CARD" && !luhnValid(value)) continue;
+      spans.push({ entity, start: match.index, end: match.index + value.length, text: value });
+    }
+  }
+  return spans.sort((a, b) => a.start - b.start);
+}
+
 /** Passes the Luhn checksum used by real card numbers. */
 export function luhnValid(digits: string): boolean {
   const clean = digits.replace(/\D/g, "");
@@ -75,18 +105,15 @@ export class RegexTextRedactor implements ScreenRedactor {
     policy: RedactionPolicy,
     _context: AdapterContext,
   ): Promise<string> {
-    if (policy.mode === "off" || !value) return value;
-    const allow = new Set(policy.allowlist ?? []);
-    let out = value;
-    for (const entity of policy.entities) {
-      const pattern = PATTERNS[entity];
-      if (!pattern) continue;
-      out = out.replace(new RegExp(pattern.source, pattern.flags), (match) => {
-        if (allow.has(match)) return match;
-        if (entity === "CREDIT_CARD" && !luhnValid(match)) return match;
-        return `[${entity}]`;
-      });
+    const spans = findEntitySpans(value, policy);
+    if (spans.length === 0) return value;
+    let out = "";
+    let cursor = 0;
+    for (const span of spans) {
+      if (span.start < cursor) continue; // an earlier span already covered this text
+      out += value.slice(cursor, span.start) + `[${span.entity}]`;
+      cursor = span.end;
     }
-    return out;
+    return out + value.slice(cursor);
   }
 }

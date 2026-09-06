@@ -46,6 +46,7 @@ export * from "./memory-provider-factory.js";
 export * from "./memory-reflection.js";
 export * from "./model-connect.js";
 export * from "./model-vision.js";
+export * from "./ocr-region-detector.js";
 export * from "./openai-compatible-url.js";
 export * from "./openai-voice.js";
 export * from "./outcome-run.js";
