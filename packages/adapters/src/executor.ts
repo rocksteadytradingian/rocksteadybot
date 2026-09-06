@@ -31,6 +31,7 @@ import {
   appendToolCallSegment,
   assertTransition,
   blocksToAgentHistoryText,
+  compileRecordingToReplay,
   connectorKindFromToolName,
   containsSecret,
   createStreamingRedactor,
@@ -47,6 +48,7 @@ import {
   promptInvokesSkill,
   redactSecrets,
   renderBotDirectory,
+  replayInputCount,
   resolveActionApproval,
   sandboxCommandTimeoutMs,
   type ToolCallStreak,
@@ -195,7 +197,9 @@ import {
   skillUpdateFromTool,
 } from "./skill-tools.js";
 import { type TakeoverResumeCheckpoint, takeoverResumeFromRelease } from "./takeover-resume.js";
-import { getActiveTeachingSession, parsePlaybook } from "./teaching-session.js";
+import { bindReplayRunner, replayHandoffPrompt } from "./teach-replay-binding.js";
+import { runReplay } from "./teach-replay-runner.js";
+import { getActiveTeachingSession, parsePlaybook, parseRecording } from "./teaching-session.js";
 import {
   attachWorkspaceFileToThread,
   currentTurnFilesInstruction,
@@ -2015,11 +2019,41 @@ export function createRunExecutor(deps: ExecutorDeps) {
         const invokedSkill = savedSkills.find((skill) =>
           promptInvokesSkill(taskPrompt, skill.name || skill.goal),
         );
+
+        // Replay the recorded inputs deterministically before the model runs; the model then
+        // verifies, fills what the recording could not, and recovers from any drift.
+        let replayHandoff: string | undefined;
+        if (invokedSkill && !scripted) {
+          try {
+            const replaySteps = compileRecordingToReplay(parseRecording(invokedSkill.recording));
+            if (replayInputCount(replaySteps) > 0) {
+              const replayResult = await runReplay(
+                replaySteps,
+                bindReplayRunner({ sandbox: deps.sandbox, computer, context }),
+              );
+              replayHandoff = replayHandoffPrompt(
+                invokedSkill.name || invokedSkill.goal.slice(0, 80),
+                invokedSkill.goal,
+                replayResult,
+              );
+            }
+          } catch (error) {
+            console.error(
+              `taught-skill replay failed for ${invokedSkill.id}: ${
+                error instanceof Error ? error.message : String(error)
+              }`,
+            );
+          }
+        }
+
         const basePrompt = invokedSkill
-          ? `${formatSkillRunPrompt(
-              invokedSkill.name || invokedSkill.goal.slice(0, 80),
-              parsePlaybook(invokedSkill.playbook),
-            )}\n\n${taskPrompt}`
+          ? `${
+              replayHandoff ??
+              formatSkillRunPrompt(
+                invokedSkill.name || invokedSkill.goal.slice(0, 80),
+                parsePlaybook(invokedSkill.playbook),
+              )
+            }\n\n${taskPrompt}`
           : taskPrompt;
         const approvalContinuation = buildApprovalContinuation(approvedEffects, (request) =>
           redactSecrets(JSON.stringify(request), runSecrets),
