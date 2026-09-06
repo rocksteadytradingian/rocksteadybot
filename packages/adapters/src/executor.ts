@@ -12,6 +12,7 @@ import type {
   MemoryStore,
   NotificationMessage,
   NotificationProvider,
+  OutcomeClaim,
   SandboxProvider,
   SemanticMemoryProvider,
 } from "@rakazo/adapter-kit";
@@ -63,6 +64,7 @@ import {
   type PrismaClient,
   parseComputerMode,
   type ThreadEvents,
+  writeRunOutcome,
 } from "@rakazo/db";
 import { buildApprovalAskBlock } from "./approval-ask.js";
 import {
@@ -134,6 +136,15 @@ import {
   MODEL_CANNOT_SEE_MESSAGE,
   modelAcceptsImageInput,
 } from "./model-vision.js";
+import {
+  createSandboxOutcomeVerifier,
+  DECLARE_OUTCOME_TOOL_NAME,
+  declareOutcomeToolResult,
+  finalizeRunOutcomes,
+  OUTCOME_VERIFY_TIMEOUT_MS,
+  parseDeclaredOutcomes,
+  type RunOutcomeResult,
+} from "./outcome-run.js";
 import { toOAuthCredential } from "./pi-credentials.js";
 import {
   parseModelSecret,
@@ -879,6 +890,8 @@ export function createRunExecutor(deps: ExecutorDeps) {
         let hasStreamedText = false;
         let toolCallStreak: ToolCallStreak = { key: undefined, count: 0 };
         let lastComputerFrameId: string | undefined;
+        // Outcomes the run declares via declare_outcome; verified once, after it finishes.
+        const declaredOutcomeClaims: OutcomeClaim[] = [];
         let terminalCheckpointComplete = false;
         let approvalPausePending = false;
         let progressRedactor = createStreamingRedactor(runSecrets);
@@ -1388,6 +1401,11 @@ export function createRunExecutor(deps: ExecutorDeps) {
               context,
             );
             return finish({ ok: true });
+          }
+          if (name === DECLARE_OUTCOME_TOOL_NAME) {
+            const parsed = parseDeclaredOutcomes(args, declaredOutcomeClaims.length);
+            declaredOutcomeClaims.push(...parsed.claims);
+            return declareOutcomeToolResult(parsed, declaredOutcomeClaims.length);
           }
           if (name === "scratchpad_list") {
             return listScratchpadItemsFromTool(deps, {
@@ -2384,7 +2402,35 @@ export function createRunExecutor(deps: ExecutorDeps) {
             throw new Error("refusing to persist a secret in the thread");
           }
           if (!(await renewRunLease(deps, runId, workerId, fence))) return;
-          const completed = await deps.events.finalizeRun({
+
+          // Verify any declared outcomes before finalizing, so a contradicted claim can fail
+          // the run. Bounded and fail-open: a slow or throwing verifier must neither stall a
+          // finished run nor, by erroring, be read as a contradiction.
+          let runOutcome: RunOutcomeResult | null = null;
+          if (declaredOutcomeClaims.length > 0) {
+            const timeout = new AbortController();
+            const timer = setTimeout(() => timeout.abort(), OUTCOME_VERIFY_TIMEOUT_MS);
+            timer.unref?.();
+            try {
+              runOutcome = await finalizeRunOutcomes({
+                runId,
+                claims: declaredOutcomeClaims,
+                verifier: createSandboxOutcomeVerifier(deps.sandbox, computer),
+                context: { ...context, signal: AbortSignal.any([context.signal, timeout.signal]) },
+              });
+            } catch (error) {
+              console.error(
+                `outcome verification failed for run ${runId}: ${
+                  error instanceof Error ? error.message : String(error)
+                }`,
+              );
+            } finally {
+              clearTimeout(timer);
+            }
+          }
+          const contradicted = runOutcome?.outcome.rolledUp === "contradicted";
+
+          const finalizeBase = {
             workspaceId: run.workspaceId,
             threadId: thread.id,
             botId: bot.id,
@@ -2393,15 +2439,48 @@ export function createRunExecutor(deps: ExecutorDeps) {
             attemptId: attempt.id,
             leaseOwner: workerId,
             leaseFence: fence,
-            outcome: "completed",
-            blocks,
-          });
+          };
+          if (contradicted && blocks.length > 0) {
+            // A failed finalize does not persist the assistant's message; keep it in the thread.
+            await publishMessage(deps, run, "bot", blocks);
+          }
+          const completed = await deps.events.finalizeRun(
+            contradicted
+              ? {
+                  ...finalizeBase,
+                  outcome: "failed",
+                  error: runOutcome?.summary ?? "A declared outcome could not be verified.",
+                }
+              : { ...finalizeBase, outcome: "completed", blocks },
+          );
           if (!completed) return;
-          if (bot.notifyOnFinish && text) {
+
+          // Store the verdicts and emit the event regardless of how the run finalized. Non-fatal.
+          if (runOutcome) {
+            try {
+              await writeRunOutcome(deps.prisma, runOutcome.outcome);
+              await deps.events.append({
+                workspaceId: run.workspaceId,
+                threadId: thread.id,
+                botId: bot.id,
+                type: "outcome.verified",
+                runId,
+                payload: runOutcome.event.payload as unknown as Record<string, unknown>,
+              });
+            } catch (error) {
+              console.error(
+                `recording run outcome failed for run ${runId}: ${
+                  error instanceof Error ? error.message : String(error)
+                }`,
+              );
+            }
+          }
+
+          if (bot.notifyOnFinish && (text || contradicted)) {
             await notifyRun(deps, run, {
-              kind: "completion",
-              title: `${bot.name} finished`,
-              body: text.slice(0, 180),
+              kind: contradicted ? "failure" : "completion",
+              title: contradicted ? `${bot.name} failed` : `${bot.name} finished`,
+              body: (contradicted ? (runOutcome?.summary ?? text) : text).slice(0, 180),
               botId: bot.id,
               threadId: thread.id,
             });
