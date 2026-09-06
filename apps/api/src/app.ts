@@ -15,6 +15,7 @@ import {
   createRunExecutor,
   createRunSandbox,
   createRunSecretWriter,
+  createWhisperCliEngine,
   type DestinationEmulator,
   destroyBot,
   EncryptedSecretStore,
@@ -37,6 +38,7 @@ import {
   pushTokenPath,
   type RemoteConnectorDependencies,
   ScriptedAgentRuntime,
+  setWhisperEngine,
   WorkspaceMemoryProviderResolver,
 } from "@rakazo/adapters";
 import { blockedAuthPaths, createAuth } from "@rakazo/auth";
@@ -117,6 +119,7 @@ export async function createApp(
     prisma,
   });
   const mcpOAuth = new McpOAuthBroker(prisma, secrets, remoteConnectors);
+  if (process.env.RAKAZO_WHISPER_BIN) setWhisperEngine(createWhisperCliEngine());
   const memoryProviders = new WorkspaceMemoryProviderResolver(prisma, secrets);
   const oauthLogins = new PiOAuthLogins();
   const home = new LocalAgentHomeStore(env.dataDir);

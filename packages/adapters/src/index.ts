@@ -65,3 +65,4 @@ export * from "./teaching-session.js";
 export * from "./third-party-connector-emulator.js";
 export * from "./voice-factory.js";
 export * from "./wakeup.js";
+export * from "./whisper-cli-engine.js";
