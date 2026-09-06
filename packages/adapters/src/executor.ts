@@ -18,6 +18,7 @@ import type {
 } from "@rakazo/adapter-kit";
 import {
   historyCompactJob,
+  memoryReflectJob,
   routineJobKey,
   routineWakeupJob,
   runContinueJob,
@@ -2485,6 +2486,11 @@ export function createRunExecutor(deps: ExecutorDeps) {
               threadId: thread.id,
             });
           }
+          // Distil durable memory from this run in the background. Never fatal.
+          await deps.jobs
+            .enqueue(memoryReflectJob(runId))
+            .catch((error) => console.error("memory.reflect enqueue failed", error));
+
           // Last, and never fatal: the run is already finalized, so a failure here must not reach
           // the catch block below, where a second finalizeRun would match no rows and silently
           // skip the completion notification.
