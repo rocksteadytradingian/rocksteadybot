@@ -101,7 +101,37 @@ describe("createScreenRedaction", () => {
 
   it("takes an injected redactor", () => {
     const redactor = new ScriptedScreenRedactor();
-    const redaction = createScreenRedaction({} as never, redactor);
+    const redaction = createScreenRedaction({} as never, { redactor });
     expect(redaction.redactor).toBe(redactor);
+  });
+
+  it("wires an ocr engine into an image-capable box-fill redactor", async () => {
+    const ocr = vi
+      .fn()
+      .mockResolvedValue([{ text: "alice@corp.com", bbox: { x0: 4, y0: 4, x1: 90, y1: 16 } }]);
+    const { redactor } = createScreenRedaction({} as never, { ocr });
+    expect(redactor.describe().capabilities.ocr).toBe(true);
+
+    const { default: sharp } = await import("sharp");
+    const image = new Uint8Array(
+      await sharp({
+        create: { width: 120, height: 24, channels: 3, background: { r: 255, g: 255, b: 255 } },
+      })
+        .png()
+        .toBuffer(),
+    );
+    const out = await redactor.redactFrame(
+      { image, mimeType: "image/png", width: 120, height: 24 },
+      { mode: "box-fill", entities: ["EMAIL"], minConfidence: 0.6 },
+      {
+        operationId: "op",
+        traceId: "tr",
+        workspaceId: "ws",
+        userId: "u",
+        signal: new AbortController().signal,
+      },
+    );
+    expect(ocr).toHaveBeenCalledOnce();
+    expect(out.regions.map((r) => r.entity)).toEqual(["EMAIL"]);
   });
 });

@@ -76,6 +76,7 @@ export { SupermemoryMemoryProvider } from "./supermemory-memory-provider.js";
 export * from "./teach-replay-binding.js";
 export * from "./teach-replay-runner.js";
 export * from "./teaching-session.js";
+export * from "./tesseract-ocr-engine.js";
 export * from "./third-party-connector-emulator.js";
 export * from "./voice-factory.js";
 export * from "./wakeup.js";

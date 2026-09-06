@@ -8,6 +8,7 @@ import type {
 import { redactionEnabled, redactionSummary } from "@rakazo/contracts";
 import { readWorkspaceRedactionPolicy } from "@rakazo/db";
 import { BoxFillScreenRedactor } from "./box-fill-redactor.js";
+import { createOcrRegionDetector, type OcrEngine } from "./ocr-region-detector.js";
 
 /** The executor's screen-redaction dependency: one redactor plus the per-workspace policy. */
 export interface ScreenRedaction {
@@ -15,16 +16,27 @@ export interface ScreenRedaction {
   policyFor(workspaceId: string): Promise<RedactionPolicy>;
 }
 
+export interface CreateScreenRedactionOptions {
+  /** Use this redactor as-is; overrides `ocr`. */
+  redactor?: ScreenRedactor;
+  /** When given (and no explicit `redactor`), box-fill uses this engine to locate regions. */
+  ocr?: OcrEngine;
+}
+
 /**
- * Wire a ScreenRedaction from the database: `policyFor` reads the workspace's stored policy,
- * `redactor` defaults to {@link BoxFillScreenRedactor} — text scrubbing works out of the box;
- * image box-fill activates once a region detector is passed to it. For
- * `createRunExecutor({ screenRedaction })`.
+ * Wire a ScreenRedaction from the database: `policyFor` reads the workspace's stored policy;
+ * `redactor` is a {@link BoxFillScreenRedactor}. Text scrubbing works with no options at all;
+ * pass an `ocr` engine to turn on image box-fill. For `createRunExecutor({ screenRedaction })`.
  */
 export function createScreenRedaction(
   prisma: Parameters<typeof readWorkspaceRedactionPolicy>[0],
-  redactor: ScreenRedactor = new BoxFillScreenRedactor(),
+  options: CreateScreenRedactionOptions = {},
 ): ScreenRedaction {
+  const redactor =
+    options.redactor ??
+    new BoxFillScreenRedactor(
+      options.ocr ? { detect: createOcrRegionDetector(options.ocr), ocr: true } : {},
+    );
   return {
     redactor,
     policyFor: (workspaceId) => readWorkspaceRedactionPolicy(prisma, workspaceId),

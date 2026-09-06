@@ -32,6 +32,7 @@ import {
   resolveDeploymentModel,
   ScriptedAgentRuntime,
   setWhisperEngine,
+  tesseractOcrEngine,
   WorkspaceMemoryProviderResolver,
 } from "@rakazo/adapters";
 import { resolveEncryptionKey } from "@rakazo/core";
@@ -121,7 +122,9 @@ async function main() {
     notifications: new ExpoPushProvider(dataDir),
     jobs,
     events,
-    screenRedaction: createScreenRedaction(prisma),
+    screenRedaction: createScreenRedaction(prisma, {
+      ocr: process.env.RAKAZO_SCREEN_OCR === "tesseract" ? tesseractOcrEngine : undefined,
+    }),
   });
 
   const jobHandlers = createBackgroundJobHandlers({
