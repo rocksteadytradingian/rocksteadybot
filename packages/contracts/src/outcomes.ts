@@ -2,11 +2,14 @@ import * as z from "zod";
 import { Id, IsoDate } from "./ids.js";
 
 /**
- * Outcome verification is independent confirmation that a run's *declared* effect actually
+ * Outcome verification is independent confirmation that a run's *declared* result actually
  * happened — a file was written, a row landed in a sheet, the page shows the expected text.
- * It is separate from the ExternalEffect approval machinery (`EffectStatus` in ./ids.ts),
- * which gates side-effecting tool calls *before* they run and reconciles them after a crash.
- * Here the question is only "did the stated outcome occur?", asked once the run has finished.
+ *
+ * This is a different axis from the `ExternalEffect` approval machinery (the `effect.recorded`
+ * / `effect.reconciled` events and adapters/approval-effect.ts): that gates a single
+ * side-effecting tool call *before* it runs and reconciles it after a crash ("is this send
+ * allowed?", "did it already happen?"). Outcome verification asks one question once the whole
+ * run has finished — "did the stated result occur?" — and never gates anything.
  */
 
 /** A single checkable postcondition a run (or a taught skill / routine) asserts about its result. */
