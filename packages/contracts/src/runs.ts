@@ -22,3 +22,36 @@ export const RunsListOutputSchema = z.object({
   runs: z.array(RunActivityRowSchema),
 });
 export type RunsListOutput = z.infer<typeof RunsListOutputSchema>;
+
+export const PendingApprovalKind = z.enum(["ask", "stack_repair"]);
+export type PendingApprovalKind = z.infer<typeof PendingApprovalKind>;
+
+export const PendingApprovalSchema = z.object({
+  id: Id,
+  kind: PendingApprovalKind.default("ask"),
+  runId: Id,
+  messageId: Id,
+  threadId: Id,
+  botId: Id,
+  botName: z.string(),
+  groupId: Id.nullable(),
+  groupName: z.string().nullable(),
+  summary: z.string(),
+  detail: z.string().optional(),
+  toolName: z.string(),
+  highRisk: z.boolean(),
+  requestedAt: z.string(),
+});
+export type PendingApproval = z.infer<typeof PendingApprovalSchema>;
+
+export const RepairStackInput = z.object({
+  restartApi: z.boolean().optional(),
+});
+export type RepairStackInput = z.infer<typeof RepairStackInput>;
+
+export const StackRepairResultSchema = z.object({
+  ok: z.boolean(),
+  started: z.array(z.enum(["worker", "supervisor", "api"])),
+  error: z.string().optional(),
+});
+export type StackRepairResult = z.infer<typeof StackRepairResultSchema>;

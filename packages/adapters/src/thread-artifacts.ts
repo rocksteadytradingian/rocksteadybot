@@ -41,10 +41,7 @@ export async function attachWorkspaceFileToThread(
   },
 ): Promise<{ artifactId: string; block: Extract<MessageBlock, { kind: "image" | "file" }> }> {
   const name = path.basename(input.filePath) || input.filePath;
-  const mimeType = inferAttachmentMimeType(name);
-  if (!mimeType) {
-    throw new Error(`Unsupported attachment type for ${name}`);
-  }
+  const mimeType = inferAttachmentMimeType(name) ?? "application/octet-stream";
   validateAttachmentMimeType(mimeType);
   if (input.bytes.byteLength > ATTACHMENT_MAX_BYTES) {
     throw new Error("file exceeds the 10 MiB attachment limit");
@@ -125,7 +122,7 @@ export async function materializeCurrentTurnFiles(
     if (bytes.byteLength > ATTACHMENT_MAX_BYTES) {
       throw new Error(`Attached file exceeds the 10 MiB limit: ${row.name}`);
     }
-    const relativePath = `attachments/${row.id}${attachmentExtensionForMimeType(row.mimeType)}`;
+    const relativePath = `attachments/${row.id}${attachmentExtensionForMimeType(row.mimeType, row.name)}`;
     await deps.sandbox.writeFile(
       input.computer,
       {

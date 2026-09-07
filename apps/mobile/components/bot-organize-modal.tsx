@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import type { MobileBot, MobileBotSection } from "../lib/api";
-import { native } from "../lib/native";
+import { type ThemedStyleArgs, useTheme, useThemedStyles } from "../lib/theme";
 import { NativeSymbol } from "./native-symbol";
 
 export type BotOrganizationUpdate = {
@@ -22,6 +22,8 @@ export function BotOrganizeModal({
   onUpdate: (update: BotOrganizationUpdate) => Promise<void>;
   onCreateSection: (name: string) => Promise<void>;
 }) {
+  const { palette } = useTheme();
+  const styles = useThemedStyles(makeStyles);
   const [creating, setCreating] = useState(false);
   const [name, setName] = useState("");
   const [saving, setSaving] = useState(false);
@@ -90,7 +92,7 @@ export function BotOrganizeModal({
                 onChangeText={setName}
                 maxLength={60}
                 placeholder="Section name"
-                placeholderTextColor={native.secondaryLabel}
+                placeholderTextColor={palette.muted}
                 style={styles.newSectionInput}
               />
               <Pressable
@@ -134,6 +136,7 @@ function SectionOption({
   disabled: boolean;
   onPress: () => void;
 }) {
+  const styles = useThemedStyles(makeStyles);
   return (
     <Pressable
       accessibilityRole="button"
@@ -151,105 +154,106 @@ function SectionOption({
   );
 }
 
-const styles = StyleSheet.create({
-  overlay: {
-    flex: 1,
-    justifyContent: "flex-end",
-    backgroundColor: "rgba(0, 0, 0, 0.62)",
-  },
-  sheet: {
-    maxHeight: "82%",
-    borderTopLeftRadius: 22,
-    borderTopRightRadius: 22,
-    backgroundColor: "#1C1C1E",
-    paddingHorizontal: 16,
-    paddingTop: 18,
-    paddingBottom: 28,
-  },
-  title: {
-    color: native.label,
-    fontSize: 18,
-    fontWeight: "600",
-    paddingHorizontal: 8,
-    paddingBottom: 10,
-  },
-  action: {
-    minHeight: 46,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 12,
-    borderRadius: 11,
-    paddingHorizontal: 10,
-  },
-  pressed: {
-    backgroundColor: native.fill,
-  },
-  actionLabel: {
-    flex: 1,
-    color: native.label,
-    fontSize: 16,
-  },
-  sectionLabel: {
-    color: native.secondaryLabel,
-    fontSize: 13,
-    fontWeight: "600",
-    paddingHorizontal: 10,
-    paddingTop: 12,
-    paddingBottom: 6,
-  },
-  sectionOptions: {
-    maxHeight: 230,
-  },
-  sectionOption: {
-    minHeight: 44,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 12,
-    borderRadius: 11,
-    paddingHorizontal: 10,
-  },
-  newSectionRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-    paddingHorizontal: 8,
-    paddingVertical: 6,
-  },
-  newSectionInput: {
-    flex: 1,
-    height: 40,
-    borderRadius: 10,
-    backgroundColor: native.fill,
-    color: native.label,
-    paddingHorizontal: 12,
-    fontSize: 16,
-  },
-  newSectionSubmit: {
-    minHeight: 40,
-    justifyContent: "center",
-    borderRadius: 10,
-    backgroundColor: native.label,
-    paddingHorizontal: 14,
-  },
-  newSectionSubmitLabel: {
-    color: native.page,
-    fontSize: 14,
-    fontWeight: "600",
-  },
-  error: {
-    color: "#FF5364",
-    fontSize: 13,
-    paddingHorizontal: 10,
-    paddingTop: 8,
-  },
-  cancel: {
-    alignItems: "center",
-    paddingTop: 14,
-    paddingBottom: 2,
-  },
-  cancelLabel: {
-    color: native.secondaryLabel,
-    fontSize: 16,
-    fontWeight: "600",
-  },
-});
+const makeStyles = ({ palette }: ThemedStyleArgs) =>
+  StyleSheet.create({
+    overlay: {
+      flex: 1,
+      justifyContent: "flex-end",
+      backgroundColor: palette.overlay,
+    },
+    sheet: {
+      maxHeight: "82%",
+      borderTopLeftRadius: 22,
+      borderTopRightRadius: 22,
+      backgroundColor: palette.surface,
+      paddingHorizontal: 16,
+      paddingTop: 18,
+      paddingBottom: 28,
+    },
+    title: {
+      color: palette.ink,
+      fontSize: 18,
+      fontWeight: "600",
+      paddingHorizontal: 8,
+      paddingBottom: 10,
+    },
+    action: {
+      minHeight: 46,
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 12,
+      borderRadius: 11,
+      paddingHorizontal: 10,
+    },
+    pressed: {
+      backgroundColor: palette.surface2,
+    },
+    actionLabel: {
+      flex: 1,
+      color: palette.ink,
+      fontSize: 16,
+    },
+    sectionLabel: {
+      color: palette.muted,
+      fontSize: 13,
+      fontWeight: "600",
+      paddingHorizontal: 10,
+      paddingTop: 12,
+      paddingBottom: 6,
+    },
+    sectionOptions: {
+      maxHeight: 230,
+    },
+    sectionOption: {
+      minHeight: 44,
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 12,
+      borderRadius: 11,
+      paddingHorizontal: 10,
+    },
+    newSectionRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 8,
+      paddingHorizontal: 8,
+      paddingVertical: 6,
+    },
+    newSectionInput: {
+      flex: 1,
+      height: 40,
+      borderRadius: 10,
+      backgroundColor: palette.surface2,
+      color: palette.ink,
+      paddingHorizontal: 12,
+      fontSize: 16,
+    },
+    newSectionSubmit: {
+      minHeight: 40,
+      justifyContent: "center",
+      borderRadius: 10,
+      backgroundColor: palette.solid,
+      paddingHorizontal: 14,
+    },
+    newSectionSubmitLabel: {
+      color: palette.solidInk,
+      fontSize: 14,
+      fontWeight: "600",
+    },
+    error: {
+      color: palette.danger,
+      fontSize: 13,
+      paddingHorizontal: 10,
+      paddingTop: 8,
+    },
+    cancel: {
+      alignItems: "center",
+      paddingTop: 14,
+      paddingBottom: 2,
+    },
+    cancelLabel: {
+      color: palette.muted,
+      fontSize: 16,
+      fontWeight: "600",
+    },
+  });

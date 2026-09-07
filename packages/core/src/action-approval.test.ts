@@ -25,6 +25,8 @@ describe("toolRequiresApproval", () => {
       "write_file",
       "shell",
       "remember",
+      "read_memory",
+      "search_memory",
       "spawn_bot",
       "run_subagent",
     ]) {

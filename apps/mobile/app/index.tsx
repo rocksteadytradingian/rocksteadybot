@@ -1,5 +1,6 @@
 import type { RunActivityRow, SearchHit } from "@rakazo/contracts";
 import { groupBotsForSidebar } from "@rakazo/core";
+import { botColors } from "@rakazo/ui-tokens";
 import { Redirect, useFocusEffect, useRouter } from "expo-router";
 import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -18,6 +19,7 @@ import { BotAvatar } from "../components/bot-avatar";
 import { BotOrganizeModal } from "../components/bot-organize-modal";
 import { GroupAvatar } from "../components/group-avatar";
 import { NativeSymbol } from "../components/native-symbol";
+import { WorkspacePickerModal } from "../components/workspace-picker-modal";
 import {
   activityStatusLabel,
   fetchWorkspaceActivity,
@@ -32,14 +34,15 @@ import {
   type MobileMe,
   rpc,
 } from "../lib/api";
+import { fetchPendingApprovals } from "../lib/approvals";
 import { botTag, filterBots, formatThreadTime, userInitials } from "../lib/inbox";
-import { native } from "../lib/native";
 import { previewSnippet } from "../lib/preview";
 import { registerPushToken } from "../lib/push";
 import { queryWorkspaceSearch } from "../lib/search";
 import { mobileSearchDestination } from "../lib/search-destination";
+import { type ThemedStyleArgs, useTheme, useThemedStyles } from "../lib/theme";
 
-const FALLBACK_COLOR = "#9B5CF6";
+const FALLBACK_COLOR = botColors[3];
 
 type InboxItem =
   | { type: "bot"; bot: MobileBot }
@@ -61,11 +64,14 @@ export default function Home() {
   const [searchHits, setSearchHits] = useState<SearchHit[]>([]);
   const [searchLoading, setSearchLoading] = useState(false);
   const [organizeBotId, setOrganizeBotId] = useState<string | null>(null);
+  const [workspaceOpen, setWorkspaceOpen] = useState(false);
+  const [workspaceBusy, setWorkspaceBusy] = useState(false);
   const [activityMode, setActivityMode] = useState(false);
   const [activity, setActivity] = useState<{ active: RunActivityRow[]; recent: RunActivityRow[] }>({
     active: [],
     recent: [],
   });
+  const [pendingApprovalCount, setPendingApprovalCount] = useState(0);
   const activityRequestId = useRef(0);
 
   useEffect(() => {
@@ -105,6 +111,22 @@ export default function Home() {
     }
   }, [loadBots]);
 
+  async function applyWorkspace(nextMe: MobileMe) {
+    setMe(nextMe);
+    setWorkspaceOpen(false);
+    await loadBots();
+  }
+
+  async function changeWorkspace(run: () => Promise<MobileMe>) {
+    if (workspaceBusy) return;
+    setWorkspaceBusy(true);
+    try {
+      await applyWorkspace(await run());
+    } finally {
+      setWorkspaceBusy(false);
+    }
+  }
+
   useEffect(() => {
     void loadSessionToken().then((token) => {
       setHasSession(Boolean(token));
@@ -115,14 +137,18 @@ export default function Home() {
   useEffect(() => {
     if (!hasSession) return;
     void registerPushToken().catch(() => undefined);
-    void rpc<MobileMe>("me")
+    void rpc<MobileMe>("me", { restoreLastWorking: true })
       .then(setMe)
       .catch(() => undefined);
   }, [hasSession]);
 
   useFocusEffect(
     useCallback(() => {
-      if (hasSession) void loadBots();
+      if (!hasSession) return;
+      void loadBots();
+      void fetchPendingApprovals()
+        .then((items) => setPendingApprovalCount(items.length))
+        .catch(() => undefined);
     }, [hasSession, loadBots]),
   );
 
@@ -210,11 +236,13 @@ export default function Home() {
   const organizeBot = bots.find((bot) => bot.id === organizeBotId) ?? null;
   const insets = useSafeAreaInsets();
   const router = useRouter();
+  const { palette, colorScheme } = useTheme();
+  const styles = useThemedStyles(makeStyles);
 
   if (!ready) {
     return (
       <View style={[styles.screen, styles.centered]}>
-        <ActivityIndicator color={native.secondaryLabel} />
+        <ActivityIndicator color={palette.muted} />
       </View>
     );
   }
@@ -226,6 +254,25 @@ export default function Home() {
         <CircleButton accessibilityLabel="Account" onPress={() => router.push("/account")}>
           <Text style={styles.profileInitials}>{initials}</Text>
         </CircleButton>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={me?.workspaceName ? `Workspace ${me.workspaceName}` : "Workspace"}
+          onPress={() => setWorkspaceOpen(true)}
+          style={({ pressed }) => [styles.workspaceButton, pressed && styles.rowPressed]}
+        >
+          <Text style={styles.workspaceLabel}>Workspace</Text>
+          <View style={styles.workspaceValueRow}>
+            <Text style={styles.workspaceName} numberOfLines={1}>
+              {me?.workspaceName ?? "Personal"}
+            </Text>
+            <NativeSymbol
+              ios="chevron.down"
+              android="chevron-down"
+              size={14}
+              color={palette.muted}
+            />
+          </View>
+        </Pressable>
         <View style={styles.headerActions}>
           <CircleButton
             accessibilityLabel="Activity"
@@ -237,7 +284,7 @@ export default function Home() {
               ios={activityMode ? "bell.fill" : "bell"}
               android={activityMode ? "notifications" : "notifications-outline"}
               size={17}
-              color={activityMode ? "#FFFFFF" : "#8E8E93"}
+              color={activityMode ? palette.accentInk : palette.muted}
             />
           </CircleButton>
           <CircleButton
@@ -273,11 +320,11 @@ export default function Home() {
           value={query}
           onChangeText={setQuery}
           placeholder="Search"
-          placeholderTextColor="#6C6C70"
+          placeholderTextColor={palette.muted2}
           autoCorrect={false}
           autoCapitalize="none"
           returnKeyType="search"
-          keyboardAppearance="dark"
+          keyboardAppearance={colorScheme}
           clearButtonMode="while-editing"
           style={styles.searchField}
         />
@@ -296,7 +343,7 @@ export default function Home() {
         }}
         keyboardDismissMode="interactive"
         keyboardShouldPersistTaps="handled"
-        indicatorStyle="white"
+        indicatorStyle={colorScheme === "dark" ? "white" : "black"}
         contentContainerStyle={styles.list}
         refreshControl={
           <RefreshControl
@@ -304,19 +351,27 @@ export default function Home() {
             onRefresh={() => {
               void refreshBots();
               void loadActivity();
+              void fetchPendingApprovals()
+                .then((items) => setPendingApprovalCount(items.length))
+                .catch(() => undefined);
             }}
-            tintColor={native.secondaryLabel}
-            colors={["#8E8E93"]}
-            progressBackgroundColor="#1C1C1E"
+            tintColor={palette.muted}
+            colors={[palette.muted]}
+            progressBackgroundColor={palette.surface}
           />
         }
         ListHeaderComponent={
-          activityMode &&
-          !searching &&
-          !query.trim() &&
-          (activity.active.length > 0 || activity.recent.length > 0) ? (
-            <ActivitySection activity={activity} />
-          ) : null
+          searching || query.trim() ? null : (
+            <View>
+              <ApprovalsRow
+                count={pendingApprovalCount}
+                onPress={() => router.push("/approvals")}
+              />
+              {activityMode && (activity.active.length > 0 || activity.recent.length > 0) ? (
+                <ActivitySection activity={activity} />
+              ) : null}
+            </View>
+          )
         }
         ListEmptyComponent={
           <Text style={styles.empty}>
@@ -365,6 +420,39 @@ export default function Home() {
           }}
         />
       ) : null}
+      {workspaceOpen && me ? (
+        <WorkspacePickerModal
+          workspaces={me.workspaces}
+          workspaceId={me.workspaceId}
+          busy={workspaceBusy}
+          onClose={() => setWorkspaceOpen(false)}
+          onSwitch={(workspaceId) =>
+            changeWorkspace(() => rpc<MobileMe>("workspaces/switch", { workspaceId }))
+          }
+          onCreate={(name) => changeWorkspace(() => rpc<MobileMe>("workspaces/create", { name }))}
+          onRename={async (workspaceId, name) => {
+            const workspace = await rpc<{ id: string; name: string }>("workspaces/update", {
+              workspaceId,
+              name,
+            });
+            setMe((current) =>
+              current
+                ? {
+                    ...current,
+                    workspaceName:
+                      current.workspaceId === workspace.id ? workspace.name : current.workspaceName,
+                    workspaces: current.workspaces.map((entry) =>
+                      entry.id === workspace.id ? workspace : entry,
+                    ),
+                  }
+                : current,
+            );
+          }}
+          onDelete={(workspaceId) =>
+            changeWorkspace(() => rpc<MobileMe>("workspaces/remove", { workspaceId }))
+          }
+        />
+      ) : null}
     </View>
   );
 }
@@ -375,6 +463,7 @@ function ActivitySection({
   activity: { active: RunActivityRow[]; recent: RunActivityRow[] };
 }) {
   const router = useRouter();
+  const styles = useThemedStyles(makeStyles);
   const openRun = (run: RunActivityRow) => {
     if (run.groupId) {
       router.push({
@@ -411,6 +500,7 @@ function ActivitySection({
 }
 
 function ActivityRow({ run, onPress }: { run: RunActivityRow; onPress: () => void }) {
+  const styles = useThemedStyles(makeStyles);
   const title = run.groupName ? `${run.botName} · ${run.groupName}` : run.botName;
   const status = activityStatusLabel(run.status);
   const preview = run.promptSnippet ? `${run.promptSnippet} · ${status}` : status;
@@ -438,6 +528,35 @@ function ActivityRow({ run, onPress }: { run: RunActivityRow; onPress: () => voi
   );
 }
 
+function ApprovalsRow({ count, onPress }: { count: number; onPress: () => void }) {
+  const { palette } = useTheme();
+  const styles = useThemedStyles(makeStyles);
+  const badge = count > 9 ? "9+" : String(count);
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={count > 0 ? `Approvals, ${count} pending` : "Approvals"}
+      onPress={onPress}
+      style={({ pressed }) => [styles.row, pressed && styles.rowPressed]}
+    >
+      <View style={styles.approvalsIcon}>
+        <NativeSymbol
+          ios="checkmark.shield"
+          android="shield-checkmark-outline"
+          size={16}
+          color={palette.muted}
+        />
+      </View>
+      <Text style={[styles.name, { flex: 1 }]}>Approvals</Text>
+      {count > 0 ? (
+        <View style={styles.approvalBadge}>
+          <Text style={styles.approvalBadgeLabel}>{badge}</Text>
+        </View>
+      ) : null}
+    </Pressable>
+  );
+}
+
 function CircleButton({
   children,
   onPress,
@@ -451,6 +570,7 @@ function CircleButton({
   active?: boolean;
   accent?: boolean;
 }) {
+  const styles = useThemedStyles(makeStyles);
   return (
     <Pressable
       accessibilityRole="button"
@@ -469,6 +589,7 @@ function CircleButton({
 }
 
 function SearchRow({ hit, onPress }: { hit: SearchHit; onPress: () => void }) {
+  const styles = useThemedStyles(makeStyles);
   return (
     <Pressable
       onPress={onPress}
@@ -491,6 +612,7 @@ function SearchRow({ hit, onPress }: { hit: SearchHit; onPress: () => void }) {
 
 function BotRow({ bot, onLongPress }: { bot: MobileBot; onLongPress: () => void }) {
   const router = useRouter();
+  const styles = useThemedStyles(makeStyles);
   const preview = previewSnippet(bot.preview, 40) || bot.title || "No messages yet";
   const time = bot.updatedAt ? formatThreadTime(bot.updatedAt) : "";
   const tag = botTag(bot.title, bot.name);
@@ -542,6 +664,7 @@ function BotRow({ bot, onLongPress }: { bot: MobileBot; onLongPress: () => void 
 
 function GroupRow({ group }: { group: MobileGroup }) {
   const router = useRouter();
+  const styles = useThemedStyles(makeStyles);
   const preview =
     previewSnippet(group.preview, 40) || group.members.map((member) => member.name).join(", ");
   const time = group.updatedAt ? formatThreadTime(group.updatedAt) : "";
@@ -574,181 +697,227 @@ function GroupRow({ group }: { group: MobileGroup }) {
   );
 }
 
-const styles = StyleSheet.create({
-  screen: {
-    flex: 1,
-    backgroundColor: native.page,
-  },
-  centered: {
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  header: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    paddingHorizontal: 16,
-    paddingTop: 8,
-    paddingBottom: 10,
-  },
-  headerActions: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 12,
-  },
-  circleButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: "#2C2C2E",
-    alignItems: "center",
-    justifyContent: "center",
-    overflow: "hidden",
-  },
-  circlePressed: {
-    backgroundColor: "#3A3A3C",
-  },
-  circleAccent: {
-    backgroundColor: "#4C8DFF",
-  },
-  profileInitials: {
-    color: native.label,
-    fontSize: 15,
-    fontWeight: "600",
-  },
-  searchField: {
-    marginHorizontal: 16,
-    marginBottom: 8,
-    height: 36,
-    borderRadius: 10,
-    backgroundColor: native.fill,
-    color: native.label,
-    paddingHorizontal: 12,
-    fontSize: 17,
-    writingDirection: "auto",
-  },
-  error: {
-    color: native.secondaryLabel,
-    paddingHorizontal: 20,
-    paddingBottom: 8,
-  },
-  list: {
-    flexGrow: 1,
-    paddingBottom: 32,
-  },
-  empty: {
-    color: native.secondaryLabel,
-    fontSize: 16,
-    paddingHorizontal: 20,
-    paddingTop: 28,
-  },
-  row: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    gap: 12,
-  },
-  rowPressed: {
-    opacity: 0.55,
-  },
-  rowBody: {
-    flex: 1,
-    minWidth: 0,
-    gap: 2,
-  },
-  rowTop: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-  },
-  titleRow: {
-    flex: 1,
-    minWidth: 0,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-  },
-  rowMeta: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 7,
-  },
-  name: {
-    flexShrink: 1,
-    color: native.label,
-    fontSize: 17,
-    fontWeight: "600",
-    writingDirection: "auto",
-  },
-  tag: {
-    flexShrink: 1,
-    borderRadius: 999,
-    backgroundColor: native.fill,
-    paddingHorizontal: 7,
-    paddingVertical: 2,
-  },
-  tagLabel: {
-    color: native.secondaryLabel,
-    fontSize: 11,
-    fontWeight: "500",
-    writingDirection: "auto",
-  },
-  time: {
-    color: native.secondaryLabel,
-    fontSize: 15,
-  },
-  preview: {
-    color: native.secondaryLabel,
-    fontSize: 15,
-    lineHeight: 20,
-    writingDirection: "auto",
-  },
-  unreadPreview: {
-    color: native.label,
-    fontWeight: "600",
-  },
-  unreadDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: "#8B5CF6",
-  },
-  sectionHeading: {
-    color: native.secondaryLabel,
-    fontSize: 14,
-    fontWeight: "600",
-    paddingHorizontal: 16,
-    paddingTop: 12,
-    paddingBottom: 4,
-  },
-  activitySection: {
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: "#2C2C2E",
-    marginBottom: 4,
-    paddingBottom: 4,
-  },
-  activityGap: {
-    paddingTop: 16,
-  },
-  activityDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: "#8B5CF6",
-    marginTop: 6,
-  },
-  groupAvatar: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    backgroundColor: "#232326",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  groupAvatarLabel: {
-    color: "#C9C9CE",
-    fontSize: 16,
-    fontWeight: "600",
-  },
-});
+const makeStyles = ({ palette }: ThemedStyleArgs) =>
+  StyleSheet.create({
+    screen: {
+      flex: 1,
+      backgroundColor: palette.page,
+    },
+    centered: {
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    header: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "space-between",
+      paddingHorizontal: 16,
+      paddingTop: 8,
+      paddingBottom: 10,
+      gap: 12,
+    },
+    workspaceButton: {
+      flex: 1,
+      minWidth: 0,
+      paddingVertical: 2,
+    },
+    workspaceLabel: {
+      color: palette.muted,
+      fontSize: 11,
+      fontWeight: "600",
+      letterSpacing: 0.3,
+      textTransform: "uppercase",
+    },
+    workspaceValueRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 4,
+    },
+    workspaceName: {
+      flexShrink: 1,
+      color: palette.ink,
+      fontSize: 17,
+      fontWeight: "600",
+    },
+    headerActions: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 12,
+    },
+    circleButton: {
+      width: 40,
+      height: 40,
+      borderRadius: 20,
+      backgroundColor: palette.surface2,
+      alignItems: "center",
+      justifyContent: "center",
+      overflow: "hidden",
+    },
+    circlePressed: {
+      backgroundColor: palette.hover,
+    },
+    circleAccent: {
+      backgroundColor: palette.accent,
+    },
+    profileInitials: {
+      color: palette.ink,
+      fontSize: 15,
+      fontWeight: "600",
+    },
+    searchField: {
+      marginHorizontal: 16,
+      marginBottom: 8,
+      height: 36,
+      borderRadius: 10,
+      backgroundColor: palette.input,
+      color: palette.ink,
+      paddingHorizontal: 12,
+      fontSize: 17,
+      writingDirection: "auto",
+    },
+    error: {
+      color: palette.muted,
+      paddingHorizontal: 20,
+      paddingBottom: 8,
+    },
+    list: {
+      flexGrow: 1,
+      paddingBottom: 32,
+    },
+    empty: {
+      color: palette.muted,
+      fontSize: 16,
+      paddingHorizontal: 20,
+      paddingTop: 28,
+    },
+    row: {
+      flexDirection: "row",
+      alignItems: "center",
+      paddingHorizontal: 16,
+      paddingVertical: 10,
+      gap: 12,
+    },
+    rowPressed: {
+      opacity: 0.55,
+    },
+    rowBody: {
+      flex: 1,
+      minWidth: 0,
+      gap: 2,
+    },
+    rowTop: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 8,
+    },
+    titleRow: {
+      flex: 1,
+      minWidth: 0,
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 6,
+    },
+    rowMeta: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 7,
+    },
+    name: {
+      flexShrink: 1,
+      color: palette.ink,
+      fontSize: 17,
+      fontWeight: "600",
+      writingDirection: "auto",
+    },
+    tag: {
+      flexShrink: 1,
+      borderRadius: 999,
+      backgroundColor: palette.surface,
+      paddingHorizontal: 7,
+      paddingVertical: 2,
+    },
+    tagLabel: {
+      color: palette.muted,
+      fontSize: 11,
+      fontWeight: "500",
+      writingDirection: "auto",
+    },
+    time: {
+      color: palette.muted,
+      fontSize: 15,
+    },
+    preview: {
+      color: palette.muted,
+      fontSize: 15,
+      lineHeight: 20,
+      writingDirection: "auto",
+    },
+    unreadPreview: {
+      color: palette.ink,
+      fontWeight: "600",
+    },
+    unreadDot: {
+      width: 8,
+      height: 8,
+      borderRadius: 4,
+      backgroundColor: palette.accent,
+    },
+    approvalsIcon: {
+      width: 38,
+      height: 38,
+      borderRadius: 19,
+      backgroundColor: palette.surface,
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    approvalBadge: {
+      minWidth: 18,
+      borderRadius: 9,
+      backgroundColor: palette.danger,
+      paddingHorizontal: 6,
+      paddingVertical: 3,
+      alignItems: "center",
+    },
+    approvalBadgeLabel: {
+      color: palette.dangerInk,
+      fontSize: 11,
+      fontWeight: "600",
+    },
+    sectionHeading: {
+      color: palette.muted,
+      fontSize: 14,
+      fontWeight: "600",
+      paddingHorizontal: 16,
+      paddingTop: 12,
+      paddingBottom: 4,
+    },
+    activitySection: {
+      borderBottomWidth: StyleSheet.hairlineWidth,
+      borderBottomColor: palette.hairline,
+      marginBottom: 4,
+      paddingBottom: 4,
+    },
+    activityGap: {
+      paddingTop: 16,
+    },
+    activityDot: {
+      width: 8,
+      height: 8,
+      borderRadius: 4,
+      backgroundColor: palette.accent,
+      marginTop: 6,
+    },
+    groupAvatar: {
+      width: 48,
+      height: 48,
+      borderRadius: 24,
+      backgroundColor: palette.surface2,
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    groupAvatarLabel: {
+      color: palette.muted,
+      fontSize: 16,
+      fontWeight: "600",
+    },
+  });

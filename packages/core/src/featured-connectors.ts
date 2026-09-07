@@ -5,7 +5,9 @@ export const FEATURED_CONNECTOR_IDS = [
   "google-calendar",
   "google-drive",
   "slack",
+  "github",
   "notion",
+  "linear",
 ] as const;
 
 export type FeaturedConnectorId = (typeof FEATURED_CONNECTOR_IDS)[number];
@@ -15,7 +17,19 @@ export const FEATURED_CONNECTOR_LABELS: Record<FeaturedConnectorId, string> = {
   "google-calendar": "Google Calendar",
   "google-drive": "Google Drive",
   slack: "Slack",
+  github: "GitHub",
   notion: "Notion",
+  linear: "Linear",
+};
+
+const FEATURED_CONNECTOR_SLUGS: Record<FeaturedConnectorId, string> = {
+  gmail: "gmail",
+  "google-calendar": "googlecalendar",
+  "google-drive": "googledrive",
+  slack: "slack",
+  github: "github",
+  notion: "notion",
+  linear: "linear",
 };
 
 const FEATURED_ALIASES: Record<FeaturedConnectorId, readonly string[]> = {
@@ -23,7 +37,9 @@ const FEATURED_ALIASES: Record<FeaturedConnectorId, readonly string[]> = {
   "google-calendar": ["googlecalendar", "google calendar", "google_calendar", "gcal"],
   "google-drive": ["googledrive", "google drive", "google_drive", "gdrive"],
   slack: ["slack", "slackbot"],
+  github: ["github", "gh"],
   notion: ["notion", "notion.so"],
+  linear: ["linear", "linear.app"],
 };
 
 export type FeaturedConnectorTile = {
@@ -56,6 +72,17 @@ export function featuredConnectorProvidersMatch(left: string, right: string): bo
   return leftId !== null && leftId === rightId;
 }
 
+export function featuredConnectorCatalogItem(id: FeaturedConnectorId): ConnectionCatalogItem {
+  return {
+    connectorId: "composio",
+    slug: FEATURED_CONNECTOR_SLUGS[id],
+    name: FEATURED_CONNECTOR_LABELS[id],
+    logo: null,
+    connected: false,
+    noAuth: false,
+  };
+}
+
 export function resolveFeaturedCatalogItem(
   id: FeaturedConnectorId,
   catalog: readonly ConnectionCatalogItem[],
@@ -72,7 +99,9 @@ export function buildFeaturedConnectorTiles(
 ): FeaturedConnectorTile[] {
   const hasCatalog = catalog.length > 0;
   return FEATURED_CONNECTOR_IDS.map((id) => {
-    const item = hasCatalog ? resolveFeaturedCatalogItem(id, catalog) : undefined;
+    const item = hasCatalog
+      ? resolveFeaturedCatalogItem(id, catalog)
+      : featuredConnectorCatalogItem(id);
     return {
       id,
       label: FEATURED_CONNECTOR_LABELS[id],

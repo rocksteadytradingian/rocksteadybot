@@ -2,8 +2,9 @@ import { createHash } from "node:crypto";
 import { isIP } from "node:net";
 import type { DesktopSetup } from "@rakazo/contracts";
 
-/** Where `pnpm dev` serves the Rakazo web app on this machine. */
+/** Where the local web app is served (`pnpm dev` or Compose). */
 export const DEFAULT_LOCAL_WEB_URL = "http://127.0.0.1:5173";
+const LOCAL_WEB_PORT = "5173";
 
 export const SETUP_FILE_NAME = "setup.json";
 
@@ -124,6 +125,27 @@ export function servesBundledRenderer(targetUrl: string): boolean {
   }
 }
 
+/**
+ * Packaged shells pointed at local Vite must load that origin, not the
+ * snapshot baked into `resources/web`. Performance runs that still want the
+ * snapshot against loopback set `RAKAZO_FORCE_BUNDLED_RENDERER=1`.
+ */
+export function shouldInstallBundledRenderer(
+  targetUrl: string,
+  env: Partial<
+    Pick<NodeJS.ProcessEnv, "RAKAZO_DISABLE_BUNDLED_RENDERER" | "RAKAZO_FORCE_BUNDLED_RENDERER">
+  > = process.env,
+): boolean {
+  if (env.RAKAZO_DISABLE_BUNDLED_RENDERER === "1") return false;
+  if (!servesBundledRenderer(targetUrl)) return false;
+  if (env.RAKAZO_FORCE_BUNDLED_RENDERER === "1") return true;
+  try {
+    return !isLoopbackHost(new URL(targetUrl).hostname);
+  } catch {
+    return false;
+  }
+}
+
 /** Each Rakazo origin gets its own persistent cookie and storage partition. */
 export function sessionPartitionForServerUrl(targetUrl: string): string | null {
   try {
@@ -153,7 +175,21 @@ export function isRakazoHealth(value: unknown): boolean {
   );
 }
 
-function isLoopbackHost(hostname: string) {
+/** Loopback origin on the default web port — the desktop app can start Compose for this. */
+export function isManagedLocalWebUrl(raw: string): boolean {
+  const url = normalizeServerUrl(raw);
+  if (url === null) return false;
+  try {
+    const parsed = new URL(url);
+    if (!isLoopbackHost(parsed.hostname)) return false;
+    const port = parsed.port === "" ? (parsed.protocol === "https:" ? "443" : "80") : parsed.port;
+    return port === LOCAL_WEB_PORT;
+  } catch {
+    return false;
+  }
+}
+
+export function isLoopbackHost(hostname: string) {
   const host = unbracketedHost(hostname);
   if (host === "localhost" || host.endsWith(".localhost")) return true;
   if (isIP(host) === 4) return host.startsWith("127.");

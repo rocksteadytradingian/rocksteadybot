@@ -9,10 +9,16 @@ import type {
   ManagedConnectorProvider,
 } from "@rakazo/adapter-kit";
 import {
-  composioToolkitDirectory,
+  createToolkitDirectoryCache,
   mergeCatalogWithConnected,
   type ToolkitDirectoryEntry,
 } from "./composio-catalog-cache.js";
+import {
+  COMPOSIO_NOT_CONFIGURED_MESSAGE,
+  CURATED_COMPOSIO_TOOLKITS,
+  CuratedComposioCatalog,
+  composioDirectoryOrCurated,
+} from "./composio-curated-catalog.js";
 import { DestinationEmulator } from "./destination-emulator.js";
 
 type ComposioSession = Awaited<ReturnType<Composio["create"]>>;
@@ -71,18 +77,82 @@ export type ComposioCatalogItem = Omit<ConnectorCatalogItem, "connectorId">;
 
 export interface ComposioProvider extends ManagedConnectorProvider {
   warmDirectory(): Promise<void>;
-  listConnectedSlugs(userId: string): Promise<string[]>;
+  /** Connected toolkit slugs for one workspace's own Composio identity, not the whole account. */
+  listConnectedSlugs(userId: string, workspaceId: string): Promise<string[]>;
+  invalidateUser?(userId: string): void;
 }
 
-export function filterCatalog<T extends Pick<ComposioCatalogItem, "name" | "slug">>(
-  items: T[],
-  query: string,
-): T[] {
+export type ComposioApiKeyResolver = (userId: string) => Promise<string | undefined>;
+
+export type ComposioConnectorOptions = {
+  envApiKey?: string;
+  resolveUserApiKey?: ComposioApiKeyResolver;
+};
+
+const COMPOSIO_TOOLKITS_URL = "https://backend.composio.dev/api/v3.1/toolkits?limit=1";
+const COMPOSIO_CONSUMER_KEY_MESSAGE =
+  "That is a For You consumer key. Paste a Platform project key that starts with ak_.";
+const COMPOSIO_PROJECT_KEY_SHAPE_MESSAGE =
+  "Platform project keys start with ak_. Copy one from dashboard.composio.dev → Platform → Settings → API Keys.";
+const COMPOSIO_PROJECT_KEY_REJECTED_MESSAGE =
+  "That project key was rejected. Copy a current Platform project key that starts with ak_.";
+export const COMPOSIO_PROJECT_KEY_WRITE_MESSAGE =
+  "This project key is read-only. Create a Platform API key with write access, paste it here, then add Gmail.";
+
+export function normalizeComposioProjectKey(apiKey: string): string {
+  return apiKey
+    .replace(/^\uFEFF/, "")
+    .trim()
+    .replace(/^["']+|["']+$/g, "")
+    .replace(/^(?:bearer\s+|composio_api_key\s*=\s*)/i, "")
+    .replace(/[\r\n\u200b\u200c\u200d]/g, "")
+    .trim();
+}
+
+export async function verifyComposioProjectKey(
+  apiKey: string,
+  fetchImpl: typeof fetch = fetch,
+): Promise<{ ok: true } | { ok: false; message: string }> {
+  const key = normalizeComposioProjectKey(apiKey);
+  if (key.length < 8) return { ok: false, message: "That project key is too short." };
+  if (key.startsWith("ck_")) return { ok: false, message: COMPOSIO_CONSUMER_KEY_MESSAGE };
+  if (!key.startsWith("ak_")) return { ok: false, message: COMPOSIO_PROJECT_KEY_SHAPE_MESSAGE };
+  if (process.env.VITEST && fetchImpl === fetch) return { ok: true };
+  try {
+    const response = await fetchImpl(COMPOSIO_TOOLKITS_URL, {
+      headers: { "x-api-key": key },
+      signal: AbortSignal.timeout(15_000),
+    });
+    if (response.ok) return { ok: true };
+    return { ok: false, message: COMPOSIO_PROJECT_KEY_REJECTED_MESSAGE };
+  } catch {
+    return { ok: false, message: "Could not reach Composio to check that project key." };
+  }
+}
+
+export function filterCatalog<
+  T extends Pick<ComposioCatalogItem, "name" | "slug"> & { description?: string },
+>(items: T[], query: string): T[] {
   const needle = query.trim().toLowerCase();
   if (!needle) return items;
   return items.filter(
-    (item) => item.name.toLowerCase().includes(needle) || item.slug.toLowerCase().includes(needle),
+    (item) =>
+      item.name.toLowerCase().includes(needle) ||
+      item.slug.toLowerCase().includes(needle) ||
+      (item.description?.toLowerCase().includes(needle) ?? false),
   );
+}
+
+function toolkitDescription(toolkit: unknown): string | undefined {
+  const raw = asObject(toolkit);
+  if (!raw) return undefined;
+  if (typeof raw.description === "string" && raw.description.trim()) {
+    return raw.description.trim();
+  }
+  const meta = asObject(raw.meta);
+  const fromMeta = meta?.description;
+  if (typeof fromMeta === "string" && fromMeta.trim()) return fromMeta.trim();
+  return undefined;
 }
 
 export async function collectPages<T>(
@@ -164,9 +234,18 @@ export function planLiveConnectionSync(
 }
 
 export class ComposioConnector implements ComposioProvider {
-  private client: Composio | undefined;
+  private readonly clients = new Map<string, Composio>();
   private readonly catalogSessions = new Map<string, string>();
+  // Keyed by entityId(userId, workspaceId) — one Composio identity per workspace,
+  // so two workspaces can hold two different connected accounts for the same app.
+  private readonly workspaceSessions = new Map<string, string>();
   private readonly executeSessions = new Map<string, { sessionId: string; key: string }>();
+  private readonly directoryCaches = new Map<
+    string,
+    ReturnType<typeof createToolkitDirectoryCache>
+  >();
+
+  constructor(private readonly options: ComposioConnectorOptions = {}) {}
 
   describe() {
     return {
@@ -177,8 +256,31 @@ export class ComposioConnector implements ComposioProvider {
     };
   }
 
+  invalidateUser(userId: string): void {
+    this.catalogSessions.delete(userId);
+    const prefix = `${userId}:`;
+    for (const key of this.workspaceSessions.keys()) {
+      if (key.startsWith(prefix)) this.workspaceSessions.delete(key);
+    }
+    for (const key of this.executeSessions.keys()) {
+      if (key.startsWith(prefix)) this.executeSessions.delete(key);
+    }
+    this.directoryCaches.get(userId)?.invalidate();
+  }
+
+  async resolveApiKey(userId: string): Promise<string | undefined> {
+    const userKey = await this.options.resolveUserApiKey?.(userId);
+    if (userKey) return userKey;
+    return this.options.envApiKey;
+  }
+
+  private entityId(userId: string, workspaceId: string): string {
+    return `${userId}:${workspaceId}`;
+  }
+
+  /** Shared per-user session for the app directory only — no connection state, safe to share. */
   async sessionFor(userId: string): Promise<ComposioSession> {
-    const composio = this.sdk();
+    const composio = await this.sdkFor(userId);
     const existing = this.catalogSessions.get(userId);
     if (existing) {
       try {
@@ -195,73 +297,132 @@ export class ComposioConnector implements ComposioProvider {
     return session;
   }
 
-  async sessionForExecute(userId: string, toolkits: string[]): Promise<ComposioSession> {
+  /** Per-workspace Composio identity — this is what owns connected accounts. */
+  private async sessionForWorkspace(userId: string, workspaceId: string): Promise<ComposioSession> {
+    const entity = this.entityId(userId, workspaceId);
+    const composio = await this.sdkFor(userId);
+    const existing = this.workspaceSessions.get(entity);
+    if (existing) {
+      try {
+        return await composio.sessions.use(existing);
+      } catch {
+        this.workspaceSessions.delete(entity);
+      }
+    }
+    const session = await composio.create(entity, {
+      manageConnections: false,
+      sandbox: { enable: false },
+    });
+    this.workspaceSessions.set(entity, session.sessionId);
+    return session;
+  }
+
+  async sessionForExecute(
+    userId: string,
+    workspaceId: string,
+    toolkits: string[],
+  ): Promise<ComposioSession> {
     const key = executeSessionKey(toolkits);
-    if (!key) return this.sessionFor(userId);
-    const composio = this.sdk();
-    const existing = this.executeSessions.get(userId);
+    if (!key) return this.sessionForWorkspace(userId, workspaceId);
+    const entity = this.entityId(userId, workspaceId);
+    const composio = await this.sdkFor(userId);
+    const existing = this.executeSessions.get(entity);
     if (existing?.key === key) {
       try {
         return await composio.sessions.use(existing.sessionId);
       } catch {
-        this.executeSessions.delete(userId);
+        this.executeSessions.delete(entity);
       }
     }
-    const session = await composio.create(userId, {
+    const session = await composio.create(entity, {
       manageConnections: false,
       sandbox: { enable: false },
       toolkits: key.split(","),
       sessionPreset: "direct_tools",
     });
-    this.executeSessions.set(userId, { sessionId: session.sessionId, key });
+    this.executeSessions.set(entity, { sessionId: session.sessionId, key });
     return session;
   }
 
   async catalog(context: AdapterContext, query?: string): Promise<ConnectorCatalogItem[]> {
-    const [directory, connected] = await Promise.all([
-      this.directory(),
-      this.listConnectedSlugs(context.userId),
-    ]);
-    return filterCatalog(mergeCatalogWithConnected(directory, connected), query ?? "").map(
-      (item) => ({ ...item, connectorId: "composio" }),
-    );
+    try {
+      const directory = await this.directory(context.userId);
+      let connected: string[] = [];
+      try {
+        connected = await this.listConnectedSlugs(context.userId, context.workspaceId);
+      } catch {
+        connected = [];
+      }
+      const items = filterCatalog(mergeCatalogWithConnected(directory, connected), query ?? "");
+      if (items.length > 0) {
+        return items.map((item) => ({ ...item, connectorId: "composio" }));
+      }
+    } catch {
+      // Fall through to the curated directory so Gmail stays connectable.
+    }
+    return filterCatalog(
+      mergeCatalogWithConnected([...CURATED_COMPOSIO_TOOLKITS], []),
+      query ?? "",
+    ).map((item) => ({ ...item, connectorId: "composio" }));
   }
 
   async warmDirectory(): Promise<void> {
-    await this.directory();
+    if (this.options.envApiKey) await this.directory("__rakazo_catalog__");
   }
 
-  private async directory(): Promise<ToolkitDirectoryEntry[]> {
-    return composioToolkitDirectory.get(() => this.loadDirectory());
+  private directoryCache(userId: string) {
+    const existing = this.directoryCaches.get(userId);
+    if (existing) return existing;
+    const created = createToolkitDirectoryCache();
+    this.directoryCaches.set(userId, created);
+    return created;
   }
 
-  private async loadDirectory(): Promise<ToolkitDirectoryEntry[]> {
-    const session = await this.sessionFor("__rakazo_catalog__");
-    const toolkits = await collectPages((cursor) => session.toolkits({ limit: 50, cursor }));
-    return toolkits.map((toolkit) => ({
-      slug: toolkit.slug,
-      name: toolkit.name,
-      logo: toolkit.logo ?? null,
-      noAuth: Boolean(toolkit.isNoAuth),
-    }));
+  private async directory(userId: string): Promise<ToolkitDirectoryEntry[]> {
+    return this.directoryCache(userId).get(() => this.loadDirectory(userId));
   }
 
-  async listConnectedSlugs(userId: string): Promise<string[]> {
-    const session = await this.sessionFor(userId);
-    const connected = await collectPages((cursor) =>
-      session.toolkits({ isConnected: true, limit: 50, cursor }),
-    );
-    return connected.map((toolkit) => toolkit.slug);
+  private async loadDirectory(userId: string): Promise<ToolkitDirectoryEntry[]> {
+    try {
+      const apiKey = await this.resolveApiKey(userId);
+      if (!apiKey) return [...CURATED_COMPOSIO_TOOLKITS];
+      const session = await this.sessionFor(userId);
+      const toolkits = await collectPages((cursor) => session.toolkits({ limit: 50, cursor }));
+      return composioDirectoryOrCurated(
+        toolkits.map((toolkit) => ({
+          slug: toolkit.slug,
+          name: toolkit.name,
+          logo: toolkit.logo ?? null,
+          noAuth: Boolean(toolkit.isNoAuth),
+          description: toolkitDescription(toolkit),
+        })),
+      );
+    } catch {
+      return [...CURATED_COMPOSIO_TOOLKITS];
+    }
+  }
+
+  async listConnectedSlugs(userId: string, workspaceId: string): Promise<string[]> {
+    try {
+      if (!(await this.resolveApiKey(userId))) return [];
+      const session = await this.sessionForWorkspace(userId, workspaceId);
+      const connected = await collectPages((cursor) =>
+        session.toolkits({ isConnected: true, limit: 50, cursor }),
+      );
+      return connected.map((toolkit) => toolkit.slug);
+    } catch {
+      return [];
+    }
   }
 
   async listConnectedExternalIds(context: AdapterContext): Promise<string[]> {
-    return this.listConnectedSlugs(context.userId);
+    return this.listConnectedSlugs(context.userId, context.workspaceId);
   }
 
   async discoverTools(context: AdapterContext): Promise<ConnectorTool[]> {
     const toolkits = connectedComposioExternalIds(context);
     if (toolkits.length === 0) return [];
-    const session = await this.sessionForExecute(context.userId, toolkits);
+    const session = await this.sessionForExecute(context.userId, context.workspaceId, toolkits);
     const raw = await session.tools();
     return asConnectorTools(raw);
   }
@@ -270,6 +431,7 @@ export class ComposioConnector implements ComposioProvider {
     try {
       const session = await this.sessionForExecute(
         context.userId,
+        context.workspaceId,
         connectedComposioExternalIds(context),
       );
       const result = await session.execute(call.tool, call.args ?? {});
@@ -294,7 +456,7 @@ export class ComposioConnector implements ComposioProvider {
     request: { provider: string; redirectUrl: string },
     context: AdapterContext,
   ): Promise<{ authorizationUrl: string | null; state: string }> {
-    const session = await this.sessionFor(context.userId);
+    const session = await this.sessionForWorkspace(context.userId, context.workspaceId);
     try {
       const connectionRequest = await session.authorize(request.provider, {
         callbackUrl: request.redirectUrl,
@@ -315,7 +477,7 @@ export class ComposioConnector implements ComposioProvider {
   }
 
   async connectionReady(context: AdapterContext, slug: string): Promise<boolean> {
-    const session = await this.sessionFor(context.userId);
+    const session = await this.sessionForWorkspace(context.userId, context.workspaceId);
     const page = await session.toolkits({ search: slug, limit: 50 });
     const match = page.items.find((item) => item.slug === slug);
     if (!match) return false;
@@ -330,19 +492,32 @@ export class ComposioConnector implements ComposioProvider {
   }
 
   async revoke(connectionRef: string, context: AdapterContext): Promise<void> {
-    const accountId = await this.connectedAccountId(context.userId, connectionRef);
-    if (accountId) await this.sdk().connectedAccounts.delete(accountId);
+    const accountId = await this.connectedAccountId(
+      context.userId,
+      context.workspaceId,
+      connectionRef,
+    );
+    if (accountId) await (await this.sdkFor(context.userId)).connectedAccounts.delete(accountId);
   }
 
-  async connectedAccountId(userId: string, slug: string): Promise<string | undefined> {
-    const session = await this.sessionFor(userId);
+  async connectedAccountId(
+    userId: string,
+    workspaceId: string,
+    slug: string,
+  ): Promise<string | undefined> {
+    const session = await this.sessionForWorkspace(userId, workspaceId);
     const toolkits = await session.toolkits({ isConnected: true });
     return toolkits.items.find((item) => item.slug === slug)?.connection?.connectedAccount?.id;
   }
 
-  private sdk(): Composio {
-    this.client ??= new Composio();
-    return this.client;
+  private async sdkFor(userId: string): Promise<Composio> {
+    const apiKey = await this.resolveApiKey(userId);
+    if (!apiKey) throw new Error(COMPOSIO_NOT_CONFIGURED_MESSAGE);
+    const existing = this.clients.get(apiKey);
+    if (existing) return existing;
+    const client = new Composio({ apiKey });
+    this.clients.set(apiKey, client);
+    return client;
   }
 }
 
@@ -454,14 +629,22 @@ export function createConnectorStack(
   composioEnabled: boolean,
   composioOverride?: ComposioProvider,
   additionalProviders: ConnectorProvider[] = [],
+  options?: ComposioConnectorOptions,
 ) {
   const destination = new DestinationEmulator();
-  const composio = composioOverride ?? (composioEnabled ? new ComposioConnector() : undefined);
+  const composio =
+    composioOverride ??
+    (composioEnabled || options?.resolveUserApiKey
+      ? new ComposioConnector({
+          envApiKey: options?.envApiKey,
+          resolveUserApiKey: options?.resolveUserApiKey,
+        })
+      : undefined);
   return {
     destination,
     composio,
     connector: new ConnectorRegistry(destination, [
-      ...(composio ? [composio] : []),
+      composio ?? new CuratedComposioCatalog(),
       ...additionalProviders,
     ]),
   };
@@ -503,8 +686,18 @@ export function isNoAuthToolkitError(error: unknown): boolean {
 }
 
 export function sanitizeComposioError(error: unknown): string {
-  const message = error instanceof Error ? error.message : String(error);
-  return redactConnectorText(message);
+  const message = redactConnectorText(error instanceof Error ? error.message : String(error));
+  return humanizeComposioError(message);
+}
+
+function humanizeComposioError(message: string): string {
+  if (
+    /APIKey_InsufficientPermissions|session_management/i.test(message) &&
+    /write access|read access/i.test(message)
+  ) {
+    return COMPOSIO_PROJECT_KEY_WRITE_MESSAGE;
+  }
+  return message;
 }
 
 function sanitizePayload(data: unknown): unknown {

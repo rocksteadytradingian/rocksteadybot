@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { ActivityIndicator, Linking, Pressable, Text, View } from "react-native";
 import { rpc } from "../lib/api";
 import { appConnectPresentation } from "../lib/app-connect";
-import { native } from "../lib/native";
+import { useTheme } from "../lib/theme";
 
 export function AppConnectCard({
   botId,
@@ -17,6 +17,7 @@ export function AppConnectCard({
   const [localStatus, setLocalStatus] = useState<"pending" | "connected">(block.status);
   const [error, setError] = useState<string | null>(null);
   const connectionAttempt = useRef<AbortController | null>(null);
+  const { palette } = useTheme();
   const status = block.status === "connected" ? "connected" : localStatus;
   const view = appConnectPresentation({ ...block, status }, busy);
 
@@ -75,8 +76,8 @@ export function AppConnectCard({
         width: "90%",
         borderRadius: 18,
         borderWidth: 1,
-        borderColor: "#232326",
-        backgroundColor: "#17171A",
+        borderColor: palette.hairline,
+        backgroundColor: palette.surface,
         paddingHorizontal: 16,
         paddingVertical: 14,
         gap: 8,
@@ -88,18 +89,18 @@ export function AppConnectCard({
             width: 40,
             height: 40,
             borderRadius: 10,
-            backgroundColor: "#30356A",
+            backgroundColor: palette.surface2,
             alignItems: "center",
             justifyContent: "center",
           }}
         >
-          <Text style={{ color: "#E2E4FF", fontSize: 15, fontWeight: "600" }}>
+          <Text style={{ color: palette.ink, fontSize: 15, fontWeight: "600" }}>
             {block.name.slice(0, 1).toUpperCase()}
           </Text>
         </View>
         <View style={{ flex: 1, gap: 2 }}>
-          <Text style={{ color: "#ECECEE", fontSize: 15, fontWeight: "600" }}>{view.title}</Text>
-          <Text style={{ color: "#85858A", fontSize: 13.5 }} numberOfLines={2}>
+          <Text style={{ color: palette.ink, fontSize: 15, fontWeight: "600" }}>{view.title}</Text>
+          <Text style={{ color: palette.muted, fontSize: 13.5 }} numberOfLines={2}>
             {view.description}
           </Text>
         </View>
@@ -113,26 +114,26 @@ export function AppConnectCard({
               minHeight: 36,
               paddingHorizontal: 14,
               borderRadius: 999,
-              backgroundColor: native.fillPressed,
+              backgroundColor: palette.hover,
               alignItems: "center",
               justifyContent: "center",
             }}
           >
             {busy ? (
-              <ActivityIndicator color={native.label} />
+              <ActivityIndicator color={palette.ink} />
             ) : (
-              <Text style={{ color: native.label, fontSize: 14, fontWeight: "600" }}>
+              <Text style={{ color: palette.ink, fontSize: 14, fontWeight: "600" }}>
                 {view.actionLabel}
               </Text>
             )}
           </Pressable>
         ) : (
-          <Text style={{ color: "#4ECB71", fontSize: 13.5, fontWeight: "600" }}>
+          <Text style={{ color: palette.success, fontSize: 13.5, fontWeight: "600" }}>
             {view.actionLabel}
           </Text>
         )}
       </View>
-      {error ? <Text style={{ color: "#E96B6B", fontSize: 13 }}>{error}</Text> : null}
+      {error ? <Text style={{ color: palette.danger, fontSize: 13 }}>{error}</Text> : null}
     </View>
   );
 }

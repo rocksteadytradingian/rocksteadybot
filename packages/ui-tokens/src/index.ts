@@ -1,22 +1,23 @@
+/** Snapshot of the default Claude theme. Web UI should use `--rk-*` CSS variables. */
 export const tokens = {
-  page: "#050506",
-  sidebar: "#0B0B0C",
-  main: "#0D0D0E",
-  panel: "#0A0A0B",
-  hairline: "#171719",
-  hairlineStrong: "#202023",
-  surface: "#141416",
-  surface2: "#1A1A1D",
-  ink: "#ECECEE",
-  body: "#DFDFE2",
-  muted: "#85858A",
-  muted2: "#6C6C70",
-  cream: "#F1F1EF",
-  creamInk: "#1A1A1A",
-  accent: "#3EC5A8",
-  danger: "#E65707",
-  success: "#30A24B",
-  successSoft: "#4ECB71",
+  page: "#f4efe6",
+  sidebar: "#ebe4d6",
+  main: "#f7f3eb",
+  panel: "#fbf8f2",
+  hairline: "#d8cbb8",
+  hairlineStrong: "#c4b498",
+  surface: "#fffdf8",
+  surface2: "#ebe4d6",
+  ink: "#2c2118",
+  body: "#3e3428",
+  muted: "#5c4e3e",
+  muted2: "#6a5a48",
+  cream: "#3a2e24",
+  creamInk: "#fbf8f2",
+  accent: "#d97757",
+  danger: "#9a3412",
+  success: "#166534",
+  successSoft: "#2f9a4c",
 } as const;
 
 export const botColors = [
@@ -28,3 +29,20 @@ export const botColors = [
   "#F2622A",
   "#D9508A",
 ] as const;
+
+export {
+  RK_PALETTES,
+  RK_RADIUS,
+  type RkPalette,
+  rkCssVar,
+  rkPaletteById,
+} from "./palettes.js";
+export {
+  canonicalUiThemeId,
+  DEFAULT_UI_THEME,
+  isUiThemeId,
+  UI_THEME_ALIASES,
+  UI_THEMES,
+  type UiThemeId,
+  uiThemeById,
+} from "./themes.js";

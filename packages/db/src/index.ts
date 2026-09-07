@@ -1,7 +1,9 @@
 export * from "./client.js";
+export * from "./composio-credentials.js";
 export * from "./computers.js";
 export * from "./events.js";
 export * from "./groups.js";
+export * from "./identity-files.js";
 export * from "./memory-config.js";
 export * from "./messages.js";
 export * from "./model-credentials.js";
@@ -11,3 +13,4 @@ export * from "./run-outcomes.js";
 export * from "./scope.js";
 export * from "./transaction-retry.js";
 export * from "./voice-credentials.js";
+export * from "./workspaces.js";

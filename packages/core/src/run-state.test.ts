@@ -1,8 +1,23 @@
 import * as fc from "fast-check";
 import { describe, expect, it } from "vitest";
-import { assertTransition, canTransition } from "./run-state.js";
+import { assertTransition, canTransition, isActive, isWorking } from "./run-state.js";
 
 describe("run state machine", () => {
+  it("treats queued, leased, and running as working", () => {
+    expect(isWorking("queued")).toBe(true);
+    expect(isWorking("leased")).toBe(true);
+    expect(isWorking("running")).toBe(true);
+    expect(isWorking("waiting_input")).toBe(false);
+    expect(isWorking("waiting_takeover")).toBe(false);
+    expect(isWorking("completed")).toBe(false);
+  });
+
+  it("keeps waiting states active without counting them as working", () => {
+    expect(isActive("waiting_input")).toBe(true);
+    expect(isActive("running")).toBe(true);
+    expect(isWorking("waiting_input")).toBe(false);
+  });
+
   it("allows takeover resume onto a lease", () => {
     expect(canTransition("waiting_takeover", "leased")).toBe(true);
     expect(canTransition("waiting_takeover", "running")).toBe(false);

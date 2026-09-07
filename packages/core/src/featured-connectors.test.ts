@@ -32,15 +32,21 @@ describe("featured connectors", () => {
     expect(matchFeaturedConnectorId("googledrive")).toBe("google-drive");
   });
 
-  it("maps slack and notion catalog aliases", () => {
+  it("maps slack, github, notion, and linear catalog aliases", () => {
     expect(matchFeaturedConnectorId("slack")).toBe("slack");
     expect(matchFeaturedConnectorId("slackbot")).toBe("slack");
     expect(matchFeaturedConnectorId("SLACK")).toBe("slack");
+    expect(matchFeaturedConnectorId("github")).toBe("github");
+    expect(matchFeaturedConnectorId("GH")).toBe("github");
     expect(matchFeaturedConnectorId("notion")).toBe("notion");
     expect(matchFeaturedConnectorId("notion.so")).toBe("notion");
     expect(matchFeaturedConnectorId("NOTION")).toBe("notion");
+    expect(matchFeaturedConnectorId("linear")).toBe("linear");
+    expect(matchFeaturedConnectorId("linear.app")).toBe("linear");
     expect(featuredConnectorProvidersMatch("slack", "slackbot")).toBe(true);
     expect(featuredConnectorProvidersMatch("notion", "notion.so")).toBe(true);
+    expect(featuredConnectorProvidersMatch("github", "GH")).toBe(true);
+    expect(featuredConnectorProvidersMatch("linear", "linear.app")).toBe(true);
   });
 
   it("returns null for unknown catalog entries", () => {
@@ -56,10 +62,17 @@ describe("featured connectors", () => {
     expect(resolveFeaturedCatalogItem("notion", catalog)?.slug).toBe("NOTION");
   });
 
-  it("marks all featured tiles missing when the catalog is empty", () => {
+  it("uses fallback catalog items so Gmail stays addable when the live list is empty", () => {
     const tiles = buildFeaturedConnectorTiles([]);
-    expect(tiles).toHaveLength(5);
-    expect(tiles.every((tile) => !tile.item && !tile.missing)).toBe(true);
+    expect(tiles).toHaveLength(7);
+    const gmail = tiles.find((tile) => tile.id === "gmail");
+    expect(gmail?.missing).toBe(false);
+    expect(gmail?.item).toMatchObject({
+      connectorId: "composio",
+      slug: "gmail",
+      name: "Gmail",
+      connected: false,
+    });
   });
 
   it("marks unknown featured apps missing when the catalog has other apps", () => {

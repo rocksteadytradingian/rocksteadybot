@@ -32,7 +32,9 @@ describe("ComposioEmulator", () => {
     await emulator.begin({ provider: "GMAIL", redirectUrl: "http://example.test" }, context);
 
     await expect(emulator.connectionReady(context, "GMAIL")).resolves.toBe(true);
-    await expect(emulator.listConnectedSlugs(context.userId)).resolves.toEqual(["GMAIL"]);
+    await expect(emulator.listConnectedSlugs(context.userId, context.workspaceId)).resolves.toEqual(
+      ["GMAIL"],
+    );
     await expect(emulator.connectionReady({ ...context, userId: "user-2" }, "GMAIL")).resolves.toBe(
       false,
     );
@@ -42,6 +44,27 @@ describe("ComposioEmulator", () => {
 
     await emulator.revoke("GMAIL", context);
     await expect(emulator.connectionReady(context, "GMAIL")).resolves.toBe(false);
+  });
+
+  it("lets the same user connect a different account per workspace", async () => {
+    const emulator = new ComposioEmulator();
+    const otherWorkspace = { ...context, workspaceId: "workspace-2" };
+
+    await emulator.begin({ provider: "GMAIL", redirectUrl: "http://example.test" }, context);
+
+    // The second workspace starts with no connection of its own...
+    await expect(emulator.connectionReady(otherWorkspace, "GMAIL")).resolves.toBe(false);
+    await expect(emulator.listConnectedSlugs(context.userId, "workspace-2")).resolves.toEqual([]);
+
+    // ...and connecting Gmail there does not touch the first workspace's connection.
+    await emulator.begin({ provider: "GMAIL", redirectUrl: "http://example.test" }, otherWorkspace);
+    await expect(emulator.connectionReady(context, "GMAIL")).resolves.toBe(true);
+    await expect(emulator.connectionReady(otherWorkspace, "GMAIL")).resolves.toBe(true);
+
+    // Revoking one workspace's connection leaves the other workspace connected.
+    await emulator.revoke("GMAIL", context);
+    await expect(emulator.connectionReady(context, "GMAIL")).resolves.toBe(false);
+    await expect(emulator.connectionReady(otherWorkspace, "GMAIL")).resolves.toBe(true);
   });
 
   it("discovers and executes deterministic tools for connected apps", async () => {

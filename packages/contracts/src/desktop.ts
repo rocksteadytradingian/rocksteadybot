@@ -43,6 +43,7 @@ export interface RakazoDesktop {
     minimize: () => Promise<void>;
     toggleMaximize: () => Promise<void>;
     state: () => Promise<{ minimized: boolean; maximized: boolean; fullScreen: boolean }>;
+    setTitleBarOverlay: (overlay: { color: string; symbolColor: string }) => Promise<void>;
   };
   update: RakazoDesktopUpdate;
   oauth: {
@@ -83,6 +84,7 @@ export interface DesktopReachability {
  * narrower `rakazoDesktop` bridge so a connected server can never re-point the app.
  */
 export interface RakazoSetup {
+  platform: string;
   state: () => Promise<DesktopSetupState>;
   test: (url: string) => Promise<DesktopReachability>;
   save: (setup: DesktopSetup) => Promise<{ ok: boolean; error?: string }>;

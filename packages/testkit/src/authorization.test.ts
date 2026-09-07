@@ -63,6 +63,8 @@ describeWithDatabase("API authorization and resource isolation", () => {
       ["models/finishOAuth", { loginId: "missing-login" }],
       ["models/cancelOAuth", { loginId: "missing-login" }],
       ["models/setDefault", { provider: "test", modelId: "test/model" }],
+      ["models/setRouter", { provider: "openai-compatible", fast: "qwen3:8b" }],
+      ["models/probeOpenAiCompatible", { baseUrl: "http://127.0.0.1:1234/v1" }],
       ["bots/list"],
       ["bots/listArchived"],
       ["bots/get", { botId: "missing-bot" }],
@@ -102,6 +104,10 @@ describeWithDatabase("API authorization and resource isolation", () => {
       ["computer/status", { botId: "missing-bot" }],
       ["computer/boot", { botId: "missing-bot" }],
       ["computer/stop", { botId: "missing-bot" }],
+      ["computer/recover", { botId: "missing-bot" }],
+      ["computer/reset", { botId: "missing-bot" }],
+      ["computer/update", { botId: "missing-bot" }],
+      ["computer/restart", { botId: "missing-bot" }],
       ["computer/takeover", { botId: "missing-bot" }],
       ["computer/release", { botId: "missing-bot" }],
       ["computer/input", { botId: "missing-bot", kind: "key", payload: { key: "A" } }],
@@ -150,18 +156,24 @@ describeWithDatabase("API authorization and resource isolation", () => {
       ["connections/begin", connectionInput("Unauthenticated")],
       ["connections/complete", { connectionId: "missing-connection" }],
       ["connections/revoke", { connectionId: "missing-connection" }],
+      ["connections/projectKey"],
+      ["connections/setProjectKey", { apiKey: "not-a-real-key" }],
+      ["connections/clearProjectKey"],
       ["approvalRules/list"],
       [
         "approvalRules/set",
         { effect: "require_approval", matchKind: "category", matchValue: "email" },
       ],
       ["approvalRules/remove", { id: "missing-rule" }],
+      ["approvals/list"],
+      ["approvals/repairStack"],
       ["artifacts/list", { botId: "missing-bot" }],
       ["usage/list"],
       ["usage/summary"],
       ["export/bot", { botId: "missing-bot" }],
       ["notifications/registerPush", { token: "ExponentPushToken[not-real]" }],
       ["search/query", { q: "anything" }],
+      ["runs/list", { filter: "active" }],
       ["voice/catalog"],
       ["voice/status"],
       ["voice/credentials"],
@@ -169,6 +181,11 @@ describeWithDatabase("API authorization and resource isolation", () => {
       ["voice/setVoice", { voiceId: "missing-voice" }],
       ["voice/voices", {}],
       ["voice/prepare", { text: "Nope" }],
+      ["workspaces/list"],
+      ["workspaces/create", { name: "Nope" }],
+      ["workspaces/switch", { workspaceId: "missing-workspace" }],
+      ["workspaces/update", { workspaceId: "missing-workspace", name: "Nope" }],
+      ["workspaces/remove", { workspaceId: "missing-workspace" }],
     ]);
 
     const results = await Promise.all(
@@ -311,6 +328,10 @@ describeWithDatabase("API authorization and resource isolation", () => {
       ["computer/status", { botId: ownerBot.id }],
       ["computer/boot", { botId: ownerBot.id }],
       ["computer/stop", { botId: ownerBot.id }],
+      ["computer/recover", { botId: ownerBot.id }],
+      ["computer/reset", { botId: ownerBot.id }],
+      ["computer/update", { botId: ownerBot.id }],
+      ["computer/restart", { botId: ownerBot.id }],
       ["computer/takeover", { botId: ownerBot.id }],
       ["computer/release", { botId: ownerBot.id }],
       ["computer/input", { botId: ownerBot.id, kind: "key", payload: { key: "A" } }],
@@ -764,6 +785,113 @@ describeWithDatabase("API authorization and resource isolation", () => {
       await handles.prisma.deploymentSettings.findUniqueOrThrow({ where: { id: "default" } }),
     ).toMatchObject({ signupsEnabled: true, signupAllowlist: "" });
   });
+
+  it("keeps bots private to the active workspace", async () => {
+    const cookie = await signup(app, `workspace-bots-${stamp}@rakazo.test`, "Workspace Owner");
+    const personal = await rpc<Me>(app, cookie, "me");
+    expect(personal.workspaceName).toBe("Personal");
+    expect(personal.workspaces).toEqual([
+      expect.objectContaining({ id: personal.workspaceId, name: "Personal" }),
+    ]);
+    const personalBot = await rpc<Bot>(app, cookie, "bots/create", botInput("Personal Bot"));
+
+    const work = await rpc<Me>(app, cookie, "workspaces/create", { name: "Work" });
+    expect(work.workspaceName).toBe("Work");
+    expect(work.workspaceId).not.toBe(personal.workspaceId);
+    expect(await rpc<Bot[]>(app, cookie, "bots/list")).toEqual([]);
+    const workBot = await rpc<Bot>(app, cookie, "bots/create", botInput("Work Bot"));
+    expect((await rpc<Bot[]>(app, cookie, "bots/list")).map((bot) => bot.id)).toEqual([workBot.id]);
+
+    const switched = await rpc<Me>(app, cookie, "workspaces/switch", {
+      workspaceId: personal.workspaceId,
+    });
+    expect(switched.workspaceId).toBe(personal.workspaceId);
+    expect((await rpc<Bot[]>(app, cookie, "bots/list")).map((bot) => bot.id)).toEqual([
+      personalBot.id,
+    ]);
+
+    const intruder = await signup(app, `workspace-intruder-${stamp}@rakazo.test`, "Intruder");
+    await expectDenied(app, intruder, "workspaces/switch", { workspaceId: work.workspaceId });
+    await expectDenied(app, intruder, "workspaces/update", {
+      workspaceId: work.workspaceId,
+      name: "Stolen",
+    });
+    await expectDenied(app, intruder, "workspaces/remove", { workspaceId: work.workspaceId });
+
+    await rpc(app, cookie, "workspaces/switch", { workspaceId: work.workspaceId });
+    const afterDelete = await rpc<Me>(app, cookie, "workspaces/remove", {
+      workspaceId: work.workspaceId,
+    });
+    expect(afterDelete.workspaceId).toBe(personal.workspaceId);
+    expect(afterDelete.workspaces).toHaveLength(1);
+    await expectDenied(app, cookie, "workspaces/remove", { workspaceId: personal.workspaceId });
+  });
+
+  it("shares one model secret across workspaces so new-workspace bots stay connected", async () => {
+    const cookie = await signup(app, `shared-model-secret-${stamp}@rakazo.test`, "Shared Secret");
+    const personal = await rpc<Me>(app, cookie, "me");
+    await rpc(app, cookie, "models/connect", {
+      provider: "anthropic",
+      apiKey: "fake-anthropic-personal-key",
+      label: "Claude",
+      modelId: "claude-sonnet-5",
+    });
+    const personalCred = await handles.prisma.userModelCredential.findFirstOrThrow({
+      where: {
+        userId: personal.userId,
+        workspaceId: personal.workspaceId,
+        provider: "anthropic",
+      },
+    });
+
+    const work = await rpc<Me>(app, cookie, "workspaces/create", { name: "Work" });
+    const copied = await handles.prisma.userModelCredential.findFirstOrThrow({
+      where: {
+        userId: personal.userId,
+        workspaceId: work.workspaceId,
+        provider: "anthropic",
+      },
+    });
+    expect(copied.secretId).toBe(personalCred.secretId);
+
+    await rpc(app, cookie, "workspaces/switch", { workspaceId: personal.workspaceId });
+    await rpc(app, cookie, "models/connect", {
+      provider: "anthropic",
+      apiKey: "fake-anthropic-rotated-key",
+      label: "Claude",
+      modelId: "claude-opus-5",
+    });
+    const [personalAfter, workAfter] = await Promise.all([
+      handles.prisma.userModelCredential.findFirstOrThrow({
+        where: {
+          userId: personal.userId,
+          workspaceId: personal.workspaceId,
+          provider: "anthropic",
+        },
+      }),
+      handles.prisma.userModelCredential.findFirstOrThrow({
+        where: {
+          userId: personal.userId,
+          workspaceId: work.workspaceId,
+          provider: "anthropic",
+        },
+      }),
+    ]);
+    expect(workAfter.secretId).toBe(personalAfter.secretId);
+    expect(workAfter.defaultModel).toBe("claude-sonnet-5");
+    expect(
+      await handles.prisma.secret.findUnique({ where: { id: personalCred.secretId } }),
+    ).toBeNull();
+
+    await rpc(app, cookie, "workspaces/switch", { workspaceId: work.workspaceId });
+    const afterDelete = await rpc<Me>(app, cookie, "workspaces/remove", {
+      workspaceId: work.workspaceId,
+    });
+    expect(afterDelete.workspaceId).toBe(personal.workspaceId);
+    expect(
+      await handles.prisma.secret.findUnique({ where: { id: personalAfter.secretId } }),
+    ).not.toBeNull();
+  });
 });
 
 function botInput(name: string) {
@@ -859,6 +987,8 @@ interface Actor {
 }
 
 interface Me extends Actor {
+  workspaceName: string;
+  workspaces: Array<{ id: string; name: string }>;
   defaultProvider: string | null;
   defaultModel: string | null;
 }

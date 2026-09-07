@@ -79,6 +79,10 @@ body {
   background: var(--panel-raised);
 }
 
+body.native-chrome .titlebar {
+  display: none;
+}
+
 .shell {
   flex: 1;
   width: 100%;

@@ -112,6 +112,9 @@ describe("Team Computer parallel screens", () => {
       }),
     ).resolves.toEqual({ error: expect.stringMatching(/does not support multiple screens/) });
     expect(isComputerScreenUnavailable(new Error("cannot allocate another screen"))).toBe(true);
+    expect(
+      isComputerScreenUnavailable(new Error("This computer screen is owned by a newer execution.")),
+    ).toBe(true);
   });
 
   it("lets a second Team bot use graphics after the first run releases the claim", async () => {

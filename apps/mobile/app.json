@@ -1,12 +1,12 @@
 {
   "expo": {
-    "name": "Rakazo",
-    "slug": "rakazo",
-    "owner": "inbox-zero",
+    "name": "RocksteadyBot",
+    "slug": "rckbot",
+    "owner": "rocksteadytradingian",
     "scheme": "rakazo",
     "version": "1.0.0",
     "orientation": "portrait",
-    "userInterfaceStyle": "dark",
+    "userInterfaceStyle": "automatic",
     "icon": "./assets/icon.png",
     "plugins": [
       [
@@ -33,12 +33,20 @@
       [
         "expo-image-picker",
         {
-          "photosPermission": "Rakazo uses your photo library so you can attach images to a bot message.",
-          "cameraPermission": "Rakazo uses the camera so you can attach photos to a bot message.",
+          "photosPermission": "RocksteadyBot uses your photo library so you can attach images to a bot message.",
+          "cameraPermission": "RocksteadyBot uses the camera so you can attach photos to a bot message.",
           "microphonePermission": false
         }
       ],
       "expo-sharing",
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "usesCleartextTraffic": true
+          }
+        }
+      ],
       "./plugins/with-worklets-headers"
     ],
     "ios": {
@@ -50,9 +58,9 @@
         "usesNonExemptEncryption": false
       },
       "infoPlist": {
-        "NSCameraUsageDescription": "Rakazo uses the camera so you can attach photos to a bot message.",
-        "NSPhotoLibraryUsageDescription": "Rakazo uses your photo library so you can attach images to a bot message.",
-        "NSLocalNetworkUsageDescription": "Rakazo connects to a self-hosted Rakazo server on your local network.",
+        "NSCameraUsageDescription": "RocksteadyBot uses the camera so you can attach photos to a bot message.",
+        "NSPhotoLibraryUsageDescription": "RocksteadyBot uses your photo library so you can attach images to a bot message.",
+        "NSLocalNetworkUsageDescription": "RocksteadyBot connects to a self-hosted RocksteadyBot server on your local network.",
         "NSAppTransportSecurity": {
           "NSAllowsLocalNetworking": true
         }
@@ -74,7 +82,7 @@
       "router": {},
       "supportsRTL": true,
       "eas": {
-        "projectId": "07f7eb04-45e3-47fe-9374-99a2f991131e"
+        "projectId": "1fcacde9-eec1-4bf7-8988-f19457811b87"
       }
     }
   }

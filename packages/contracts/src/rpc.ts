@@ -13,6 +13,7 @@ import {
   BotSchema,
   BotSectionSchema,
   CapabilityInstallSchema,
+  ComposioProjectKeyStatusSchema,
   ComputerModeSchema,
   ComputerReleaseReasonSchema,
   ComputerStatusSchema,
@@ -36,6 +37,7 @@ import {
   ModelConnectInputSchema,
   ModelCredentialSchema,
   ModelOAuthBeginSchema,
+  ModelSetRouterInputSchema,
   RoutineSchema,
   ScratchpadItemSchema,
   ScratchpadItemStatusSchema,
@@ -54,11 +56,17 @@ import {
   VoiceInfoSchema,
   VoiceStatusSchema,
   WorkspaceMemoryConfigSchema,
+  WorkspaceSchema,
 } from "./domain.js";
 import { ProductEventSchema } from "./events.js";
 import { Id } from "./ids.js";
 import { RedactionPolicySchema } from "./redaction.js";
-import { RunsListOutputSchema } from "./runs.js";
+import {
+  PendingApprovalSchema,
+  RepairStackInput,
+  RunsListOutputSchema,
+  StackRepairResultSchema,
+} from "./runs.js";
 import { SearchQueryOutputSchema } from "./search.js";
 import { StoredSentinelSchema } from "./sentinels.js";
 
@@ -115,11 +123,20 @@ const threadSendInput = threadTarget
 
 export const appContract = {
   health: oc.output(z.object({ ok: z.literal(true), version: z.string() })),
-  me: oc.output(MeSchema),
+  me: oc.input(z.object({ restoreLastWorking: z.boolean().optional() }).nullish()).output(MeSchema),
   preferences: {
     update: oc.input(z.object({ avatarStyle: AvatarStyleSchema })).output(MeSchema),
   },
   bootstrap: oc.input(z.object({ botId: Id.optional() })).output(AppBootstrapSchema),
+  workspaces: {
+    list: oc.output(z.array(WorkspaceSchema)),
+    create: oc.input(z.object({ name: z.string().trim().min(1).max(80) })).output(MeSchema),
+    switch: oc.input(z.object({ workspaceId: Id })).output(MeSchema),
+    update: oc
+      .input(z.object({ workspaceId: Id, name: z.string().trim().min(1).max(80) }))
+      .output(WorkspaceSchema),
+    remove: oc.input(z.object({ workspaceId: Id })).output(MeSchema),
+  },
   deployment: {
     get: oc.output(DeploymentSettingsSchema),
     update: oc
@@ -172,6 +189,7 @@ export const appContract = {
     setDefault: oc
       .input(z.object({ provider: z.string(), modelId: z.string() }))
       .output(z.object({ ok: z.literal(true) })),
+    setRouter: oc.input(ModelSetRouterInputSchema).output(z.object({ ok: z.literal(true) })),
   },
   bots: {
     list: oc.output(z.array(BotSchema)),
@@ -250,6 +268,7 @@ export const appContract = {
     recover: oc.input(botId).output(ComputerStatusSchema),
     reset: oc.input(botId).output(ComputerStatusSchema),
     update: oc.input(botId).output(ComputerStatusSchema),
+    restart: oc.input(botId).output(ComputerStatusSchema),
     takeover: oc.input(botId).output(z.object({ leaseId: Id, expiresAt: z.string() })),
     release: oc
       .input(
@@ -505,6 +524,20 @@ export const appContract = {
       .input(z.object({ connectionId: Id, code: z.string().optional() }))
       .output(ConnectionSchema),
     revoke: oc.input(z.object({ connectionId: Id })).output(z.object({ ok: z.literal(true) })),
+    /**
+     * Revoke by connector + provider across every workspace the user owns.
+     * The catalog reports `connected` from the account-wide provider view, so a
+     * connection made in another workspace has no revocable row in the current
+     * one; this path closes that gap.
+     */
+    revokeByProvider: oc
+      .input(z.object({ connectorId: z.string(), provider: z.string() }))
+      .output(z.object({ ok: z.literal(true) })),
+    projectKey: oc.output(ComposioProjectKeyStatusSchema),
+    setProjectKey: oc
+      .input(z.object({ apiKey: z.string().min(8).max(512) }))
+      .output(ComposioProjectKeyStatusSchema),
+    clearProjectKey: oc.output(ComposioProjectKeyStatusSchema),
   },
   approvalRules: {
     list: oc.output(z.array(ActionApprovalRuleSchema)),
@@ -518,6 +551,10 @@ export const appContract = {
       )
       .output(ActionApprovalRuleSchema),
     remove: oc.input(z.object({ id: Id })).output(z.object({ ok: z.literal(true) })),
+  },
+  approvals: {
+    list: oc.output(z.array(PendingApprovalSchema)),
+    repairStack: oc.input(RepairStackInput.optional()).output(StackRepairResultSchema),
   },
   artifacts: {
     list: oc.input(botId).output(z.array(ArtifactSchema)),

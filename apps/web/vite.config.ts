@@ -1,3 +1,4 @@
+import fs from "node:fs";
 import http from "node:http";
 import https from "node:https";
 import net from "node:net";
@@ -8,7 +9,9 @@ import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
 import { defineConfig, loadEnv, type PreviewServer, type ViteDevServer } from "vite";
 import { resolveAuthSecret } from "../../packages/core/src/secrets-guard.ts";
+import { previewAllowedHosts, resolveApiProxyTarget } from "./src/lib/api-proxy-target.ts";
 import {
+  localComputerViewerPage,
   resolveNovncTarget,
   safeProxyHeaders,
   safeProxyResponseHeaders,
@@ -16,6 +19,24 @@ import {
 } from "./src/screen-proxy.js";
 
 const webPort = Number(process.env.WEB_PORT ?? 5173);
+const computerViewerRoot = path.resolve(import.meta.dirname, "../../infra/sandboxes/computer");
+
+function serveLocalComputerViewer(res: http.ServerResponse, upstreamPath: string) {
+  const page = localComputerViewerPage(upstreamPath);
+  if (!page) return false;
+  const file = path.join(computerViewerRoot, path.basename(page));
+  if (!fs.existsSync(file)) return false;
+  const body = fs.readFileSync(file);
+  res.writeHead(200, {
+    "content-type": page.endsWith(".js")
+      ? "text/javascript; charset=utf-8"
+      : "text/html; charset=utf-8",
+    "cache-control": "no-store",
+    "access-control-allow-origin": "*",
+  });
+  res.end(body);
+  return true;
+}
 
 function attachNovncProxy(server: ViteDevServer | PreviewServer, secret: string) {
   server.middlewares.use((req, res, next) => {
@@ -29,6 +50,7 @@ function attachNovncProxy(server: ViteDevServer | PreviewServer, secret: string)
       res.end("Invalid or expired screen capability");
       return;
     }
+    if (serveLocalComputerViewer(res, target.path)) return;
     const headers = {
       ...safeProxyHeaders(req.headers),
       host: `${target.hostname}:${target.port}`,
@@ -116,7 +138,9 @@ function attachNovncProxy(server: ViteDevServer | PreviewServer, secret: string)
 
 export default defineConfig(({ mode }) => {
   const rootEnv = loadEnv(mode, path.resolve(import.meta.dirname, "../.."), "");
-  const api = process.env.API_PROXY_TARGET ?? rootEnv.API_PROXY_TARGET ?? "http://127.0.0.1:3100";
+  const api = resolveApiProxyTarget({
+    API_PROXY_TARGET: process.env.API_PROXY_TARGET ?? rootEnv.API_PROXY_TARGET,
+  });
   const previewHost = process.env.RAKAZO_HOST ?? rootEnv.RAKAZO_HOST ?? "localhost";
   const screenProxySecret = resolveAuthSecret({
     ...process.env,
@@ -153,21 +177,33 @@ export default defineConfig(({ mode }) => {
       },
     ],
     server: {
-      host: "127.0.0.1",
+      host: process.env.VITE_DEV_HOST ?? "127.0.0.1",
       port: webPort,
       strictPort: true,
-      proxy: {
-        "/api": { target: api, changeOrigin: true },
-        "/rpc": { target: api, changeOrigin: true },
+      ...(process.env.VITE_DEV_HOST ? { allowedHosts: true as const } : {}),
+      headers: {
+        "Cache-Control": "no-store",
       },
+      watch: {
+        // pnpm links workspace packages through node_modules; Vite ignores that
+        // tree by default, so token/button edits never reach a browser refresh.
+        ignored: ["!**/node_modules/@rakazo/**"],
+      },
+      proxy: {
+        "/api": { target: api, changeOrigin: true, xfwd: true },
+        "/rpc": { target: api, changeOrigin: true, xfwd: true },
+      },
+    },
+    optimizeDeps: {
+      exclude: ["@rakazo/ui-tokens", "@rakazo/ui-web", "@rakazo/chat-ui"],
     },
     preview: {
       host: "0.0.0.0",
       port: Number(process.env.WEB_PORT ?? 5173),
-      allowedHosts: [previewHost],
+      allowedHosts: previewAllowedHosts(previewHost),
       proxy: {
-        "/api": { target: api, changeOrigin: true },
-        "/rpc": { target: api, changeOrigin: true },
+        "/api": { target: api, changeOrigin: true, xfwd: true },
+        "/rpc": { target: api, changeOrigin: true, xfwd: true },
       },
     },
   };

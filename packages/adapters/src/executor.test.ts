@@ -500,4 +500,185 @@ description: Prepare standup notes
       thinkingLevel: "high",
     });
   });
+
+  it("reuses a working sibling secret when this workspace's copy is dead", async () => {
+    const findFirst = vi.fn(async () => ({
+      id: "cred-stale",
+      provider: "anthropic",
+      secretId: "secret-stale",
+      defaultModel: "claude-sonnet-5",
+      isDefault: true,
+    }));
+    const findMany = vi.fn(async () => [
+      {
+        id: "cred-personal",
+        provider: "anthropic",
+        secretId: "secret-good",
+        defaultModel: "claude-opus-5",
+        isDefault: true,
+      },
+    ]);
+    const credentialUpdate = vi.fn(async () => ({ id: "cred-stale" }));
+    const credentialCount = vi.fn(async () => 0);
+    const secretDeleteMany = vi.fn(async () => ({ count: 1 }));
+    const prisma = {
+      bot: { findFirst: vi.fn(async () => null) },
+      userModelCredential: {
+        findFirst,
+        findMany,
+        update: credentialUpdate,
+        count: credentialCount,
+      },
+      deploymentSettings: { findUnique: vi.fn(async () => null) },
+      secret: {
+        findUnique: vi.fn(async (args: { where: { id: string } }) => ({
+          id: args.where.id,
+          ciphertext: args.where.id,
+        })),
+        deleteMany: secretDeleteMany,
+      },
+    } as unknown as PrismaClient;
+    const executor = createRunExecutor({
+      prisma,
+      secretStore: {
+        load: vi.fn((ciphertext: string) => {
+          if (ciphertext === "secret-stale") throw new Error("stale copy");
+          return "sk-live";
+        }),
+        put: vi.fn(),
+      },
+    } as unknown as Parameters<typeof createRunExecutor>[0]);
+
+    const model = await executor.resolveModel({ userId: "user-1", workspaceId: "ws-yt" });
+
+    expect(model.provider).toBe("anthropic");
+    expect(model.apiKey).toBe("sk-live");
+    expect(credentialUpdate).toHaveBeenCalledWith({
+      where: { id: "cred-stale" },
+      data: { secretId: "secret-good" },
+    });
+    expect(secretDeleteMany).toHaveBeenCalledWith({ where: { id: "secret-stale" } });
+  });
+
+  it("routes Auto to Fast, Smart, or Heavy from the prompt", async () => {
+    const findFirst = vi.fn(async () => ({
+      id: "cred-local",
+      provider: "openai-compatible",
+      secretId: "secret-local",
+      defaultModel: "auto",
+      isDefault: true,
+      routerFastModel: "qwen3:8b",
+      routerSmartModel: "qwen3:30b-a3b",
+      routerHeavyModel: "qwen3.8:27b",
+    }));
+    const prisma = {
+      bot: { findFirst: vi.fn(async () => null) },
+      userModelCredential: { findFirst },
+      deploymentSettings: { findUnique: vi.fn(async () => null) },
+      secret: { findUnique: vi.fn(async () => null) },
+    } as unknown as PrismaClient;
+    const executor = createRunExecutor({
+      prisma,
+      secretStore: { load: vi.fn(), put: vi.fn() },
+    } as unknown as Parameters<typeof createRunExecutor>[0]);
+
+    await expect(
+      executor.resolveModel({
+        userId: "user-1",
+        workspaceId: "ws-1",
+        prompt: "thanks",
+        hasImages: undefined,
+      }),
+    ).resolves.toMatchObject({ provider: "openai-compatible", id: "qwen3:8b" });
+    await expect(
+      executor.resolveModel({
+        userId: "user-1",
+        workspaceId: "ws-1",
+        prompt: "Implement the login form next.",
+      }),
+    ).resolves.toMatchObject({ id: "qwen3:30b-a3b" });
+    await expect(
+      executor.resolveModel({
+        userId: "user-1",
+        workspaceId: "ws-1",
+        prompt: "What is in this screenshot?",
+        hasImages: true,
+      }),
+    ).resolves.toMatchObject({ id: "qwen3.8:27b" });
+  });
+
+  it("keeps a sticky concrete model and forces Fast for compaction", async () => {
+    const prisma = {
+      bot: { findFirst: vi.fn(async () => null) },
+      userModelCredential: {
+        findFirst: vi.fn(async () => ({
+          id: "cred-local",
+          provider: "openai-compatible",
+          secretId: "secret-local",
+          defaultModel: "auto",
+          isDefault: true,
+          routerFastModel: "qwen3:8b",
+          routerSmartModel: "qwen3:30b-a3b",
+          routerHeavyModel: "qwen3.8:27b",
+        })),
+      },
+      deploymentSettings: { findUnique: vi.fn(async () => null) },
+      secret: { findUnique: vi.fn(async () => null) },
+    } as unknown as PrismaClient;
+    const executor = createRunExecutor({
+      prisma,
+      secretStore: { load: vi.fn(), put: vi.fn() },
+    } as unknown as Parameters<typeof createRunExecutor>[0]);
+
+    await expect(
+      executor.resolveModel({
+        userId: "user-1",
+        workspaceId: "ws-1",
+        prompt: "thanks",
+        stickyModelId: "qwen3.8:27b",
+      }),
+    ).resolves.toMatchObject({ id: "qwen3.8:27b" });
+    await expect(
+      executor.resolveModel({
+        userId: "user-1",
+        workspaceId: "ws-1",
+        purpose: "compaction",
+        prompt: "Design the architecture for a billing service.",
+        hasImages: true,
+      }),
+    ).resolves.toMatchObject({ id: "qwen3:8b" });
+  });
+
+  it("falls back down when a heavier Auto slot is empty", async () => {
+    const prisma = {
+      bot: { findFirst: vi.fn(async () => null) },
+      userModelCredential: {
+        findFirst: vi.fn(async () => ({
+          id: "cred-local",
+          provider: "openai-compatible",
+          secretId: "secret-local",
+          defaultModel: "auto",
+          isDefault: true,
+          routerFastModel: "qwen3:8b",
+          routerSmartModel: null,
+          routerHeavyModel: null,
+        })),
+      },
+      deploymentSettings: { findUnique: vi.fn(async () => null) },
+      secret: { findUnique: vi.fn(async () => null) },
+    } as unknown as PrismaClient;
+    const executor = createRunExecutor({
+      prisma,
+      secretStore: { load: vi.fn(), put: vi.fn() },
+    } as unknown as Parameters<typeof createRunExecutor>[0]);
+
+    await expect(
+      executor.resolveModel({
+        userId: "user-1",
+        workspaceId: "ws-1",
+        prompt: "What is in this screenshot?",
+        hasImages: true,
+      }),
+    ).resolves.toMatchObject({ id: "qwen3:8b" });
+  });
 });

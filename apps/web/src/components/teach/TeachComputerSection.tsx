@@ -70,11 +70,11 @@ export function TeachComputerSection({
 
   return (
     <div className="mt-[30px]">
-      <div className="mb-3 text-[14px] text-[#85858A]">
+      <div className="mb-3 text-[14px] text-[var(--rk-muted)]">
         <Trans>Teach a task</Trans>
       </div>
       {!teachAvailable ? (
-        <div className="rounded-[11px] border border-[#232326] px-3 py-3 text-[13.5px] leading-[1.5] text-[#6C6C70]">
+        <div className="rounded-[11px] border border-[var(--rk-hairline-strong)] px-3 py-3 text-[13.5px] leading-[1.5] text-[var(--rk-muted-2)]">
           {computer?.kind === "desktop" ? (
             <Trans>
               Teaching needs a graphical sandbox computer. Desktop-host bots can run shell tasks,
@@ -92,8 +92,8 @@ export function TeachComputerSection({
           variant="panel"
         />
       ) : goalOpen ? (
-        <div className="rounded-[11px] border border-[#232326] bg-[#121214] px-3 py-3">
-          <label htmlFor="teach-goal-input" className="text-[13px] text-[#85858A]">
+        <div className="rounded-[11px] border border-[var(--rk-hairline-strong)] bg-[var(--rk-surface)] px-3 py-3">
+          <label htmlFor="teach-goal-input" className="text-[13px] text-[var(--rk-muted)]">
             <Trans>What result will you demonstrate?</Trans>
           </label>
           <textarea
@@ -102,7 +102,7 @@ export function TeachComputerSection({
             value={goal}
             onChange={(event) => setGoal(event.target.value)}
             rows={3}
-            className="mt-2 w-full rounded-[10px] border border-[#26262A] bg-[#0E0E10] px-3 py-2 text-[14px] text-[#ECECEE] outline-none"
+            className="mt-2 w-full rounded-[10px] border border-[var(--rk-hairline-strong)] bg-[var(--rk-input)] px-3 py-2 text-[14px] text-[var(--rk-ink)] outline-none"
             placeholder={t`Export this week's list from the CRM and drop it in the shared folder`}
           />
           <div className="mt-3 flex gap-2">
@@ -110,14 +110,14 @@ export function TeachComputerSection({
               type="button"
               disabled={busy || !goal.trim()}
               onClick={() => void startTeaching()}
-              className="rounded-[11px] bg-[#F1F1EF] px-4 py-2 text-[14px] text-[#17171A] disabled:opacity-40"
+              className="rounded-[11px] bg-[var(--rk-solid)] px-4 py-2 text-[14px] text-[var(--rk-solid-ink)] disabled:opacity-40"
             >
               {busy ? <Trans>Starting…</Trans> : <Trans>Start recording</Trans>}
             </button>
             <button
               type="button"
               onClick={() => setGoalOpen(false)}
-              className="rounded-[11px] border border-[#26262A] px-4 py-2 text-[14px] text-[#ECECEE]"
+              className="rounded-[11px] border border-[var(--rk-hairline-strong)] px-4 py-2 text-[14px] text-[var(--rk-ink)]"
             >
               <Trans>Cancel</Trans>
             </button>
@@ -128,7 +128,7 @@ export function TeachComputerSection({
           type="button"
           data-testid="teach-start-button"
           onClick={() => setGoalOpen(true)}
-          className="flex items-center gap-2.5 px-2.5 py-2.5 text-[14.5px] text-[#7A7A80]"
+          className="flex items-center gap-2.5 px-2.5 py-2.5 text-[14.5px] text-[var(--rk-muted)]"
         >
           <Trans>+ Teach a task</Trans>
         </button>
@@ -136,12 +136,15 @@ export function TeachComputerSection({
 
       {saved.length > 0 ? (
         <>
-          <div className="mt-[22px] mb-3 text-[14px] text-[#85858A]">
+          <div className="mt-[22px] mb-3 text-[14px] text-[var(--rk-muted)]">
             <Trans>Saved skills</Trans>
           </div>
           {saved.map((skill) => (
-            <div key={skill.id} className="mb-2 rounded-[11px] border border-[#232326] px-3 py-3">
-              <div className="text-[14px] text-[#ECECEE]">{skill.name || skill.goal}</div>
+            <div
+              key={skill.id}
+              className="mb-2 rounded-[11px] border border-[var(--rk-hairline-strong)] px-3 py-3"
+            >
+              <div className="text-[14px] text-[var(--rk-ink)]">{skill.name || skill.goal}</div>
               <div className="mt-2 flex flex-wrap gap-2">
                 <button
                   type="button"
@@ -155,14 +158,14 @@ export function TeachComputerSection({
                       setLocalBusy(false);
                     }
                   }}
-                  className="rounded-[11px] border border-[#26262A] px-3 py-1.5 text-[13px] text-[#ECECEE]"
+                  className="rounded-[11px] border border-[var(--rk-hairline-strong)] px-3 py-1.5 text-[13px] text-[var(--rk-ink)]"
                 >
                   <Trans>Test</Trans>
                 </button>
                 <button
                   type="button"
                   onClick={() => onAddRoutine(skill)}
-                  className="rounded-[11px] border border-[#26262A] px-3 py-1.5 text-[13px] text-[#ECECEE]"
+                  className="rounded-[11px] border border-[var(--rk-hairline-strong)] px-3 py-1.5 text-[13px] text-[var(--rk-ink)]"
                 >
                   <Trans>Add to routine</Trans>
                 </button>
@@ -178,7 +181,7 @@ export function TeachComputerSection({
                       setLocalBusy(false);
                     }
                   }}
-                  className="rounded-[11px] bg-[#F1F1EF] px-3 py-1.5 text-[13px] text-[#17171A] disabled:opacity-40"
+                  className="rounded-[11px] bg-[var(--rk-solid)] px-3 py-1.5 text-[13px] text-[var(--rk-solid-ink)] disabled:opacity-40"
                 >
                   <Trans>Save</Trans>
                 </button>

@@ -62,14 +62,14 @@ export function SentinelsOverlay({ botId, onClose }: { botId: string; onClose: (
   }
 
   return (
-    <div className="absolute inset-0 z-30 flex items-center justify-center bg-[rgba(4,4,5,.62)] p-4 sm:p-10">
-      <div className="flex max-h-[min(760px,100%)] w-[600px] max-w-full flex-col overflow-hidden rounded-[26px] border border-[#232326] bg-[#141416] shadow-[0_40px_90px_rgba(0,0,0,.55)]">
+    <div className="absolute inset-0 z-30 flex items-center justify-center bg-[var(--rk-overlay)] p-4 sm:p-10">
+      <div className="flex max-h-[min(760px,100%)] w-[600px] max-w-full flex-col overflow-hidden rounded-[26px] border border-[var(--rk-hairline-strong)] bg-[var(--rk-panel)] shadow-[var(--rk-shadow)]">
         <div className="flex items-start justify-between px-6 pt-6 sm:px-8 sm:pt-7">
           <div>
-            <div className="text-2xl font-medium text-[#F1F1F2]">
+            <div className="text-2xl font-medium text-[var(--rk-ink)]">
               <Trans>Sentinels</Trans>
             </div>
-            <div className="mt-1 text-[13.5px] text-[#85858A]">
+            <div className="mt-1 text-[13.5px] text-[var(--rk-muted)]">
               <Trans>
                 URL watchers this bot set up. They act only when a check's state changes. Ask the
                 bot to create one.
@@ -80,20 +80,20 @@ export function SentinelsOverlay({ botId, onClose }: { botId: string; onClose: (
             type="button"
             onClick={onClose}
             aria-label={t`Close`}
-            className="rounded-[10px] px-2 py-1 text-[#85858A] hover:bg-[#1E1E21] hover:text-[#ECECEE]"
+            className="rounded-[10px] px-2 py-1 text-[var(--rk-muted)] hover:bg-[var(--rk-hover)] hover:text-[var(--rk-ink)]"
           >
             ✕
           </button>
         </div>
 
         <div className="flex-1 overflow-y-auto px-6 py-5 sm:px-8">
-          {error ? <div className="mb-4 text-[13px] text-[#FF5364]">{error}</div> : null}
+          {error ? <div className="mb-4 text-[13px] text-[var(--rk-danger)]">{error}</div> : null}
           {sentinels === null ? (
-            <div className="text-[13.5px] text-[#6C6C70]">
+            <div className="text-[13.5px] text-[var(--rk-muted-2)]">
               <Trans>Loading…</Trans>
             </div>
           ) : sentinels.length === 0 ? (
-            <div className="text-[13.5px] text-[#6C6C70]">
+            <div className="text-[13.5px] text-[var(--rk-muted-2)]">
               <Trans>No sentinels yet.</Trans>
             </div>
           ) : (
@@ -101,24 +101,24 @@ export function SentinelsOverlay({ botId, onClose }: { botId: string; onClose: (
               {sentinels.map((sentinel) => (
                 <div
                   key={sentinel.id}
-                  className="rounded-[14px] border border-[#26262A] bg-[#0F0F11] p-4"
+                  className="rounded-[14px] border border-[var(--rk-hairline-strong)] bg-[var(--rk-input)] p-4"
                 >
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
-                      <div className="truncate text-[14.5px] font-medium text-[#ECECEE]">
+                      <div className="truncate text-[14.5px] font-medium text-[var(--rk-ink)]">
                         {sentinel.name}
                         {!sentinel.active ? (
-                          <span className="ml-2 text-[11.5px] text-[#85858A]">
+                          <span className="ml-2 text-[11.5px] text-[var(--rk-muted)]">
                             <Trans>paused</Trans>
                           </span>
                         ) : null}
                       </div>
-                      <div className="mt-1 truncate font-mono text-[11.5px] text-[#85858A]">
+                      <div className="mt-1 truncate font-mono text-[11.5px] text-[var(--rk-muted)]">
                         {sentinel.check.kind === "http-ok"
                           ? `GET ${sentinel.check.url}`
                           : `screen: "${sentinel.check.text}"`}
                       </div>
-                      <div className="mt-1 text-[12px] text-[#B7B7BC]">
+                      <div className="mt-1 text-[12px] text-[var(--rk-body)]">
                         {TRIGGER_LABEL[sentinel.trigger]}
                         {sentinel.trigger === "stays-true-for" && sentinel.windowMs
                           ? ` ${formatWindow(sentinel.windowMs)}`
@@ -131,7 +131,7 @@ export function SentinelsOverlay({ botId, onClose }: { botId: string; onClose: (
                         )}
                       </div>
                       {sentinel.lastCheckedAt ? (
-                        <div className="mt-1 text-[11px] text-[#6C6C70]">
+                        <div className="mt-1 text-[11px] text-[var(--rk-muted-2)]">
                           <Trans>
                             last checked {new Date(sentinel.lastCheckedAt).toLocaleString()}
                           </Trans>

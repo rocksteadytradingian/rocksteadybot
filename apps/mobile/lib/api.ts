@@ -100,6 +100,25 @@ export async function signIn(email: string, password: string) {
   await saveSessionToken(token);
 }
 
+export async function requestPasswordReset(email: string) {
+  const res = await fetch(`${currentApiBase()}/api/auth/request-password-reset`, {
+    method: "POST",
+    headers: { "content-type": "application/json", origin: "rakazo://" },
+    body: JSON.stringify({
+      email,
+      redirectTo: `${currentApiBase()}/reset-password`,
+    }),
+  });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    const message = responseErrorMessage(body, "Could not request a reset");
+    if (/isn't enabled|not configured|RESET_PASSWORD_DISABLED/i.test(message)) {
+      throw new Error("Password reset is not configured");
+    }
+    throw new Error(message);
+  }
+}
+
 export async function signOut() {
   const headers = await authHeaders();
   await fetch(`${currentApiBase()}/api/auth/sign-out`, {
@@ -166,10 +185,13 @@ export type MobileMe = Pick<
   | "name"
   | "email"
   | "workspaceId"
+  | "workspaceName"
+  | "workspaces"
   | "defaultProvider"
   | "defaultModel"
   | "needsModel"
   | "avatarStyle"
+  | "isDeploymentOwner"
 >;
 
 export type MobileModel = ModelCatalogEntry;
@@ -184,12 +206,13 @@ export type MobileMessage = {
   role: "user" | "bot" | "system";
   botId?: string;
   replyToMessageId?: string;
+  createdAt?: string;
   blocks: MessageBlock[];
 };
 
 export type MobileGroup = Pick<
   Group,
-  "id" | "name" | "preview" | "unread" | "updatedAt" | "members"
+  "id" | "name" | "preview" | "unread" | "updatedAt" | "members" | "defaultBotId"
 >;
 
 export type MobileSnapshot = {
@@ -275,6 +298,7 @@ type ThreadEvent = {
   type: string;
   seq?: number;
   runId?: string;
+  createdAt?: string;
   payload?: Record<string, unknown>;
 };
 
@@ -397,6 +421,9 @@ export function applyMobileThreadEvent(
       }),
       ...(event.botId ? { botId: event.botId } : {}),
       ...(event.runId ? { runId: event.runId } : {}),
+      ...(previous?.createdAt || event.createdAt
+        ? { createdAt: previous?.createdAt ?? event.createdAt }
+        : {}),
     };
     return {
       ...prev,
@@ -416,6 +443,9 @@ export function applyMobileThreadEvent(
       }),
       ...(event.botId ? { botId: event.botId } : {}),
       ...(event.runId ? { runId: event.runId } : {}),
+      ...(previous?.createdAt || event.createdAt
+        ? { createdAt: previous?.createdAt ?? event.createdAt }
+        : {}),
     };
     return {
       ...prev,
@@ -431,6 +461,7 @@ export function applyMobileThreadEvent(
       role: "bot",
       ...(event.botId ? { botId: event.botId } : {}),
       ...(event.runId ? { runId: event.runId } : {}),
+      ...(event.createdAt ? { createdAt: event.createdAt } : {}),
       blocks: [
         {
           kind: "subagent",
@@ -460,6 +491,9 @@ export function applyMobileThreadEvent(
       replyToMessageId: event.payload?.replyToMessageId
         ? String(event.payload.replyToMessageId)
         : undefined,
+      createdAt: event.payload?.createdAt
+        ? String(event.payload.createdAt)
+        : (event.createdAt ?? undefined),
     };
     return {
       ...prev,

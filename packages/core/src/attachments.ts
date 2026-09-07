@@ -1,10 +1,10 @@
 import {
   ATTACHMENT_MAX_BASE64_LENGTH,
   ATTACHMENT_MAX_BYTES,
-  type AttachmentMimeType,
   isAllowedAttachmentMimeType,
   isAttachmentImageMimeType,
   type MessageBlock,
+  normalizeAttachmentMimeType,
 } from "@rakazo/contracts";
 
 export class AttachmentValidationError extends Error {
@@ -106,48 +106,95 @@ export function blocksToAgentHistoryText(blocks: MessageBlock[]): string {
     .join("\n");
 }
 
-const EXTENSION_MIME_TYPES: Record<string, AttachmentMimeType> = {
+const EXTENSION_MIME_TYPES: Record<string, string> = {
   ".jpg": "image/jpeg",
   ".jpeg": "image/jpeg",
   ".png": "image/png",
   ".webp": "image/webp",
   ".gif": "image/gif",
+  ".bmp": "image/bmp",
+  ".svg": "image/svg+xml",
   ".pdf": "application/pdf",
   ".txt": "text/plain",
   ".md": "text/markdown",
   ".markdown": "text/markdown",
   ".csv": "text/csv",
   ".json": "application/json",
+  ".zip": "application/zip",
+  ".xml": "application/xml",
+  ".html": "text/html",
+  ".htm": "text/html",
+  ".yaml": "text/yaml",
+  ".yml": "text/yaml",
+  ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  ".xls": "application/vnd.ms-excel",
+  ".pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+  ".mp3": "audio/mpeg",
+  ".wav": "audio/wav",
+  ".mp4": "video/mp4",
+  ".webm": "video/webm",
+  ".bin": "application/octet-stream",
 };
 
-const MIME_TYPE_EXTENSIONS: Record<AttachmentMimeType, string> = {
+const MIME_TYPE_EXTENSIONS: Record<string, string> = {
   "image/jpeg": ".jpg",
   "image/png": ".png",
   "image/webp": ".webp",
   "image/gif": ".gif",
+  "image/bmp": ".bmp",
+  "image/svg+xml": ".svg",
   "application/pdf": ".pdf",
   "text/plain": ".txt",
   "text/markdown": ".md",
   "text/csv": ".csv",
   "application/json": ".json",
+  "application/zip": ".zip",
+  "application/xml": ".xml",
+  "text/html": ".html",
+  "text/yaml": ".yaml",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document": ".docx",
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": ".xlsx",
+  "application/vnd.ms-excel": ".xls",
+  "application/vnd.openxmlformats-officedocument.presentationml.presentation": ".pptx",
+  "audio/mpeg": ".mp3",
+  "audio/wav": ".wav",
+  "video/mp4": ".mp4",
+  "video/webm": ".webm",
+  "application/octet-stream": ".bin",
 };
 
-export function inferAttachmentMimeType(
-  name: string,
-  reportedType?: string,
-): AttachmentMimeType | null {
+const SAFE_EXTENSION = /^\.[a-z0-9][a-z0-9._-]{0,15}$/;
+
+export function inferAttachmentMimeType(name: string, reportedType?: string): string | null {
+  const normalizedReported = reportedType ? normalizeAttachmentMimeType(reportedType) : "";
+  const hasName = name.trim().length > 0;
   const dot = name.lastIndexOf(".");
-  const extensionType = dot < 0 ? undefined : EXTENSION_MIME_TYPES[name.slice(dot).toLowerCase()];
+  const extension = dot >= 0 ? name.slice(dot).toLowerCase() : "";
+  const extensionType = extension ? EXTENSION_MIME_TYPES[extension] : undefined;
   // Some browsers and native document pickers report Markdown as text/plain.
-  if (extensionType === "text/markdown" && (!reportedType || reportedType === "text/plain")) {
+  if (
+    extensionType === "text/markdown" &&
+    (!normalizedReported || normalizedReported === "text/plain")
+  ) {
     return extensionType;
   }
-  if (reportedType && isAllowedAttachmentMimeType(reportedType)) return reportedType;
-  return extensionType ?? null;
+  if (normalizedReported && isAllowedAttachmentMimeType(normalizedReported)) {
+    return normalizedReported;
+  }
+  if (extensionType) return extensionType;
+  if (hasName) return "application/octet-stream";
+  return null;
 }
 
-export function attachmentExtensionForMimeType(mimeType: string): string {
-  return isAllowedAttachmentMimeType(mimeType) ? MIME_TYPE_EXTENSIONS[mimeType] : "";
+export function attachmentExtensionForMimeType(mimeType: string, name = ""): string {
+  const dot = name.lastIndexOf(".");
+  if (dot >= 0) {
+    const ext = name.slice(dot).toLowerCase();
+    if (SAFE_EXTENSION.test(ext)) return ext;
+  }
+  const normalized = normalizeAttachmentMimeType(mimeType);
+  return MIME_TYPE_EXTENSIONS[normalized] ?? "";
 }
 
 export function attachmentsForThread<T extends { threadKey: string }>(

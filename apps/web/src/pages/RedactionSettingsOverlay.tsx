@@ -86,14 +86,14 @@ export function RedactionSettingsOverlay({ onClose }: { onClose: () => void }) {
   }
 
   return (
-    <div className="absolute inset-0 z-30 flex items-center justify-center bg-[rgba(4,4,5,.62)] p-4 sm:p-10">
-      <div className="flex max-h-[min(760px,100%)] w-[560px] max-w-full flex-col overflow-hidden rounded-[26px] border border-[#232326] bg-[#141416] shadow-[0_40px_90px_rgba(0,0,0,.55)]">
+    <div className="absolute inset-0 z-30 flex items-center justify-center bg-[var(--rk-overlay)] p-4 sm:p-10">
+      <div className="flex max-h-[min(760px,100%)] w-[560px] max-w-full flex-col overflow-hidden rounded-[26px] border border-[var(--rk-hairline-strong)] bg-[var(--rk-panel)] shadow-[var(--rk-shadow)]">
         <div className="flex items-start justify-between px-6 pt-6 sm:px-8 sm:pt-7">
           <div>
-            <div className="text-2xl font-medium text-[#F1F1F2]">
+            <div className="text-2xl font-medium text-[var(--rk-ink)]">
               <Trans>Screen privacy</Trans>
             </div>
-            <div className="mt-1 text-[13.5px] text-[#85858A]">
+            <div className="mt-1 text-[13.5px] text-[var(--rk-muted)]">
               <Trans>Black out personal data in screenshots before a bot's model sees them.</Trans>
             </div>
           </div>
@@ -101,7 +101,7 @@ export function RedactionSettingsOverlay({ onClose }: { onClose: () => void }) {
             type="button"
             onClick={onClose}
             aria-label={t`Close`}
-            className="rounded-[10px] px-2 py-1 text-[#85858A] hover:bg-[#1E1E21] hover:text-[#ECECEE]"
+            className="rounded-[10px] px-2 py-1 text-[var(--rk-muted)] hover:bg-[var(--rk-hover)] hover:text-[var(--rk-ink)]"
           >
             ✕
           </button>
@@ -109,20 +109,20 @@ export function RedactionSettingsOverlay({ onClose }: { onClose: () => void }) {
 
         <div className="flex-1 overflow-y-auto px-6 py-5 sm:px-8">
           {!policy ? (
-            <div className="text-[13.5px] text-[#6C6C70]">
+            <div className="text-[13.5px] text-[var(--rk-muted-2)]">
               <Trans>Loading…</Trans>
             </div>
           ) : (
             <div className="flex flex-col gap-5">
               <label className="flex items-center justify-between gap-3">
-                <span className="text-[14px] text-[#ECECEE]">
+                <span className="text-[14px] text-[var(--rk-ink)]">
                   <Trans>Scrub screenshots for this workspace</Trans>
                 </span>
                 <input
                   type="checkbox"
                   checked={on}
                   onChange={(e) => toggleEnabled(e.target.checked)}
-                  className="h-4 w-4 accent-[#4C8DFF]"
+                  className="h-4 w-4 accent-[var(--rk-accent)]"
                 />
               </label>
 
@@ -137,8 +137,8 @@ export function RedactionSettingsOverlay({ onClose }: { onClose: () => void }) {
                         onClick={() => patch({ mode })}
                         className={`flex-1 rounded-[11px] border px-3.5 py-2.5 text-[14px] ${
                           policy.mode === mode
-                            ? "border-[#4A4A50] bg-[#1A1A1D] text-[#ECECEE]"
-                            : "border-[#26262A] text-[#85858A]"
+                            ? "border-[#4A4A50] bg-[var(--rk-surface-2)] text-[var(--rk-ink)]"
+                            : "border-[var(--rk-hairline-strong)] text-[var(--rk-muted)]"
                         }`}
                       >
                         {mode === "box-fill" ? <Trans>Black box</Trans> : <Trans>Blur</Trans>}
@@ -147,20 +147,20 @@ export function RedactionSettingsOverlay({ onClose }: { onClose: () => void }) {
                   </div>
 
                   <div>
-                    <div className="mb-2 text-[13px] text-[#85858A]">
+                    <div className="mb-2 text-[13px] text-[var(--rk-muted)]">
                       <Trans>What to redact</Trans>
                     </div>
                     <div className="grid grid-cols-2 gap-2">
                       {RedactionEntitySchema.options.map((entity) => (
                         <label
                           key={entity}
-                          className="flex items-center gap-2 text-[13px] text-[#DFDFE2]"
+                          className="flex items-center gap-2 text-[13px] text-[var(--rk-body)]"
                         >
                           <input
                             type="checkbox"
                             checked={policy.entities.includes(entity)}
                             onChange={() => toggleEntity(entity)}
-                            className="h-3.5 w-3.5 accent-[#4C8DFF]"
+                            className="h-3.5 w-3.5 accent-[var(--rk-accent)]"
                           />
                           {ENTITY_LABELS[entity]}
                         </label>
@@ -168,9 +168,9 @@ export function RedactionSettingsOverlay({ onClose }: { onClose: () => void }) {
                     </div>
                   </div>
 
-                  <label className="text-[13px] text-[#85858A]">
+                  <label className="text-[13px] text-[var(--rk-muted)]">
                     <Trans>Minimum confidence</Trans>{" "}
-                    <span className="text-[#DFDFE2]">{policy.minConfidence.toFixed(2)}</span>
+                    <span className="text-[var(--rk-body)]">{policy.minConfidence.toFixed(2)}</span>
                     <input
                       type="range"
                       min={0.3}
@@ -178,11 +178,11 @@ export function RedactionSettingsOverlay({ onClose }: { onClose: () => void }) {
                       step={0.05}
                       value={policy.minConfidence}
                       onChange={(e) => patch({ minConfidence: Number(e.target.value) })}
-                      className="mt-2 w-full accent-[#4C8DFF]"
+                      className="mt-2 w-full accent-[var(--rk-accent)]"
                     />
                   </label>
 
-                  <label className="text-[13px] text-[#85858A]">
+                  <label className="text-[13px] text-[var(--rk-muted)]">
                     <Trans>Never redact these (one per line)</Trans>
                     <textarea
                       value={(policy.allowlist ?? []).join("\n")}
@@ -195,20 +195,20 @@ export function RedactionSettingsOverlay({ onClose }: { onClose: () => void }) {
                         })
                       }
                       rows={3}
-                      className="mt-2 w-full rounded-[11px] border border-[#26262A] bg-[#0F0F11] px-3 py-2 text-[13px] text-[#ECECEE]"
+                      className="mt-2 w-full rounded-[11px] border border-[var(--rk-hairline-strong)] bg-[var(--rk-input)] px-3 py-2 text-[13px] text-[var(--rk-ink)]"
                     />
                   </label>
                 </>
               ) : null}
 
-              {error ? <div className="text-[13px] text-[#FF5364]">{error}</div> : null}
+              {error ? <div className="text-[13px] text-[var(--rk-danger)]">{error}</div> : null}
             </div>
           )}
         </div>
 
-        <div className="flex items-center justify-end gap-3 border-t border-[#1E1E21] px-6 py-4 sm:px-8">
+        <div className="flex items-center justify-end gap-3 border-t border-[var(--rk-hairline)] px-6 py-4 sm:px-8">
           {saved ? (
-            <span className="text-[13px] text-[#4ECB71]">
+            <span className="text-[13px] text-[var(--rk-success)]">
               <Trans>Saved</Trans>
             </span>
           ) : null}

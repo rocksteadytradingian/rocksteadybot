@@ -9,6 +9,7 @@ services:
       - "127.0.0.1:5433:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
+    restart: unless-stopped
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U rakazo"]
       interval: 3s
@@ -105,7 +106,7 @@ services:
       BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:-}
       RAKAZO_HOST: ${RAKAZO_HOST:-localhost}
     ports:
-      - "5173:5173"
+      - "127.0.0.1:5173:5173"
     depends_on:
       - api
 

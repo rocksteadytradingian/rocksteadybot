@@ -11,27 +11,55 @@ body,
 #root {
   height: 100%;
   margin: 0;
-  background: #050506;
-  color: #dfdfe2;
+  background: var(--rk-page);
+  color: var(--rk-body);
   font-family: "Geist Variable", ui-sans-serif, system-ui, sans-serif;
+}
+
+::placeholder {
+  color: var(--rk-muted);
+  opacity: 1;
+}
+
+.rk-banner-danger,
+.rk-banner-warning {
+  border: 1px solid color-mix(in srgb, currentColor 40%, var(--rk-hairline));
+  background: color-mix(in srgb, currentColor 12%, var(--rk-surface));
+}
+
+.rk-banner-danger {
+  color: var(--rk-danger);
+}
+
+.rk-banner-warning {
+  color: var(--rk-warning);
+}
+
+option {
+  background-color: var(--rk-input);
+  color: var(--rk-ink);
 }
 
 .rk-scroll::-webkit-scrollbar {
   width: 6px;
 }
 .rk-scroll {
-  scrollbar-color: #2a2a2e transparent;
+  scrollbar-color: var(--rk-scrollbar) transparent;
   scrollbar-width: thin;
 }
 .rk-scroll::-webkit-scrollbar-track {
   background: transparent;
 }
 .rk-scroll::-webkit-scrollbar-thumb {
-  background: #2a2a2e;
+  background: var(--rk-scrollbar);
   border-radius: 3px;
 }
 .rk-scroll::-webkit-scrollbar-thumb:hover {
-  background: #414147;
+  background: var(--rk-hairline-strong);
+}
+
+.rk-transcript-scroll {
+  overflow-anchor: none;
 }
 
 .app-drag {
@@ -42,9 +70,20 @@ body,
   -webkit-app-region: no-drag;
 }
 
+.rk-desktop-titlebar {
+  height: env(titlebar-area-height, var(--rk-titlebar-height, 0px));
+  flex: none;
+  -webkit-app-region: drag;
+}
+
+.rk-desktop-caption-gap {
+  width: max(0px, calc(100vw - env(titlebar-area-x, 0px) - env(titlebar-area-width, 100vw)));
+  flex: none;
+}
+
 .rk-schedule-select {
   appearance: none;
-  background-color: #24242a;
+  background-color: var(--rk-surface-2);
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' fill='none' stroke='%239A9AA0' stroke-width='2'%3E%3Cpath d='M2 4l4 4 4-4'/%3E%3C/svg%3E");
   background-repeat: no-repeat;
   background-position: right 8px center;
@@ -52,7 +91,7 @@ body,
   border-radius: 8px;
   padding-block: 7px;
   padding-inline: 11px 26px;
-  color: #ececee;
+  color: var(--rk-ink);
   font: inherit;
   font-size: 14px;
   cursor: pointer;
@@ -61,6 +100,26 @@ body,
 
 [dir="rtl"] .rk-schedule-select {
   background-position: left 8px center;
+}
+
+.rakazo-group-avatar {
+  isolation: isolate;
+}
+
+.rk-chat-markdown code,
+.rk-chat-markdown pre {
+  background: var(--rk-input) !important;
+  color: var(--rk-ink) !important;
+  border-color: var(--rk-hairline-strong) !important;
+}
+
+.rk-computer-overlay:fullscreen,
+.rk-computer-overlay:-webkit-full-screen {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  max-width: none;
 }
 
 @keyframes rkPulse {

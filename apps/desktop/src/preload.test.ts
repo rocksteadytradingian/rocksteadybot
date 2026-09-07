@@ -24,7 +24,7 @@ function runPreload(file: string, ipc: { invoke?: unknown; on?: unknown; off?: u
 }
 
 describe("desktop preload bridge", () => {
-  it("exposes only the platform, the four window operations, the updater, and the OAuth bridge", async () => {
+  it("exposes only the platform, window operations, the updater, and the OAuth bridge", async () => {
     const { invoke, exposeInMainWorld } = runPreload("preload.cjs");
 
     expect(exposeInMainWorld).toHaveBeenCalledTimes(1);
@@ -35,6 +35,7 @@ describe("desktop preload bridge", () => {
     expect(Object.keys(bridge.window).sort()).toEqual([
       "close",
       "minimize",
+      "setTitleBarOverlay",
       "state",
       "toggleMaximize",
     ]);
@@ -44,6 +45,7 @@ describe("desktop preload bridge", () => {
     await bridge.window.minimize();
     await bridge.window.toggleMaximize();
     await bridge.window.state();
+    await bridge.window.setTitleBarOverlay({ color: "#F4EFE6", symbolColor: "#2C2118" });
     await bridge.update.state();
     await bridge.update.check();
     await bridge.update.download();
@@ -53,6 +55,7 @@ describe("desktop preload bridge", () => {
       "desktop.window.minimize",
       "desktop.window.toggleMaximize",
       "desktop.window.state",
+      "desktop.window.setTitleBarOverlay",
       "desktop.update.state",
       "desktop.update.check",
       "desktop.update.download",
@@ -94,7 +97,8 @@ describe("setup preload bridge", () => {
     expect(exposeInMainWorld).toHaveBeenCalledTimes(1);
     const [globalName, bridge] = exposeInMainWorld.mock.calls[0] as [string, RakazoSetup];
     expect(globalName).toBe("rakazoSetup");
-    expect(Object.keys(bridge).sort()).toEqual(["quit", "save", "state", "test"]);
+    expect(Object.keys(bridge).sort()).toEqual(["platform", "quit", "save", "state", "test"]);
+    expect(bridge.platform).toBe("linux");
 
     await bridge.state();
     await bridge.test("http://127.0.0.1:5173");

@@ -2,17 +2,21 @@ import type { AdapterContext, ConnectorEvent, ConnectorTool } from "@rakazo/adap
 import { describe, expect, it } from "vitest";
 import {
   asConnectorTools,
+  ComposioConnector,
   CompositeConnector,
   collectLogIds,
   collectPages,
+  createConnectorStack,
   executeSessionKey,
   filterCatalog,
   isComposioEnabled,
   isNoAuthToolkitError,
   mergeConnectedPlugins,
   needsLivePluginSync,
+  normalizeComposioProjectKey,
   planLiveConnectionSync,
   sanitizeComposioError,
+  verifyComposioProjectKey,
 } from "./composio-connector.js";
 import { DestinationEmulator } from "./destination-emulator.js";
 
@@ -77,6 +81,16 @@ describe("composio tool mapping", () => {
     expect(sanitizeComposioError("denied ak_secretvaluehere")).not.toContain("ak_secret");
     expect(sanitizeComposioError("COMPOSIO_API_KEY=ak_shouldnotleak")).not.toContain(
       "ak_shouldnotleak",
+    );
+  });
+
+  it("explains a read-only project key instead of dumping the 403 JSON", () => {
+    expect(
+      sanitizeComposioError(
+        '403 {"error":{"message":"This API key does not have the permissions required for POST /api/v3.1/tool_router/session. This route requires \\"session_management\\" write access, but the key has read access for \\"session_management\\".","slug":"APIKey_InsufficientPermissions"}}',
+      ),
+    ).toBe(
+      "This project key is read-only. Create a Platform API key with write access, paste it here, then add Gmail.",
     );
   });
 
@@ -217,5 +231,65 @@ describe("Composio during pnpm test", () => {
   it("does not construct a live Platform client under Vitest", () => {
     expect(process.env.VITEST).toBeTruthy();
     expect(isComposioEnabled("ck_must_not_call_live")).toBe(false);
+  });
+
+  it("accepts project keys in tests without calling Composio", async () => {
+    await expect(verifyComposioProjectKey("ak_testkey")).resolves.toEqual({ ok: true });
+    await expect(verifyComposioProjectKey("short")).resolves.toEqual({
+      ok: false,
+      message: "That project key is too short.",
+    });
+  });
+
+  it("rejects For You consumer keys and other non-project shapes", async () => {
+    expect(normalizeComposioProjectKey('  "ak_quotedkey" \n')).toBe("ak_quotedkey");
+    await expect(verifyComposioProjectKey("ck_consumerkey")).resolves.toMatchObject({
+      ok: false,
+      message: expect.stringContaining("For You consumer key"),
+    });
+    await expect(verifyComposioProjectKey("not-a-project-key")).resolves.toMatchObject({
+      ok: false,
+      message: expect.stringContaining("start with ak_"),
+    });
+  });
+
+  it("treats a non-OK Composio response as a rejected project key", async () => {
+    const fetchImpl = (async () => new Response("{}", { status: 401 })) as typeof fetch;
+    await expect(verifyComposioProjectKey("ak_livecheck", fetchImpl)).resolves.toMatchObject({
+      ok: false,
+      message: expect.stringContaining("rejected"),
+    });
+  });
+
+  it("prefers a user project key over the server env key", async () => {
+    const connector = new ComposioConnector({
+      envApiKey: "ak_server",
+      resolveUserApiKey: async (userId) => (userId === "user-1" ? "ak_user" : undefined),
+    });
+    await expect(connector.resolveApiKey("user-1")).resolves.toBe("ak_user");
+    await expect(connector.resolveApiKey("user-2")).resolves.toBe("ak_server");
+  });
+
+  it("registers a live connector when a user key resolver is provided", () => {
+    const stack = createConnectorStack(false, undefined, [], {
+      resolveUserApiKey: async () => undefined,
+    });
+    expect(stack.composio).toBeInstanceOf(ComposioConnector);
+  });
+
+  it("still lists curated apps when the live Composio session fails", async () => {
+    const connector = new ComposioConnector({ envApiKey: "ak_invalidsessionkey" });
+    const items = await connector.catalog({
+      operationId: "test",
+      traceId: "test",
+      workspaceId: "workspace",
+      userId: "user-1",
+      signal: new AbortController().signal,
+    });
+    expect(items.some((item) => item.slug === "gmail")).toBe(true);
+    expect(items.find((item) => item.slug === "gmail")).toMatchObject({
+      connectorId: "composio",
+      connected: false,
+    });
   });
 });

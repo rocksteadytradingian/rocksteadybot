@@ -1,6 +1,7 @@
 import { createCipheriv, createHash, createHmac } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import {
+  localComputerViewerPage,
   resolveNovncTarget,
   safeProxyHeaders,
   safeProxyResponseHeaders,
@@ -80,6 +81,18 @@ describe("noVNC proxy authorization", () => {
       path: "/embed.html?view_only=false",
       interactive: true,
     });
+    expect(
+      resolveNovncTarget(signedPath(49152, 2_000, "secret", "/host-clipboard.js"), "secret", 1_000)
+        ?.path,
+    ).toBe("/host-clipboard.js");
+  });
+
+  it("identifies local computer viewer pages that carry host clipboard", () => {
+    expect(localComputerViewerPage("/embed.html?view_only=false")).toBe("/embed.html");
+    expect(localComputerViewerPage("/host-clipboard.js")).toBe("/host-clipboard.js");
+    expect(localComputerViewerPage("/websockify")).toBeNull();
+    expect(localComputerViewerPage("/vnc.html")).toBeNull();
+    expect(localComputerViewerPage("/core/rfb.js")).toBeNull();
   });
 
   it("keeps encrypted external Box targets bound to their view/control policy", () => {

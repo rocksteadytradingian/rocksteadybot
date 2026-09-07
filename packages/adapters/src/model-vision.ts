@@ -5,6 +5,7 @@ import {
   OPENAI_COMPATIBLE_PROVIDER_ID,
   registerOpenAiCompatibleCatalog,
 } from "./pi-openai-compatible-provider.js";
+import { TOKENROUTER_PROVIDER_ID } from "./pi-tokenrouter-provider.js";
 
 /** Computer tools whose results include screenshots for the model. */
 export const IMAGE_RETURNING_COMPUTER_TOOLS = new Set([
@@ -54,12 +55,15 @@ export function modelAcceptsImageInput(provider: string, modelId: string): boole
   const resolved = resolveModelRefForVisionCheck(provider, modelId);
   if (!resolved.provider || !resolved.id) return false;
 
+  if (resolved.provider === TOKENROUTER_PROVIDER_ID) return true;
+
   const models = catalogModels();
   let model = models.getModel(resolved.provider, resolved.id);
   if (
     !model &&
     resolved.provider !== "openrouter" &&
-    resolved.provider !== OPENAI_COMPATIBLE_PROVIDER_ID
+    resolved.provider !== OPENAI_COMPATIBLE_PROVIDER_ID &&
+    resolved.provider !== TOKENROUTER_PROVIDER_ID
   ) {
     model = models.getModel("openrouter", resolved.id);
   }

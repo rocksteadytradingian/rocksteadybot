@@ -25,7 +25,7 @@ export const GroupAvatar = memo(function GroupAvatar({
     return (
       <div
         className={cn(
-          "rakazo-group-avatar relative flex items-center justify-center rounded-full border border-[#2A2A32] bg-[#1A1A1E] text-[#9A9AA2]",
+          "rakazo-group-avatar relative flex items-center justify-center rounded-full border border-[var(--rk-hairline)] bg-[var(--rk-surface-2)] text-[var(--rk-muted)]",
           className,
         )}
         style={{ width: size, height: size, flex: "none" }}
@@ -54,7 +54,6 @@ export const GroupAvatar = memo(function GroupAvatar({
     return (
       <BotAvatar
         color={firstMember.color}
-        identity={firstMember.botId ?? firstMember.name}
         size={size}
         status={firstMember.status}
         className={cn("rakazo-group-avatar", className)}
@@ -78,7 +77,7 @@ export const GroupAvatar = memo(function GroupAvatar({
 
   return (
     <div
-      className={cn("rakazo-group-avatar relative rounded-full select-none", className)}
+      className={cn("rakazo-group-avatar relative isolate rounded-full select-none", className)}
       style={{ width: size, height: size, flex: "none" }}
     >
       {visibleMembers.map((member, index) => (
@@ -88,24 +87,19 @@ export const GroupAvatar = memo(function GroupAvatar({
           style={{
             ...positions[index],
             zIndex: index + 1,
-            boxShadow: "0 0 0 1.5px #121215",
+            boxShadow: "0 0 0 1.5px var(--rk-sidebar)",
           }}
         >
-          <BotAvatar
-            color={member.color}
-            identity={member.botId ?? member.name}
-            size={miniSize}
-            status={member.status}
-          />
+          <BotAvatar color={member.color} size={miniSize} status={member.status} />
         </div>
       ))}
       {members.length > 3 ? (
         <div
-          className="absolute right-0 bottom-0 z-[3] flex items-center justify-center rounded-full bg-[#202026] text-[10px] font-semibold text-[#E0E0E6]"
+          className="absolute right-0 bottom-0 z-[3] flex items-center justify-center rounded-full bg-[var(--rk-surface)] text-[10px] font-semibold text-[var(--rk-ink)]"
           style={{
             width: miniSize,
             height: miniSize,
-            boxShadow: "0 0 0 1.5px #121215",
+            boxShadow: "0 0 0 1.5px var(--rk-sidebar)",
           }}
         >
           {`+${members.length - 2}`}

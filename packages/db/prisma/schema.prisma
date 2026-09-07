@@ -22,6 +22,7 @@ model User {
   invitations   Invitation[]
   modelCredentials UserModelCredential[]
   voiceCredentials UserVoiceCredential[]
+  composioCredential UserComposioCredential?
   secrets          Secret[]
   mcpServers       McpServer[]
   botSections      BotSection[]
@@ -147,6 +148,8 @@ model Member {
   user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
   role           String
   createdAt      DateTime
+  lastWorkingModelProvider String?
+  lastWorkingModelId       String?
 
   @@unique([organizationId, userId])
   @@index([organizationId])
@@ -195,6 +198,10 @@ model UserModelCredential {
   secretId     String
   isDefault    Boolean  @default(false)
   defaultModel String?
+  baseUrl      String?
+  routerFastModel  String?
+  routerSmartModel String?
+  routerHeavyModel String?
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
@@ -216,6 +223,17 @@ model UserVoiceCredential {
 
   @@unique([userId, workspaceId, provider])
   @@map("user_voice_credentials")
+}
+
+model UserComposioCredential {
+  id        String   @id @default(cuid())
+  userId    String   @unique
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  secretId  String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("user_composio_credentials")
 }
 
 model Bot {
@@ -262,6 +280,7 @@ model Bot {
   runs           Run[]
   mcpServers     BotMcpServer[]
   groupMembers   ChatGroupMember[]
+  defaultForGroups ChatGroup[] @relation("GroupDefaultBot")
 
   @@index([workspaceId, userId, archivedAt, pinned, updatedAt])
   @@index([sectionId])
@@ -302,18 +321,21 @@ model BotDeletion {
 }
 
 model ChatGroup {
-  id          String   @id @default(cuid())
-  workspaceId String
-  workspace   Organization @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  userId      String
-  name        String
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-  members     ChatGroupMember[]
-  thread      Thread?
-  artifacts   Artifact[]
+  id           String   @id @default(cuid())
+  workspaceId  String
+  workspace    Organization @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  userId       String
+  name         String
+  defaultBotId String?
+  defaultBot   Bot?     @relation("GroupDefaultBot", fields: [defaultBotId], references: [id], onDelete: SetNull)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  members      ChatGroupMember[]
+  thread       Thread?
+  artifacts    Artifact[]
 
   @@index([workspaceId, userId, updatedAt])
+  @@index([defaultBotId])
   @@map("chat_groups")
 }
 

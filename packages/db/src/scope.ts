@@ -8,22 +8,33 @@ export class IsolationError extends Error {
   }
 }
 
-export async function requireMembership(prisma: PrismaClient, userId: string): Promise<Actor> {
-  const member = await prisma.member.findFirst({
+export async function requireMembership(
+  prisma: PrismaClient,
+  userId: string,
+  activeOrganizationId?: string | null,
+): Promise<Actor> {
+  const memberships = await prisma.member.findMany({
     where: { userId },
-    include: { user: true, organization: true },
+    include: { user: { select: { email: true } }, organization: { select: { name: true } } },
+    orderBy: { createdAt: "asc" },
   });
-  if (!member) {
+  if (memberships.length === 0) {
     throw new IsolationError("No personal workspace");
   }
+  const selected =
+    (activeOrganizationId
+      ? memberships.find((member) => member.organizationId === activeOrganizationId)
+      : undefined) ??
+    memberships.find((member) => member.organization.name === "Personal") ??
+    memberships[0]!;
   const settings = await prisma.deploymentSettings.findUnique({
     where: { id: "default" },
   });
   return {
-    userId: member.userId,
-    workspaceId: member.organizationId,
-    email: member.user.email,
-    isDeploymentOwner: settings?.ownerUserId === member.userId,
+    userId: selected.userId,
+    workspaceId: selected.organizationId,
+    email: selected.user.email,
+    isDeploymentOwner: settings?.ownerUserId === selected.userId,
   };
 }
 

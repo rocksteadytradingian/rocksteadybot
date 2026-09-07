@@ -46,7 +46,13 @@ test("actions run by default while optional confirmations live in advanced user 
     page.getByRole("button", { name: "Always allow this tool", exact: true }),
   ).toBeVisible();
   await expect(page.getByRole("button", { name: "Deny", exact: true })).toBeVisible();
+  await expect(page.getByTestId("approvals-nav")).toBeVisible();
+  await expect(page.getByTestId("approvals-badge")).toHaveText("1");
+  await page.getByTitle("Agent computer").click();
+  await expect(page.getByTestId("approvals-panel")).toBeVisible();
+  await expect(page.getByTestId("approval-approve")).toBeVisible();
   await captureScreenshot(page, testInfo, "53-action-confirmation-pending");
+  await page.getByTitle("Agent computer").click();
 
   await page.getByRole("button", { name: "Deny", exact: true }).click();
   await expect(page.getByText("Denied", { exact: true })).toBeVisible();

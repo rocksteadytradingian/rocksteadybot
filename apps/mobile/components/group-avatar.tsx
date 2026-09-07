@@ -1,5 +1,6 @@
 import { memo } from "react";
 import { StyleSheet, Text, View, type ViewStyle } from "react-native";
+import { type ThemedStyleArgs, useTheme, useThemedStyles } from "../lib/theme";
 import { BotAvatar } from "./bot-avatar";
 
 export interface GroupAvatarMember {
@@ -16,6 +17,8 @@ export const GroupAvatar = memo(function GroupAvatar({
   members: GroupAvatarMember[];
   size?: number;
 }) {
+  const { palette } = useTheme();
+  const styles = useThemedStyles(makeStyles);
   const firstMember = members[0];
   if (!firstMember) {
     return (
@@ -70,7 +73,7 @@ export const GroupAvatar = memo(function GroupAvatar({
             zIndex: index + 1,
             borderRadius: miniSize / 2,
             borderWidth: 1.5,
-            borderColor: "#121215",
+            borderColor: palette.page,
           }}
         >
           <BotAvatar
@@ -91,14 +94,14 @@ export const GroupAvatar = memo(function GroupAvatar({
             width: miniSize,
             height: miniSize,
             borderRadius: miniSize / 2,
-            backgroundColor: "#202026",
+            backgroundColor: palette.surface2,
             alignItems: "center",
             justifyContent: "center",
             borderWidth: 1.5,
-            borderColor: "#121215",
+            borderColor: palette.page,
           }}
         >
-          <Text style={{ color: "#E0E0E6", fontSize: 10, fontWeight: "600" }}>
+          <Text style={{ color: palette.ink, fontSize: 10, fontWeight: "600" }}>
             +{members.length - 2}
           </Text>
         </View>
@@ -107,13 +110,14 @@ export const GroupAvatar = memo(function GroupAvatar({
   );
 });
 
-const styles = StyleSheet.create({
-  fallback: {
-    backgroundColor: "#202024",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  fallbackText: {
-    color: "#9A9AA2",
-  },
-});
+const makeStyles = ({ palette }: ThemedStyleArgs) =>
+  StyleSheet.create({
+    fallback: {
+      backgroundColor: palette.surface2,
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    fallbackText: {
+      color: palette.muted,
+    },
+  });

@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { Alert, Pressable, Text, View } from "react-native";
+import { useTheme } from "../lib/theme";
 
 type AskAction = { id: string; label: string };
 
@@ -12,6 +13,7 @@ export function AskActions({
   disabled?: boolean;
   onAnswer: (answer: string) => Promise<void>;
 }) {
+  const { palette } = useTheme();
   const [pendingAction, setPendingAction] = useState<string | null>(null);
   const submitting = pendingAction !== null;
 
@@ -42,15 +44,16 @@ export function AskActions({
             paddingHorizontal: 14,
             paddingVertical: 8,
             backgroundColor:
-              action.id === "allow" || action.id === "always" ? "#F1F1EF" : "transparent",
+              action.id === "allow" || action.id === "always" ? palette.solid : "transparent",
             borderWidth: action.id === "deny" ? 1 : 0,
-            borderColor: "#26262A",
+            borderColor: palette.hairline,
             opacity: disabled || submitting ? 0.5 : 1,
           }}
         >
           <Text
             style={{
-              color: action.id === "allow" || action.id === "always" ? "#17171A" : "#C9C9CE",
+              color:
+                action.id === "allow" || action.id === "always" ? palette.solidInk : palette.muted,
               fontSize: 14,
               fontWeight: action.id === "allow" || action.id === "always" ? "600" : "400",
             }}

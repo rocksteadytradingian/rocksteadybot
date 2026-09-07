@@ -1,0 +1,50 @@
+# The desktop shell talks to the web origin on loopback :5173; the web container
+# proxies to api over the Compose network, so the desktop flow never needs the
+# host :3100 publish. It is left in place (from the base compose file) so the
+# mobile dev loop can reach the API on the LAN even when the stack was last
+# started by a desktop launcher shortcut. Checkout sources are bind-mounted so
+# Electron and sign-in use this tree instead of a baked image.
+services:
+  api:
+    environment:
+      BETTER_AUTH_URL: http://127.0.0.1:5173
+      WEB_ORIGIN: http://127.0.0.1:5173
+    volumes:
+      - ../../apps/api/src:/app/apps/api/src:ro
+      - ../../packages/auth/src:/app/packages/auth/src:ro
+      - ../../packages/adapters/src:/app/packages/adapters/src:ro
+      - ../../packages/db/src:/app/packages/db/src:ro
+      - ../../packages/core/src:/app/packages/core/src:ro
+  # Same bind mounts as api so a bot spawned from chat (spawn_bot) runs this
+  # tree's createBot / ensureIdentityDocuments instead of the baked image.
+  worker:
+    volumes:
+      - ../../apps/worker/src:/app/apps/worker/src:ro
+      - ../../packages/auth/src:/app/packages/auth/src:ro
+      - ../../packages/adapters/src:/app/packages/adapters/src:ro
+      - ../../packages/db/src:/app/packages/db/src:ro
+      - ../../packages/core/src:/app/packages/core/src:ro
+      - ../../packages/memory/src:/app/packages/memory/src:ro
+  # Image dist/ is root-owned from the Dockerfile build. Vite empties it before
+  # rebuilding from the bind-mounted checkout; run as root so unlink works
+  # without rebuilding the image.
+  web:
+    user: "0:0"
+    ports: !override
+      - "127.0.0.1:5173:5173"
+    volumes:
+      - ../../apps/web/src:/app/apps/web/src:ro
+      - ../../apps/web/index.html:/app/apps/web/index.html:ro
+      - ../../apps/web/vite.config.ts:/app/apps/web/vite.config.ts:ro
+      - ../../packages/ui-tokens/src:/app/packages/ui-tokens/src:ro
+      - ../../packages/ui-web/src:/app/packages/ui-web/src:ro
+      - ../../packages/chat-ui/src:/app/packages/chat-ui/src:ro
+    command:
+      - bash
+      - -lc
+      - |
+        set -euo pipefail
+        mkdir -p /app/apps/web/dist /app/apps/web/node_modules/.vite-temp
+        chown -R node:node /app/apps/web/dist /app/apps/web/node_modules/.vite-temp
+        RAKAZO_ALLOW_DEV_SECRETS=1 pnpm --filter @rakazo/web build
+        exec pnpm --filter @rakazo/web preview --host 0.0.0.0 --port 5173

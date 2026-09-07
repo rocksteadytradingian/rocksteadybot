@@ -212,11 +212,14 @@ async function lockAndLoadGroupMembers(
     },
   });
   if (!group || group.members.length < GROUP_MEMBER_MIN) throw new IsolationError();
-  return group.members.map((member) => ({
-    botId: member.bot.id,
-    name: member.bot.name,
-    color: member.bot.color,
-  }));
+  return {
+    defaultBotId: group.defaultBotId,
+    members: group.members.map((member) => ({
+      botId: member.bot.id,
+      name: member.bot.name,
+      color: member.bot.color,
+    })),
+  };
 }
 
 export async function resolveThreadTarget(
@@ -503,13 +506,14 @@ export async function sendThreadMessage(
         return { message, runs: [run], eventSeq: event.seq };
       }
 
-      const members = await lockAndLoadGroupMembers(tx, actor, target);
+      const { members, defaultBotId } = await lockAndLoadGroupMembers(tx, actor, target);
       const memberBotIds = members.map((member) => member.botId);
       const mentionTargets = splitMentionTargets(input.mentions);
       const targetBotIds = resolveGroupTargetBotIds({
         text: input.text ?? "",
         members: members.map((member) => ({ id: member.botId, name: member.name })),
         explicitMentions: mentionTargets.botMentionIds,
+        defaultBotId,
       });
       const { blocks: attachmentBlocks, artifacts } = await resolveGroupSendAttachments(
         { prisma: tx },

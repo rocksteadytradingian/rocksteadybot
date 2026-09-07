@@ -1,4 +1,5 @@
 import type { AgentRunRequest } from "@rakazo/adapter-kit";
+import { TOKENROUTER_BASE_URL, TOKENROUTER_PROVIDER_ID } from "@rakazo/contracts";
 import { describe, expect, it } from "vitest";
 import { OPENAI_COMPATIBLE_PROVIDER_ID } from "./pi-openai-compatible-provider.js";
 import { modelsForRequest } from "./pi-runtime.js";
@@ -25,6 +26,16 @@ describe("request model catalogs", () => {
     expect(first.getModel(OPENAI_COMPATIBLE_PROVIDER_ID, "second-model")).toBeUndefined();
     expect(second.getModel(OPENAI_COMPATIBLE_PROVIDER_ID, "second-model")?.baseUrl).toBe(
       "http://127.0.0.1:8002/v1",
+    );
+  });
+
+  it("registers TokenRouter models on the fixed public endpoint", () => {
+    const models = modelsForRequest(
+      { model: { provider: TOKENROUTER_PROVIDER_ID, id: "z-ai/glm-5.2" } },
+      TOKENROUTER_PROVIDER_ID,
+    );
+    expect(models.getModel(TOKENROUTER_PROVIDER_ID, "z-ai/glm-5.2")?.baseUrl).toBe(
+      TOKENROUTER_BASE_URL,
     );
   });
 });

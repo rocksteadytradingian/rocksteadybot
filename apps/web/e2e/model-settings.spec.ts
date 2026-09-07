@@ -10,7 +10,12 @@ test("connects, lists, and uses an OpenAI-compatible endpoint", async ({ page },
   const server = createServer((request, response) => {
     if (request.method === "GET" && request.url === "/v1/models") {
       response.writeHead(200, { "content-type": "application/json" });
-      response.end(JSON.stringify({ object: "list", data: [{ id: LOCAL_MODEL_ID }] }));
+      response.end(
+        JSON.stringify({
+          object: "list",
+          data: [{ id: LOCAL_MODEL_ID }, { id: "router-smart" }, { id: "router-heavy" }],
+        }),
+      );
       return;
     }
     if (request.method === "POST" && request.url === "/v1/chat/completions") {
@@ -92,7 +97,7 @@ test("connects, lists, and uses an OpenAI-compatible endpoint", async ({ page },
     await expect(page.getByLabel("Model id")).toBeVisible();
     await page.getByRole("button", { name: "Find models" }).click();
     await expect(discoveredModels).toHaveValue(LOCAL_MODEL_ID);
-    await expect(page.getByText("Found 1 model.")).toBeVisible();
+    await expect(page.getByText("Found 3 models.")).toBeVisible();
     await expect(page.getByRole("button", { name: "Save" })).toBeEnabled();
     await captureScreenshot(page, testInfo, "openai-compatible-model-discovery");
 
@@ -101,7 +106,20 @@ test("connects, lists, and uses an OpenAI-compatible endpoint", async ({ page },
     await expect(page.getByRole("button", { name: /OpenAI-compatible/ })).toContainText(
       "Connected",
     );
+    await expect(page.getByLabel("OpenAI-compatible server URL")).toHaveValue(baseUrl);
+    await expect(page.getByRole("button", { name: "Find models" })).toBeEnabled();
     await captureScreenshot(page, testInfo, "openai-compatible-connected");
+
+    await page.getByLabel("Fast — simple").selectOption(LOCAL_MODEL_ID);
+    await page.getByLabel("Smart — planning and coding").selectOption("router-smart");
+    await page.getByLabel("Heavy — hard and vision").selectOption("router-heavy");
+    await expect(page.getByRole("combobox", { name: "Models from server" })).toContainText("Auto");
+    await expect(page.getByText(`${LOCAL_MODEL_ID} · router-smart · router-heavy`)).toBeVisible();
+    await expect(page.getByText("Auto", { exact: true }).first()).toBeVisible();
+    // Filling the three router slots on the default credential already promotes it
+    // to "auto" server-side, so selecting it needs no separate activation step.
+    await page.getByRole("combobox", { name: "Models from server" }).selectOption("auto");
+    await expect(page.getByRole("button", { name: "Use this model" })).toBeHidden();
 
     await page.getByLabel("OpenAI-compatible server URL").fill("");
     await expect(page.getByRole("button", { name: "Find models" })).toBeDisabled();

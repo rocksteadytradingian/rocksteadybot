@@ -8,9 +8,13 @@ import {
   CreateGroupInput,
   McpServerConfigInput,
   MessageBlock,
+  ModelConnectInputSchema,
   ModelOAuthBeginSchema,
+  ModelSetRouterInputSchema,
   normalizeCreateBotProfile,
+  PendingApprovalSchema,
   ProductEventType,
+  RepairStackInput,
   RunActivityRowSchema,
   RunSchema,
   UpdateBotInput,
@@ -77,6 +81,28 @@ describe("contracts", () => {
     expect(
       UpdateGroupInput.safeParse({ groupId: "group-1", botIds: ["bot-1", "bot-1"] }).success,
     ).toBe(false);
+    expect(
+      CreateGroupInput.parse({
+        name: "Squad",
+        botIds: ["bot-1", "bot-2"],
+        defaultBotId: "bot-2",
+      }),
+    ).toEqual({
+      name: "Squad",
+      botIds: ["bot-1", "bot-2"],
+      defaultBotId: "bot-2",
+    });
+    expect(
+      CreateGroupInput.safeParse({
+        name: "Squad",
+        botIds: ["bot-1", "bot-2"],
+        defaultBotId: "bot-3",
+      }).success,
+    ).toBe(false);
+    expect(UpdateGroupInput.parse({ groupId: "group-1", defaultBotId: null })).toEqual({
+      groupId: "group-1",
+      defaultBotId: null,
+    });
   });
 
   it("keeps model OAuth start results mode-specific", () => {
@@ -103,8 +129,10 @@ describe("contracts", () => {
 
   it("exposes the product rpc surface", () => {
     expect(appContract.models.beginOAuth).toBeTruthy();
-    expect(appContract.bootstrap).toBeTruthy();
     expect(appContract.models.completeOAuth).toBeTruthy();
+    expect(appContract.bootstrap).toBeTruthy();
+    expect(appContract.models.setDefault).toBeTruthy();
+    expect(appContract.models.setRouter).toBeTruthy();
     expect(appContract.bots.create).toBeTruthy();
     expect(appContract.bots.archive).toBeTruthy();
     expect(appContract.bots.restore).toBeTruthy();
@@ -154,6 +182,41 @@ describe("contracts", () => {
         outcomeStatus: null,
       }).success,
     ).toBe(true);
+    expect(
+      PendingApprovalSchema.safeParse({
+        id: "effect-1",
+        runId: run.id,
+        messageId: "message-1",
+        threadId: run.threadId,
+        botId: run.botId,
+        botName: "Researcher",
+        groupId: null,
+        groupName: null,
+        summary: 'writing "Q1" to reports',
+        toolName: "destination.write",
+        highRisk: true,
+        requestedAt: "2026-08-28T02:35:02.000Z",
+      }).success,
+    ).toBe(true);
+    expect(
+      PendingApprovalSchema.safeParse({
+        id: "ops:worker-repair",
+        kind: "stack_repair",
+        runId: "ops:worker-repair",
+        messageId: "ops:worker-repair",
+        threadId: "ops:worker-repair",
+        botId: "ops:worker-repair",
+        botName: "RocksteadyBot",
+        groupId: null,
+        groupName: null,
+        summary: "AI replies are stuck",
+        toolName: "stack.repair",
+        highRisk: true,
+        requestedAt: "2026-08-28T08:45:27.000Z",
+      }).success,
+    ).toBe(true);
+    expect(appContract.approvals.repairStack).toBeTruthy();
+    expect(RepairStackInput.parse({ restartApi: true })).toEqual({ restartApi: true });
 
     const base = {
       runId: run.id,
@@ -231,6 +294,60 @@ describe("contracts", () => {
         name: "combined",
         spec: { marks: [{ data: rows.slice(0, 2_500) }] },
         data: rows.slice(0, 2_501),
+      }).success,
+    ).toBe(false);
+  });
+
+  it("rejects Auto as a Fast/Smart/Heavy slot", () => {
+    expect(
+      ModelSetRouterInputSchema.safeParse({
+        provider: "openai-compatible",
+        fast: "auto",
+      }).success,
+    ).toBe(false);
+    expect(
+      ModelSetRouterInputSchema.parse({
+        provider: "openai-compatible",
+        fast: "qwen3:8b",
+        smart: "",
+        heavy: "  ",
+      }),
+    ).toEqual({
+      provider: "openai-compatible",
+      fast: "qwen3:8b",
+      smart: null,
+      heavy: null,
+    });
+    expect(
+      ModelConnectInputSchema.parse({
+        provider: "openai-compatible",
+        baseUrl: "http://127.0.0.1:1234/v1",
+        modelId: "auto",
+        routerFastModel: "qwen3:8b",
+        routerSmartModel: "qwen3:30b",
+        routerHeavyModel: "",
+      }),
+    ).toMatchObject({
+      modelId: "auto",
+      routerFastModel: "qwen3:8b",
+      routerSmartModel: "qwen3:30b",
+      routerHeavyModel: null,
+    });
+    expect(
+      ModelConnectInputSchema.parse({
+        provider: "tokenrouter",
+        apiKey: "tokenrouter-key",
+        modelId: "z-ai/glm-5.2",
+      }),
+    ).toMatchObject({
+      provider: "tokenrouter",
+      apiKey: "tokenrouter-key",
+      modelId: "z-ai/glm-5.2",
+    });
+    expect(
+      ModelConnectInputSchema.safeParse({
+        provider: "tokenrouter",
+        apiKey: "tokenrouter-key",
       }).success,
     ).toBe(false);
   });

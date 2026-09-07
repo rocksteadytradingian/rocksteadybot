@@ -14,12 +14,25 @@ describe("desktop window chrome", () => {
     expect(opts.trafficLightPosition).toEqual({ x: 16, y: 16 });
   });
 
-  it("is frameless on Windows and Linux so in-app buttons control the window", () => {
-    for (const platform of ["win32", "linux"] as const) {
-      const opts = browserWindowOptions(platform);
-      expect(opts.frame).toBe(false);
-      expect(opts.titleBarStyle).toBeUndefined();
-    }
+  it("uses a hidden native frame on Windows so the window can move and resize", () => {
+    const opts = browserWindowOptions("win32");
+    expect(opts.frame).toBe(true);
+    expect(opts.titleBarStyle).toBe("hidden");
+    expect(opts.titleBarOverlay).toEqual({
+      color: "#F4EFE6",
+      symbolColor: "#2C2118",
+      height: 36,
+    });
+    expect(opts.resizable).toBe(true);
+    expect(opts.movable).toBe(true);
+  });
+
+  it("stays frameless on Linux so in-app buttons control the window", () => {
+    const opts = browserWindowOptions("linux");
+    expect(opts.frame).toBe(false);
+    expect(opts.titleBarStyle).toBeUndefined();
+    expect(opts.resizable).toBe(true);
+    expect(opts.movable).toBe(true);
   });
 });
 

@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { MessageBlock, validateThreadsSendInput } from "./index.js";
+import {
+  isAllowedAttachmentMimeType,
+  isAttachmentImageMimeType,
+  MessageBlock,
+  normalizeAttachmentMimeType,
+  validateThreadsSendInput,
+} from "./index.js";
 
 describe("attachment contracts", () => {
   it("parses image and file message blocks", () => {
@@ -20,6 +26,28 @@ describe("attachment contracts", () => {
         size: 1234,
       }),
     ).toMatchObject({ kind: "file", size: 1234 });
+  });
+
+  it("accepts any well-formed mime type and treats raster images as images", () => {
+    expect(isAllowedAttachmentMimeType("application/zip")).toBe(true);
+    expect(
+      isAllowedAttachmentMimeType(
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      ),
+    ).toBe(true);
+    expect(
+      isAllowedAttachmentMimeType(
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      ),
+    ).toBe(true);
+    expect(isAllowedAttachmentMimeType("image/png")).toBe(true);
+    expect(isAllowedAttachmentMimeType("image/png; charset=binary")).toBe(true);
+    expect(isAllowedAttachmentMimeType("not-a-type")).toBe(false);
+    expect(isAllowedAttachmentMimeType("")).toBe(false);
+    expect(normalizeAttachmentMimeType("image/JPG")).toBe("image/jpeg");
+    expect(isAttachmentImageMimeType("image/png")).toBe(true);
+    expect(isAttachmentImageMimeType("application/zip")).toBe(false);
+    expect(isAttachmentImageMimeType("image/svg+xml")).toBe(false);
   });
 
   it("requires text or attachments for threads.send", () => {

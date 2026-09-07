@@ -1,6 +1,6 @@
 import { getSupportedThinkingLevels } from "@earendil-works/pi-ai";
 import { builtinModels } from "@earendil-works/pi-ai/providers/all";
-import type { ModelOAuthSignInMode, ThinkingLevel } from "@rakazo/contracts";
+import { type ModelOAuthSignInMode, PRODUCT_NAME, type ThinkingLevel } from "@rakazo/contracts";
 import { LOCAL_PROVIDER_ID, registerLocalProvider } from "./pi-local-provider.js";
 import { SUBSCRIPTION_SIGN_IN_PROVIDERS } from "./pi-oauth.js";
 import {
@@ -8,6 +8,11 @@ import {
   OPENAI_COMPATIBLE_PROVIDER_ID,
   registerOpenAiCompatibleCatalog,
 } from "./pi-openai-compatible-provider.js";
+import {
+  registerTokenRouterCatalog,
+  TOKENROUTER_CATALOG_MODEL_ID,
+  TOKENROUTER_PROVIDER_ID,
+} from "./pi-tokenrouter-provider.js";
 
 export type PiCatalogAuth = "api-key" | "oauth" | "both";
 
@@ -28,14 +33,16 @@ export type PiCatalogEntry = {
 };
 
 export function listPiCatalog(): PiCatalogEntry[] {
-  cachedCatalog ??= buildPiCatalog();
+  cachedCatalog ??= withTokenRouterCatalog(buildPiCatalog());
   return cachedCatalog;
 }
 
 let cachedCatalog: PiCatalogEntry[] | undefined;
 
 function buildPiCatalog(): PiCatalogEntry[] {
-  const models = registerOpenAiCompatibleCatalog(registerLocalProvider(builtinModels()));
+  const models = registerTokenRouterCatalog(
+    registerOpenAiCompatibleCatalog(registerLocalProvider(builtinModels())),
+  );
   const entries: PiCatalogEntry[] = [];
   for (const provider of models.getProviders()) {
     const apiKey = Boolean(provider.auth.apiKey);
@@ -60,12 +67,20 @@ function buildPiCatalog(): PiCatalogEntry[] {
         auth,
         oauthLabel,
         authHint:
-          provider.id === OPENAI_COMPATIBLE_PROVIDER_ID ? "Custom server" : signInMeta?.hint,
+          provider.id === OPENAI_COMPATIBLE_PROVIDER_ID
+            ? "Custom server"
+            : provider.id === TOKENROUTER_PROVIDER_ID
+              ? "tokenrouter.com"
+              : signInMeta?.hint,
         subscription,
         signIn: signInMeta?.mode,
         reasoning: Boolean(model.reasoning),
         thinkingLevels,
-        ...(model.id === OPENAI_COMPATIBLE_CATALOG_MODEL_ID ? { placeholder: true } : {}),
+        ...((provider.id === OPENAI_COMPATIBLE_PROVIDER_ID &&
+          model.id === OPENAI_COMPATIBLE_CATALOG_MODEL_ID) ||
+        (provider.id === TOKENROUTER_PROVIDER_ID && model.id === TOKENROUTER_CATALOG_MODEL_ID)
+          ? { placeholder: true }
+          : {}),
       });
     }
   }
@@ -101,18 +116,18 @@ function catalogBilling(
   const signInMeta = SUBSCRIPTION_SIGN_IN_PROVIDERS[providerId];
   if (signInMeta) return signInMeta.billing;
   if (providerId === LOCAL_PROVIDER_ID) {
-    return "Runs on infrastructure configured by the deployment owner. No model charges from Rakazo.";
+    return `Runs on infrastructure configured by the deployment owner. No model charges from ${PRODUCT_NAME}.`;
   }
   if (providerId === OPENAI_COMPATIBLE_PROVIDER_ID) {
-    return "Runs on a URL you control. Rakazo does not pay for model usage.";
+    return `Runs on a URL you control. ${PRODUCT_NAME} does not pay for model usage.`;
   }
   if (opts.oauth && !opts.apiKey) {
-    return `${name} subscription login is not in the Rakazo UI yet. Skip if this deployment already has credentials.`;
+    return `${name} subscription login is not in the ${PRODUCT_NAME} UI yet. Skip if this deployment already has credentials.`;
   }
   if (opts.apiKey) {
-    return `Uses your ${name} API key. Rakazo does not pay for model usage.`;
+    return `Uses your ${name} API key. ${PRODUCT_NAME} does not pay for model usage.`;
   }
-  return `Uses your ${name} key. Rakazo does not pay for model usage.`;
+  return `Uses your ${name} key. ${PRODUCT_NAME} does not pay for model usage.`;
 }
 
 export const scriptedCatalogEntry: PiCatalogEntry = {
@@ -124,3 +139,20 @@ export const scriptedCatalogEntry: PiCatalogEntry = {
   auth: "api-key",
   subscription: false,
 };
+
+export const tokenRouterCatalogEntry: PiCatalogEntry = {
+  provider: TOKENROUTER_PROVIDER_ID,
+  providerName: "TokenRouter",
+  id: TOKENROUTER_CATALOG_MODEL_ID,
+  label: "Custom model id",
+  billing: `Uses your TokenRouter API key. ${PRODUCT_NAME} does not pay for model usage.`,
+  auth: "api-key",
+  authHint: "tokenrouter.com",
+  subscription: false,
+  placeholder: true,
+};
+
+function withTokenRouterCatalog(entries: PiCatalogEntry[]): PiCatalogEntry[] {
+  if (entries.some((entry) => entry.provider === TOKENROUTER_PROVIDER_ID)) return entries;
+  return [...entries, tokenRouterCatalogEntry];
+}

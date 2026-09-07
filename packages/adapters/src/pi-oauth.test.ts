@@ -3,10 +3,12 @@ import { describe, expect, it } from "vitest";
 import {
   CHATGPT_OAUTH_PROVIDER,
   COPILOT_OAUTH_PROVIDER,
+  ModelAuthError,
   type PiOAuthBegin,
   PiOAuthLogins,
   parseModelSecret,
   resolveModelApiKey,
+  resolveModelAuth,
   secretValuesToRedact,
   serializeModelSecret,
   XAI_OAUTH_PROVIDER,
@@ -115,6 +117,22 @@ describe("model secrets", () => {
     });
     expect(apiKey).toBe("new");
     expect(JSON.parse(saved).access).toBe("new");
+  });
+
+  it("maps a dead refresh token to a reconnectable ModelAuthError", async () => {
+    await expect(
+      resolveModelAuth(JSON.stringify(oauthCred({ expires: 1 })), CHATGPT_OAUTH_PROVIDER, {
+        now: 10_000,
+        oauth: {
+          refresh: async () => {
+            throw new Error(
+              'body={"error": "invalid_grant", "error_description": "Refresh token not found or invalid"}',
+            );
+          },
+          toAuth: async () => ({ apiKey: "nope" }),
+        },
+      }),
+    ).rejects.toBeInstanceOf(ModelAuthError);
   });
 });
 

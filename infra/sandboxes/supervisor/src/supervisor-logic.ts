@@ -78,7 +78,7 @@ export function nextScreenIndex(
   const existing = assigned.get(screenId);
   if (existing) {
     if (existing.releasing) {
-      throw new Error("This Team Computer screen is still being released.");
+      throw new Error("This computer screen is still being released.");
     }
     if (leaseId) {
       if (
@@ -86,7 +86,7 @@ export function nextScreenIndex(
         existing.leaseId !== leaseId &&
         !canTakeScreenLease(existing.leaseId, leaseId)
       ) {
-        throw new Error("This Team Computer screen is owned by a newer execution.");
+        throw new Error("This computer screen is owned by a newer execution.");
       }
       if (canTakeScreenLease(existing.leaseId, leaseId)) existing.leaseId = leaseId;
     }
@@ -137,6 +137,19 @@ export function clearComputerScreenRegistry(
   registry.delete(containerId);
 }
 
+export function clipboardDaemonCommand(display: string) {
+  return (
+    "if command -v autocutsel >/dev/null 2>&1 && " +
+    `! pgrep -f 'autocutsel -display ${display} -selection' >/dev/null 2>&1; then ` +
+    `autocutsel -display ${display} -selection CLIPBOARD -fork || true; ` +
+    `autocutsel -display ${display} -selection PRIMARY -fork || true; fi`
+  );
+}
+
+export function clipboardDaemonStopCommand(display: string) {
+  return `pkill -f 'autocutsel -display ${display} -selection' || true`;
+}
+
 export function stopExtraScreenCommand(index: number) {
   if (index <= 0) return "";
   const layout = screenPorts(index);
@@ -149,6 +162,7 @@ export function stopExtraScreenCommand(index: number) {
     `pkill -f -- '--user-data-dir=${profile}' || true`,
     `pkill -f '^x11vnc .* -rfbport ${layout.viewVncPort}' || true`,
     `pkill -f '^x11vnc .* -rfbport ${layout.controlVncPort}' || true`,
+    clipboardDaemonStopCommand(layout.display),
     `pkill -f '^/usr/bin/python3 .*websockify.*${layout.viewPort}' || true`,
     `pkill -f '^/usr/bin/python3 .*websockify.*${layout.controlPort}' || true`,
     `rm -f /tmp/.X${layout.displayNumber}-lock /tmp/.X11-unix/X${layout.displayNumber} ${tokenFile}`,
@@ -174,6 +188,7 @@ export function ensureScreenCommand(index: number) {
     `cp /etc/rakazo/fluxbox/apps ${fluxHome}/.fluxbox/apps 2>/dev/null || true`,
     `cp /etc/rakazo/fluxbox/menu ${fluxHome}/.fluxbox/menu 2>/dev/null || true`,
     `HOME=${fluxHome} DISPLAY=${layout.display} fluxbox -rc ${fluxHome}/.fluxbox/init >${log}-fluxbox.log 2>&1 &`,
+    clipboardDaemonCommand(layout.display),
     `if [ -d /home/rakazo/.browser-profiles/chromium ]; then cp -a /home/rakazo/.browser-profiles/chromium/. ${profile}/; rm -f ${profile}/SingletonLock ${profile}/SingletonCookie ${profile}/SingletonSocket; fi`,
     `DISPLAY=${layout.display} HOME=/home/rakazo rakazo-browser --user-data-dir=${profile} >${log}-browser.log 2>&1 &`,
     `x11vnc -display ${layout.display} -forever -shared -viewonly -nopw -listen 127.0.0.1 -rfbport ${layout.viewVncPort} -xkb -ncache 0 >${log}-x11vnc.log 2>&1 &`,

@@ -7,6 +7,8 @@ contextBridge.exposeInMainWorld("rakazoDesktop", {
     minimize: () => ipcRenderer.invoke("desktop.window.minimize"),
     toggleMaximize: () => ipcRenderer.invoke("desktop.window.toggleMaximize"),
     state: () => ipcRenderer.invoke("desktop.window.state"),
+    setTitleBarOverlay: (overlay) =>
+      ipcRenderer.invoke("desktop.window.setTitleBarOverlay", overlay),
   },
   update: {
     state: () => ipcRenderer.invoke("desktop.update.state"),

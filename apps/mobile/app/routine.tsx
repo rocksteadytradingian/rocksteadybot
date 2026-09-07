@@ -3,6 +3,7 @@ import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import { useEffect, useState } from "react";
 import { ActivityIndicator, Pressable, ScrollView, Text, View } from "react-native";
 import { rpc } from "../lib/api";
+import { useTheme } from "../lib/theme";
 
 export default function RoutineDetail() {
   const { botId, botName, routineId } = useLocalSearchParams<{
@@ -14,6 +15,7 @@ export default function RoutineDetail() {
   const [routine, setRoutine] = useState<Routine | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const { palette } = useTheme();
 
   useEffect(() => {
     if (!botId || !routineId) {
@@ -45,44 +47,44 @@ export default function RoutineDetail() {
 
   return (
     <ScrollView
-      style={{ flex: 1, backgroundColor: "#050506" }}
+      style={{ flex: 1, backgroundColor: palette.page }}
       contentContainerStyle={{ padding: 24, gap: 18 }}
     >
       <Stack.Screen options={{ title: routine?.name ?? "Routine" }} />
-      {loading ? <ActivityIndicator color="#85858A" /> : null}
-      {error ? <Text style={{ color: "#E65707", fontSize: 15 }}>{error}</Text> : null}
+      {loading ? <ActivityIndicator color={palette.muted} /> : null}
+      {error ? <Text style={{ color: palette.danger, fontSize: 15 }}>{error}</Text> : null}
       {routine ? (
         <>
           <View
             style={{
               borderRadius: 16,
               borderWidth: 1,
-              borderColor: "#26262A",
-              backgroundColor: "#17171A",
+              borderColor: palette.hairline,
+              backgroundColor: palette.surface,
               padding: 18,
               gap: 8,
             }}
           >
-            <Text style={{ color: "#ECECEE", fontSize: 20, fontWeight: "600" }}>
+            <Text style={{ color: palette.ink, fontSize: 20, fontWeight: "600" }}>
               {routine.name}
             </Text>
-            <Text style={{ color: routine.active ? "#4ECB71" : "#85858A", fontSize: 14 }}>
+            <Text style={{ color: routine.active ? palette.success : palette.muted, fontSize: 14 }}>
               {routine.active ? "Active" : "Paused"} · {routine.crons.join(", ")} ·{" "}
               {routine.timezone}
             </Text>
           </View>
           <View style={{ gap: 8 }}>
-            <Text style={{ color: "#85858A", fontSize: 13, textTransform: "uppercase" }}>
+            <Text style={{ color: palette.muted, fontSize: 13, textTransform: "uppercase" }}>
               Prompt
             </Text>
             <Text
               selectable
               style={{
-                color: "#DFDFE2",
+                color: palette.body,
                 fontSize: 15,
                 lineHeight: 23,
                 borderRadius: 16,
-                backgroundColor: "#17171A",
+                backgroundColor: palette.surface,
                 padding: 18,
               }}
             >
@@ -100,11 +102,11 @@ export default function RoutineDetail() {
             style={{
               alignItems: "center",
               borderRadius: 12,
-              backgroundColor: "#F1F1EF",
+              backgroundColor: palette.solid,
               padding: 14,
             }}
           >
-            <Text style={{ color: "#17171A", fontSize: 15, fontWeight: "600" }}>
+            <Text style={{ color: palette.solidInk, fontSize: 15, fontWeight: "600" }}>
               Open conversation
             </Text>
           </Pressable>

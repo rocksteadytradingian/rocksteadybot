@@ -39,7 +39,9 @@ import {
   McpOAuthBroker,
   type MemoryProviderResolver,
   mapScratchpadItem,
+  mapUserModelCredentials,
   modelCredentialDto,
+  openAiCompatibleBaseUrlFromPlaintext,
   type PiOAuthLogins,
   planLiveConnectionSync,
   prepareApiInstall,
@@ -47,6 +49,7 @@ import {
   probeOpenAiCompatibleModels,
   provisionComputer,
   type RemoteConnectorDependencies,
+  releaseBotComputerSession,
   releaseComputerExecutionLease,
   replaceComputer,
   resolveBotWorkspacePath,
@@ -67,29 +70,42 @@ import type { Auth } from "@rakazo/auth";
 import {
   type Actor,
   appContract,
+  COMPLEXITY_ROUTER_MODEL_ID,
   type ComputerStatus,
+  isAllowedComplexityRouterSlot,
+  isComplexityRouterProvider,
+  isProbedModelProvider,
   type McpServer,
   type Me,
-  OPENAI_COMPATIBLE_PROVIDER_ID,
+  type StackRepairResult,
+  withComplexityRouterCatalog,
 } from "@rakazo/contracts";
 import {
   ACTIVE_RUN_STATUSES,
   AttachmentValidationError,
+  canRepairHostStack,
+  clampIdentityFileContent,
   containsSecret,
   expandSkillReferencesInPrompt,
   hasMixedOneShotSchedule,
+  isIdentityFile,
   isOneShotRoutineCrons,
   nextCronDateAcrossStrict,
+  type WorkerStall,
 } from "@rakazo/core";
 import {
   appendEventInTransaction,
   createGroupRepos,
   createRepos,
   createThreadMessageInTransaction,
+  createWorkspace,
+  deleteWorkspace,
+  ensureIdentityDocuments,
   findDefaultModelCredential,
   findDefaultVoiceCredential,
   findWorkspaceMemoryConfig,
   IsolationError,
+  listWorkspaces,
   lockOwnedGroup,
   newestModelCredentialOrder,
   newestVoiceCredentialOrder,
@@ -97,12 +113,24 @@ import {
   type PrismaClient,
   parseComputerMode,
   readWorkspaceRedactionPolicy,
+  renameWorkspace,
+  requireMembership,
+  restoreLastWorkingModel,
+  setActiveWorkspace,
+  shareUserProviderSecret,
   type ThreadEvents,
   touchGroupUpdatedAt,
+  WorkspaceError,
   writeWorkspaceRedactionPolicy,
 } from "@rakazo/db";
 import { createAgentSkillsService } from "./agent-skills.js";
+import { listPendingApprovals } from "./approvals.js";
 import { createOwnedArtifact, getOwnedArtifact, getWorkspaceArtifact } from "./artifacts.js";
+import {
+  clearComposioProjectKey,
+  persistComposioProjectKey,
+  readComposioProjectKeyStatus,
+} from "./composio-project-key.js";
 import {
   executionBlocksUserTakeover,
   resolveBusyBotName,
@@ -305,6 +333,9 @@ export interface RouterDeps {
   remoteConnectors?: RemoteConnectorDependencies;
   artifacts: ArtifactStore;
   dataDir: string;
+  inspectWorkerStall?: (workspaceId: string) => Promise<WorkerStall | null>;
+  repairWorkerStack?: (input?: { restartApi?: boolean }) => Promise<StackRepairResult>;
+  scheduleProcessExit?: (code: number, delayMs: number) => void;
   env: {
     defaultProvider: string;
     defaultModel: string;
@@ -312,11 +343,16 @@ export interface RouterDeps {
     webOrigin: string;
     screenProxySecret: string;
     sandboxProvider: string;
+    composioApiKey?: string;
   };
 }
 
 export function createRouter(deps: RouterDeps) {
-  const os = implement(appContract).$context<{ actor: Actor | null; signal?: AbortSignal }>();
+  const os = implement(appContract).$context<{
+    actor: Actor | null;
+    signal?: AbortSignal;
+    sessionId?: string | null;
+  }>();
   const repos = createRepos(deps.prisma);
   const mcpOAuth = deps.mcpOAuth ?? new McpOAuthBroker(deps.prisma, deps.secrets);
   const groupRepos = createGroupRepos(deps.prisma);
@@ -339,7 +375,12 @@ export function createRouter(deps: RouterDeps) {
 
   return os.router({
     health: os.health.handler(async () => ({ ok: true as const, version: "0.1.0" })),
-    me: authed.me.handler(async ({ context }): Promise<Me> => meDto(deps, context.actor)),
+    me: authed.me.handler(async ({ context, input }): Promise<Me> => {
+      if (input?.restoreLastWorking) {
+        await restoreLastWorkingModel(deps.prisma, context.actor);
+      }
+      return meDto(deps, context.actor);
+    }),
     preferences: {
       update: authed.preferences.update.handler(async ({ context, input }): Promise<Me> => {
         await deps.prisma.user.update({
@@ -351,6 +392,7 @@ export function createRouter(deps: RouterDeps) {
     },
     bootstrap: authed.bootstrap.handler(async ({ context, input }) => {
       const actor = context.actor;
+      await restoreLastWorkingModel(deps.prisma, actor);
       const [me, bots, botSections, archivedBots] = await Promise.all([
         meDto(deps, actor),
         repos.listBots(actor),
@@ -368,6 +410,53 @@ export function createRouter(deps: RouterDeps) {
         : [null, []];
       return { me, bots, botSections, archivedBots, thread, routines };
     }),
+    workspaces: {
+      list: authed.workspaces.list.handler(async ({ context }) =>
+        listWorkspaces(deps.prisma, context.actor.userId),
+      ),
+      create: authed.workspaces.create.handler(async ({ context, input }) => {
+        const workspace = await createWorkspace(deps.prisma, {
+          userId: context.actor.userId,
+          name: input.name,
+          sourceWorkspaceId: context.actor.workspaceId,
+        }).catch(rethrowWorkspaceError);
+        await setActiveWorkspace(deps.prisma, {
+          userId: context.actor.userId,
+          workspaceId: workspace.id,
+          sessionId: context.sessionId,
+        });
+        return meDto(
+          deps,
+          await requireMembership(deps.prisma, context.actor.userId, workspace.id),
+        );
+      }),
+      switch: authed.workspaces.switch.handler(async ({ context, input }) => {
+        await setActiveWorkspace(deps.prisma, {
+          userId: context.actor.userId,
+          workspaceId: input.workspaceId,
+          sessionId: context.sessionId,
+        });
+        return meDto(
+          deps,
+          await requireMembership(deps.prisma, context.actor.userId, input.workspaceId),
+        );
+      }),
+      update: authed.workspaces.update.handler(async ({ context, input }) =>
+        renameWorkspace(deps.prisma, {
+          userId: context.actor.userId,
+          workspaceId: input.workspaceId,
+          name: input.name,
+        }).catch(rethrowWorkspaceError),
+      ),
+      remove: authed.workspaces.remove.handler(async ({ context, input }) => {
+        const next = await deleteWorkspace(deps.prisma, {
+          userId: context.actor.userId,
+          workspaceId: input.workspaceId,
+          currentWorkspaceId: context.actor.workspaceId,
+        }).catch(rethrowWorkspaceError);
+        return meDto(deps, await requireMembership(deps.prisma, context.actor.userId, next.id));
+      }),
+    },
     deployment: {
       get: authed.deployment.get.handler(async ({ context }) => {
         if (!context.actor.isDeploymentOwner) throw new ORPCError("FORBIDDEN");
@@ -400,33 +489,25 @@ export function createRouter(deps: RouterDeps) {
       }),
     },
     models: {
-      list: authed.models.list.handler(async () => [...listPiCatalog(), scriptedCatalogEntry]),
+      list: authed.models.list.handler(async ({ context }) => catalogForActor(deps, context.actor)),
       credentials: authed.models.credentials.handler(async ({ context }) => {
         const rows = await deps.prisma.userModelCredential.findMany({
           where: { userId: context.actor.userId, workspaceId: context.actor.workspaceId },
           orderBy: newestModelCredentialOrder,
         });
-        const compatibleRows = rows.filter((row) => row.provider === OPENAI_COMPATIBLE_PROVIDER_ID);
+        const compatibleRows = rows.filter((row) => isProbedModelProvider(row.provider));
         const secrets = compatibleRows.length
           ? await deps.prisma.secret.findMany({
               where: {
                 id: { in: compatibleRows.map((row) => row.secretId) },
                 userId: context.actor.userId,
-                workspaceId: context.actor.workspaceId,
               },
               select: { id: true, ciphertext: true },
             })
           : [];
-        const ciphertextById = new Map(secrets.map((secret) => [secret.id, secret.ciphertext]));
-        return rows.map((row) => {
-          const ciphertext = ciphertextById.get(row.secretId);
-          if (!ciphertext) return modelCredentialDto(row);
-          try {
-            return modelCredentialDto(row, deps.secrets.load(ciphertext));
-          } catch {
-            return modelCredentialDto(row);
-          }
-        });
+        return mapUserModelCredentials(rows, secrets, (ciphertext) =>
+          deps.secrets.load(ciphertext),
+        );
       }),
       connect: authed.models.connect.handler(async ({ context, input }) => {
         let plaintext: string;
@@ -442,6 +523,9 @@ export function createRouter(deps: RouterDeps) {
           plaintext,
           label: input.label,
           modelId: input.modelId,
+          routerFastModel: input.routerFastModel,
+          routerSmartModel: input.routerSmartModel,
+          routerHeavyModel: input.routerHeavyModel,
           signal: context.signal,
         });
       }),
@@ -521,6 +605,16 @@ export function createRouter(deps: RouterDeps) {
                   message: `No model credential is connected for ${input.provider} in this workspace.`,
                 });
               }
+              if (input.modelId === COMPLEXITY_ROUTER_MODEL_ID) {
+                if (
+                  !isComplexityRouterProvider(input.provider) ||
+                  !credential.routerFastModel?.trim()
+                ) {
+                  throw new ORPCError("BAD_REQUEST", {
+                    message: "Auto is only available after Fast is configured.",
+                  });
+                }
+              }
               await tx.userModelCredential.updateMany({
                 where: {
                   userId: context.actor.userId,
@@ -536,6 +630,50 @@ export function createRouter(deps: RouterDeps) {
             { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
           ),
         );
+        return { ok: true as const };
+      }),
+      setRouter: authed.models.setRouter.handler(async ({ context, input }) => {
+        if (!isComplexityRouterProvider(input.provider)) {
+          throw new ORPCError("BAD_REQUEST", {
+            message: "Complexity routing is only available for OpenAI-compatible providers.",
+          });
+        }
+        const catalog = [...listPiCatalog(), scriptedCatalogEntry];
+        const slots: Array<["fast" | "smart" | "heavy", string | null | undefined]> = [
+          ["fast", input.fast],
+          ["smart", input.smart],
+          ["heavy", input.heavy],
+        ];
+        for (const [path, slot] of slots) {
+          if (slot == null) continue;
+          if (!isAllowedComplexityRouterSlot(input.provider, slot, catalog)) {
+            throw new ORPCError("BAD_REQUEST", {
+              message: `Unknown model for the ${path} slot`,
+            });
+          }
+        }
+        const credential = await deps.prisma.userModelCredential.findFirst({
+          where: {
+            userId: context.actor.userId,
+            workspaceId: context.actor.workspaceId,
+            provider: input.provider,
+          },
+          orderBy: newestModelCredentialOrder,
+        });
+        if (!credential) {
+          throw new ORPCError("BAD_REQUEST", {
+            message: `No model credential is connected for ${input.provider} in this workspace.`,
+          });
+        }
+        await deps.prisma.userModelCredential.update({
+          where: { id: credential.id },
+          data: {
+            routerFastModel: input.fast,
+            routerSmartModel: input.smart ?? null,
+            routerHeavyModel: input.heavy ?? null,
+            ...(credential.isDefault ? { defaultModel: COMPLEXITY_ROUTER_MODEL_ID } : {}),
+          },
+        });
         return { ok: true as const };
       }),
     },
@@ -612,7 +750,7 @@ export function createRouter(deps: RouterDeps) {
           if (!credential) {
             throw new ORPCError("BAD_REQUEST", { message: "Connect that model provider first" });
           }
-          const knownModels = [...listPiCatalog(), scriptedCatalogEntry];
+          const knownModels = await catalogForActor(deps, context.actor);
           const inCatalog = knownModels.some(
             (item) => item.provider === input.modelProvider && item.id === input.modelId,
           );
@@ -688,16 +826,14 @@ export function createRouter(deps: RouterDeps) {
           if (bot.computer.controlBotId === bot.id && hasActiveComputerControl(bot.computer)) {
             throw new ORPCError("BAD_REQUEST", { message: "Release the computer first" });
           }
+          const ctx = computerContext(context.actor, bot.id, "computer.switch");
+          await releaseBotComputerSession(deps, bot.computer, ctx);
           if (bot.computer.scope === "dedicated" && bot.computer.providerRef) {
-            const ctx = computerContext(context.actor, bot.id, "computer.switch");
             const ref = toComputerRef(bot.computer);
             if (bot.computer.state === "running") {
               await checkpointAndRecordComputerWorkspace(deps, bot.computer, ref, ctx);
               await deps.sandbox.stop(ref, ctx);
             }
-            await deps.prisma.computerExecutionLease.deleteMany({
-              where: { computerId: bot.computer.id, botId: bot.id },
-            });
             await deps.prisma.computer.update({
               where: { id: bot.computer.id },
               data: {
@@ -1141,6 +1277,9 @@ export function createRouter(deps: RouterDeps) {
       update: authed.computer.update.handler(async ({ context, input }) =>
         runComputerReplace(deps, context, input.botId, "update", "update"),
       ),
+      restart: authed.computer.restart.handler(async ({ context, input }) =>
+        runComputerReplace(deps, context, input.botId, "recover", "restart", { force: true }),
+      ),
       takeover: authed.computer.takeover.handler(async ({ context, input }) => {
         let bot = await repos.getBot(context.actor, input.botId);
         if (!bot.computer?.providerRef || bot.computer.state !== "running") {
@@ -1492,6 +1631,11 @@ export function createRouter(deps: RouterDeps) {
     },
     memory: {
       list: authed.memory.list.handler(async ({ context, input }) => {
+        await ensureIdentityDocuments(deps.prisma, {
+          workspaceId: context.actor.workspaceId,
+          userId: context.actor.userId,
+          botId: input.botId,
+        });
         const docs = await deps.prisma.memoryDocument.findMany({
           where: {
             workspaceId: context.actor.workspaceId,
@@ -1519,12 +1663,16 @@ export function createRouter(deps: RouterDeps) {
           },
         });
         if (!doc) throw new IsolationError();
+        const scope = doc.scope as "bot" | "user";
+        const content = isIdentityFile(doc.path, scope)
+          ? clampIdentityFileContent(input.content)
+          : input.content;
         const updated = await deps.memory.commit(
           {
-            scope: doc.scope as "bot" | "user",
+            scope,
             botId: doc.botId ?? undefined,
             path: doc.path,
-            content: input.content,
+            content,
           },
           {
             operationId: "mem",
@@ -2637,6 +2785,77 @@ export function createRouter(deps: RouterDeps) {
         });
         return { ok: true as const };
       }),
+      revokeByProvider: authed.connections.revokeByProvider.handler(async ({ context, input }) => {
+        const connector = deps.connectors.managed(input.connectorId);
+        if (!connector) {
+          throw new ORPCError("BAD_REQUEST", {
+            message: `Connector ${input.connectorId} is not configured`,
+          });
+        }
+        const rows = await deps.prisma.connection.findMany({
+          where: {
+            userId: context.actor.userId,
+            connectorId: input.connectorId,
+            provider: input.provider,
+          },
+        });
+        // Prefer a live row, and revoke through the workspace it was created in
+        // so per-workspace providers (Pipedream identities) resolve correctly.
+        const target =
+          rows.find((row) => row.status === "connected") ??
+          rows.find((row) => row.status === "pending") ??
+          rows.find((row) => row.status === "error") ??
+          rows[0];
+        try {
+          await connector.revoke(
+            input.provider,
+            connectionContext(
+              {
+                workspaceId: target?.workspaceId ?? context.actor.workspaceId,
+                userId: context.actor.userId,
+              },
+              "connections.revokeByProvider",
+              context.signal,
+            ),
+          );
+        } catch (error) {
+          throw new ORPCError("BAD_REQUEST", { message: sanitizeComposioError(error) });
+        }
+        if (rows.length > 0) {
+          await deps.prisma.connection.updateMany({
+            where: {
+              userId: context.actor.userId,
+              connectorId: input.connectorId,
+              provider: input.provider,
+            },
+            data: { status: "revoked" },
+          });
+        }
+        return { ok: true as const };
+      }),
+      projectKey: authed.connections.projectKey.handler(async ({ context }) =>
+        readComposioProjectKeyStatus(
+          { prisma: deps.prisma, secrets: deps.secrets, envApiKey: deps.env.composioApiKey },
+          context.actor.userId,
+        ),
+      ),
+      setProjectKey: authed.connections.setProjectKey.handler(async ({ context, input }) => {
+        const status = await persistComposioProjectKey(
+          { prisma: deps.prisma, secrets: deps.secrets, envApiKey: deps.env.composioApiKey },
+          context.actor,
+          input.apiKey,
+        );
+        deps.composio?.invalidateUser?.(context.actor.userId);
+        return status;
+      }),
+      clearProjectKey: authed.connections.clearProjectKey.handler(async ({ context }) => {
+        const status = await clearComposioProjectKey(
+          { prisma: deps.prisma, secrets: deps.secrets, envApiKey: deps.env.composioApiKey },
+          context.actor.userId,
+        );
+        deps.composio?.invalidateUser?.(context.actor.userId);
+        return status;
+      }),
     },
     approvalRules: {
       list: authed.approvalRules.list.handler(async ({ context }) => {
@@ -2692,6 +2911,28 @@ export function createRouter(deps: RouterDeps) {
           },
         });
         return { ok: true as const };
+      }),
+    },
+    approvals: {
+      list: authed.approvals.list.handler(async ({ context }) =>
+        listPendingApprovals(deps.prisma, context.actor, deps.inspectWorkerStall),
+      ),
+      repairStack: authed.approvals.repairStack.handler(async ({ context, input }) => {
+        if (!canRepairHostStack(context.actor.isDeploymentOwner, deps.env.webOrigin)) {
+          throw new ORPCError("FORBIDDEN");
+        }
+        if (!deps.repairWorkerStack) {
+          return {
+            ok: false,
+            started: [],
+            error: "This API cannot start the worker from here.",
+          } satisfies StackRepairResult;
+        }
+        const result = await deps.repairWorkerStack({ restartApi: input?.restartApi });
+        if (result.ok && result.started.includes("api")) {
+          deps.scheduleProcessExit?.(0, 250);
+        }
+        return result;
       }),
     },
     artifacts: {
@@ -2955,10 +3196,11 @@ export function createRouter(deps: RouterDeps) {
 }
 
 async function meDto(deps: RouterDeps, actor: Actor): Promise<Me> {
-  const [user, cred, settings] = await Promise.all([
+  const [user, cred, settings, workspaces] = await Promise.all([
     deps.prisma.user.findUniqueOrThrow({ where: { id: actor.userId } }),
     findDefaultModelCredential(deps.prisma, actor),
     deps.prisma.deploymentSettings.findUnique({ where: { id: "default" } }),
+    listWorkspaces(deps.prisma, actor.userId),
   ]);
   const hasDeployment = Boolean(
     settings?.deploymentModelCredentialCipher || deps.env.deploymentModelKey,
@@ -2968,6 +3210,9 @@ async function meDto(deps: RouterDeps, actor: Actor): Promise<Me> {
     email: user.email,
     name: user.name,
     workspaceId: actor.workspaceId,
+    workspaceName:
+      workspaces.find((workspace) => workspace.id === actor.workspaceId)?.name ?? "Personal",
+    workspaces,
     isDeploymentOwner: actor.isDeploymentOwner,
     needsModel: !cred && !hasDeployment,
     defaultProvider: cred?.provider ?? settings?.defaultModelProvider ?? deps.env.defaultProvider,
@@ -2976,6 +3221,20 @@ async function meDto(deps: RouterDeps, actor: Actor): Promise<Me> {
     canChooseHostComputer: actor.isDeploymentOwner && deps.env.sandboxProvider === "docker",
     avatarStyle: user.avatarStyle === "organic" ? "organic" : "robot",
   };
+}
+
+function rethrowWorkspaceError(error: unknown): never {
+  if (error instanceof IsolationError) throw error;
+  if (error instanceof WorkspaceError) {
+    if (error.code === "last_workspace") {
+      throw new ORPCError("BAD_REQUEST", { message: error.message });
+    }
+    if (error.code === "forbidden") {
+      throw new ORPCError("FORBIDDEN", { message: error.message });
+    }
+    throw new IsolationError();
+  }
+  throw error;
 }
 
 async function computerStatus(
@@ -3002,6 +3261,7 @@ async function runComputerReplace(
   botId: string,
   mode: "recover" | "reset" | "update",
   operationId: string,
+  opts?: { force?: boolean },
 ): Promise<ComputerStatus> {
   const repos = createRepos(deps.prisma);
   const bot = await repos.getBot(context.actor, botId);
@@ -3009,6 +3269,16 @@ async function runComputerReplace(
   if (mode === "update" && !computerSupportsUpdate(bot.computer.kind)) {
     throw new ORPCError("BAD_REQUEST", {
       message: "Computer update is not available on this device",
+    });
+  }
+  if (opts?.force) {
+    await cancelRunsOnComputer(deps, bot.computer.id);
+    await deps.prisma.computer.updateMany({
+      where: {
+        id: bot.computer.id,
+        state: { in: ["booting", "suspending"] },
+      },
+      data: { state: "error" },
     });
   }
   const manualRunId = `${mode}:${randomUUID()}`;
@@ -3026,20 +3296,60 @@ async function runComputerReplace(
     throw error;
   }
   try {
-    await replaceComputer(deps, bot.computer.id, mode, {
-      ...computerContext(context.actor, bot.id, operationId),
-      screenLeaseId: screenLeaseIdForRun(lease, manualRunId),
-    });
+    await replaceComputer(
+      deps,
+      bot.computer.id,
+      mode,
+      {
+        ...computerContext(context.actor, bot.id, operationId),
+        screenLeaseId: screenLeaseIdForRun(lease, manualRunId),
+      },
+      "none",
+      { force: opts?.force },
+    );
     scheduleComputerSleep(deps.jobs, bot.computer.id);
   } catch (error) {
     if (error instanceof ComputerBusyError) {
       throw new ORPCError("CONFLICT", { message: "Computer is busy" });
     }
-    throw error;
+    throw new ORPCError("INTERNAL_SERVER_ERROR", {
+      message: error instanceof Error ? error.message : "Could not replace the computer",
+    });
   } finally {
     await releaseComputerExecutionLease(deps.prisma, lease);
   }
   return computerStatus(deps, context.actor, botId);
+}
+
+async function cancelRunsOnComputer(deps: RouterDeps, computerId: string) {
+  const runs = await deps.prisma.run.findMany({
+    where: {
+      status: { in: [...ACTIVE_RUN_STATUSES] },
+      bot: { computerId },
+    },
+    select: { id: true },
+  });
+  if (runs.length === 0) return;
+  const ids = runs.map((run) => run.id);
+  await deps.prisma.run.updateMany({
+    where: { id: { in: ids } },
+    data: {
+      status: "cancelled",
+      completedAt: new Date(),
+      leaseOwner: null,
+      leaseExpiresAt: null,
+    },
+  });
+  await deps.prisma.computerExecutionLease.deleteMany({ where: { computerId } });
+  await deps.prisma.computer.updateMany({
+    where: { id: computerId },
+    data: {
+      executionRunId: null,
+      executionBotId: null,
+      executionLeaseExpiresAt: null,
+    },
+  });
+  await Promise.all(ids.map((id) => deps.jobs.cancel(runJobKey(id)).catch(() => undefined)));
 }
 
 async function expireStaleComputerControl(
@@ -3087,6 +3397,14 @@ async function deploymentDto(prisma: PrismaClient, sandboxProvider: string) {
   };
 }
 
+async function catalogForActor(deps: RouterDeps, actor: Actor) {
+  const rows = await deps.prisma.userModelCredential.findMany({
+    where: { userId: actor.userId, workspaceId: actor.workspaceId },
+    select: { provider: true, routerFastModel: true },
+  });
+  return withComplexityRouterCatalog([...listPiCatalog(), scriptedCatalogEntry], rows);
+}
+
 function computerHostFor(
   stored: string | null | undefined,
   sandboxProvider: string,
@@ -3105,10 +3423,22 @@ async function persistModelCredential(
     plaintext: string;
     label?: string;
     modelId?: string;
+    routerFastModel?: string | null;
+    routerSmartModel?: string | null;
+    routerHeavyModel?: string | null;
     signal?: AbortSignal;
   },
 ) {
   throwIfAborted(input.signal);
+  const compatibleBaseUrl = openAiCompatibleBaseUrlFromPlaintext(input.plaintext);
+  const routerSlots =
+    input.routerFastModel !== undefined && isComplexityRouterProvider(input.provider)
+      ? {
+          routerFastModel: input.routerFastModel,
+          routerSmartModel: input.routerSmartModel ?? null,
+          routerHeavyModel: input.routerHeavyModel ?? null,
+        }
+      : {};
   const stored = await deps.secrets.put(input.plaintext, {
     operationId: "cred",
     traceId: "cred",
@@ -3145,40 +3475,42 @@ async function persistModelCredential(
           data: { isDefault: false },
         });
         throwIfAborted(input.signal);
-        if (!existing) {
-          const created = await tx.userModelCredential.create({
-            data: {
-              userId: actor.userId,
-              workspaceId: actor.workspaceId,
-              provider: input.provider,
-              label: input.label ?? input.provider,
-              secretId: secret.id,
-              isDefault: true,
-              defaultModel: input.modelId ?? deps.env.defaultModel,
-            },
-          });
-          throwIfAborted(input.signal);
-          return created;
-        }
-        const updated = await tx.userModelCredential.update({
-          where: { id: existing.id },
-          data: {
-            label: input.label ?? input.provider,
-            secretId: secret.id,
-            isDefault: true,
-            defaultModel: input.modelId ?? deps.env.defaultModel,
-          },
+        const credential = existing
+          ? await tx.userModelCredential.update({
+              where: { id: existing.id },
+              data: {
+                label: input.label ?? input.provider,
+                secretId: secret.id,
+                isDefault: true,
+                defaultModel: input.modelId ?? deps.env.defaultModel,
+                baseUrl: compatibleBaseUrl,
+                ...routerSlots,
+              },
+            })
+          : await tx.userModelCredential.create({
+              data: {
+                userId: actor.userId,
+                workspaceId: actor.workspaceId,
+                provider: input.provider,
+                label: input.label ?? input.provider,
+                secretId: secret.id,
+                isDefault: true,
+                defaultModel: input.modelId ?? deps.env.defaultModel,
+                baseUrl: compatibleBaseUrl,
+                ...routerSlots,
+              },
+            });
+        throwIfAborted(input.signal);
+        // Reconnecting in one workspace must not leave other workspaces on a
+        // cloned OAuth secret — Anthropic/OpenAI refresh tokens cannot be copied.
+        await shareUserProviderSecret(tx, {
+          userId: actor.userId,
+          provider: input.provider,
+          secretId: secret.id,
+          baseUrl: compatibleBaseUrl,
         });
         throwIfAborted(input.signal);
-        const sharedSecret = await tx.userModelCredential.count({
-          where: { id: { not: existing.id }, secretId: existing.secretId },
-        });
-        throwIfAborted(input.signal);
-        if (sharedSecret === 0) {
-          await tx.secret.deleteMany({ where: { id: existing.secretId } });
-          throwIfAborted(input.signal);
-        }
-        return updated;
+        return credential;
       },
       { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
     ),

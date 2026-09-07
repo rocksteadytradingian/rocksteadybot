@@ -235,6 +235,8 @@ describe("sandbox supervisor input containment", () => {
     expect(ensureScreenCommand(1)).toContain("Xvfb :2");
     expect(ensureScreenCommand(1)).toContain("rfbport 5902");
     expect(ensureScreenCommand(1)).toContain("0.0.0.0:6082");
+    expect(ensureScreenCommand(1)).toContain("autocutsel -display :2 -selection CLIPBOARD");
+    expect(stopExtraScreenCommand(1)).toContain("autocutsel -display :2 -selection");
     expect(() => nextScreenIndex(assigned, "overflow", undefined, 1)).toThrow(
       /cannot allocate another screen/,
     );
@@ -311,6 +313,14 @@ describe("sandbox supervisor input containment", () => {
     );
     expect(releaseAssignedScreen(assigned, "writer", "run-1:1")).toBeUndefined();
     expect(releaseAssignedScreen(assigned, "writer", "run-2:2")).toBe(0);
+  });
+
+  it("does not label a leftover private screen as a Team Computer", () => {
+    const assigned = new Map<string, ScreenAssignment>();
+    expect(nextScreenIndex(assigned, "writer", "run-2:2")).toBe(0);
+    expect(() => nextScreenIndex(assigned, "writer", "run-1:1")).toThrow(
+      /^This computer screen is owned by a newer execution\.$/,
+    );
   });
 
   it("stops extra displays without touching the primary desktop", () => {

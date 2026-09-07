@@ -12,9 +12,11 @@ import type {
   ConnectionCatalogItem,
   Group,
   Me,
+  MemoryDocument,
   MessageBlock,
   ModelCatalogEntry,
   ModelCredential,
+  PendingApproval,
   ProductEvent,
   Routine,
   SearchHit,
@@ -27,32 +29,38 @@ import type {
   WorkspaceMemoryConfig,
 } from "@rakazo/contracts";
 import {
-  ATTACHMENT_ALLOWED_MIME_TYPES,
   ATTACHMENT_MAX_BYTES,
   ATTACHMENT_MAX_COUNT,
   BOT_DESCRIPTION_MAX_LENGTH,
   BOT_NAME_MAX_LENGTH,
   BOT_TITLE_MAX_LENGTH,
+  isAttachmentImageMimeType,
   normalizeCreateBotProfile,
 } from "@rakazo/contracts";
 import {
   abortableDelay,
   attachmentsForThread,
+  BOT_IDENTITY_PATH,
   buildComposerMentionOptions,
   type ComposerMention,
+  canRepairHostStack,
   cronFromPreset,
   defaultCronPreset,
   formatCron,
   groupBotsForSidebar,
   inferAttachmentMimeType,
   isActive,
+  isApprovalAskBlock,
   isRunTerminalEvent,
+  isStackRepairApproval,
+  isWorking,
   latestAnswerableAskMessageId,
   mentionChipKey,
   presetFromCron,
   resolveComposerSendPlan,
   SLASH_ACTIONS,
   type SlashActionId,
+  SOUL_IDENTITY_PATH,
   searchHitThreadTarget,
   serializeComposerPrompt,
   speechFromBlocks,
@@ -76,13 +84,17 @@ import {
   Cpu,
   Gauge,
   LogOut,
+  Maximize2,
   Menu,
   Mic,
+  Minimize2,
   Monitor,
+  Palette,
   Paperclip,
   Phone,
   Plus,
   Puzzle,
+  RefreshCw,
   Reply,
   Settings,
   Square,
@@ -90,6 +102,9 @@ import {
   X,
 } from "lucide-react";
 import {
+  type ClipboardEvent,
+  type DragEvent,
+  Fragment,
   lazy,
   type MutableRefObject,
   memo,
@@ -97,6 +112,7 @@ import {
   Suspense,
   useCallback,
   useEffect,
+  useId,
   useLayoutEffect,
   useMemo,
   useRef,
@@ -111,18 +127,28 @@ import {
 } from "../components/beautiful-ui/CollaborationMarker";
 import { BuiButton, BuiCard, SuccessPop } from "../components/beautiful-ui/primitives";
 import { ComputerMaintenanceActions } from "../components/ComputerMaintenanceActions";
+import { IdentityMarkdownField, identityDocumentByPath } from "../components/IdentityFilesEditor";
 import { SkillDraftCard } from "../components/teach/SkillDraftCard";
 import { TeachCaptureOverlay } from "../components/teach/TeachCaptureOverlay";
 import { TeachComputerSection } from "../components/teach/TeachComputerSection";
 import { TeachRecordingChrome, TeachStopButton } from "../components/teach/TeachRecordingChrome";
+import { UiThemePicker } from "../components/UiThemePicker";
 import { readActivityMode, writeActivityMode } from "../lib/activity-mode";
 import { type ArtifactTarget, decodeArtifactBase64 } from "../lib/artifact-open";
 import { authClient } from "../lib/auth";
 import { takeInitialBootstrap } from "../lib/bootstrap";
 import { chartViewport } from "../lib/chart-viewport";
+import { filesFromDataTransfer, namedClipboardFile } from "../lib/composer-attachments";
+import { computerSidePanelBodyClass, computerSidePanelClass } from "../lib/computer-panel";
 import { dictation } from "../lib/dictation";
+import { isComputerBusyForThread, liveStatusForBot } from "../lib/live-bot-status";
 import { localTimezone } from "../lib/local-timezone";
 import { connectMcpOauth } from "../lib/mcp-connect";
+import {
+  formatMessageBreak,
+  formatMessageClock,
+  shouldBreakBefore,
+} from "../lib/message-timestamps";
 import { revokePendingAttachmentPreviews } from "../lib/pending-attachments";
 import { markAfterPaint, markOnce } from "../lib/performance";
 import { rpc } from "../lib/rpc";
@@ -140,14 +166,27 @@ import {
   reduceThreadSnapshot,
   userHoldsComputerControl,
 } from "../lib/thread-events";
-import { transcriptIsNearEnd } from "../lib/transcript-scroll";
+import {
+  scrollTranscriptToEnd,
+  transcriptFollowAfterScroll,
+  transcriptIsNearEnd,
+} from "../lib/transcript-scroll";
 import { speaker } from "../lib/tts";
+import { resolveUiTheme, setUiTheme, uiThemeById } from "../lib/ui-theme";
 import { ActivityList } from "./ActivityList";
+import {
+  ApprovalsNavButton,
+  ApprovalsOverlay,
+  ApprovalsPanelSection,
+  usePendingApprovals,
+  useWorkerStallNotification,
+} from "./ApprovalsInbox";
 import type { ContextMenuPosition } from "./BotContextMenu";
 import { CreateGroupForm, GroupSettings, memberName } from "./GroupPanel";
 import { HostComputerPrompt } from "./HostComputerPrompt";
 import { SkillPromotionCard } from "./SkillPromotionCard";
 import { WindowChrome } from "./WindowChrome";
+import { WorkspacePicker } from "./WorkspacePicker";
 import { WorkspaceSearchResults } from "./WorkspaceSearch";
 
 const BotContextMenu = lazy(() =>
@@ -214,8 +253,6 @@ type PendingAttachment = {
   file: File;
   previewUrl?: string;
 };
-
-const ATTACHMENT_ACCEPT = ATTACHMENT_ALLOWED_MIME_TYPES.join(",");
 
 export function ShellPage() {
   const { t } = useLingui();
@@ -310,6 +347,10 @@ export function ShellPage() {
   const [accountSettingsOpen, setAccountSettingsOpen] = useState(false);
   const [accountSettingsFocusUsage, setAccountSettingsFocusUsage] = useState(false);
   const [modelsOpen, setModelsOpen] = useState(false);
+  const [approvalsOpen, setApprovalsOpen] = useState(false);
+  const [approvalBusyId, setApprovalBusyId] = useState<string | null>(null);
+  const [stackRestartBusy, setStackRestartBusy] = useState(false);
+  const [computerRestartBusy, setComputerRestartBusy] = useState(false);
   const [memorySettingsOpen, setMemorySettingsOpen] = useState(false);
   const [redactionOpen, setRedactionOpen] = useState(false);
   const [skillRevisionsOpen, setSkillRevisionsOpen] = useState(false);
@@ -325,6 +366,8 @@ export function ShellPage() {
   const [dictating, setDictating] = useState(false);
   const [dictationError, setDictationError] = useState<string | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [themePickerOpen, setThemePickerOpen] = useState(false);
+  const [uiTheme, setUiThemeId] = useState(resolveUiTheme);
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const [createMenuOpen, setCreateMenuOpen] = useState(false);
   const [activityMode, setActivityMode] = useState(readActivityMode);
@@ -346,6 +389,7 @@ export function ShellPage() {
   const [loadingOlder, setLoadingOlder] = useState(false);
   const [initialBotsLoaded, setInitialBotsLoaded] = useState(false);
   const [bootstrapMe, setBootstrapMe] = useState<Me | null>();
+  const [workspaceBusy, setWorkspaceBusy] = useState(false);
   const [routineDraft, setRoutineDraft] = useState({
     name: "",
     prompt: "",
@@ -358,7 +402,11 @@ export function ShellPage() {
   const [routineError, setRoutineError] = useState<string | null>(null);
   const [screenUrl, setScreenUrl] = useState<string | null>(null);
   const [computerOpen, setComputerOpen] = useState(false);
+  const [computerEnlarged, setComputerEnlarged] = useState(false);
+  const [computerFullscreen, setComputerFullscreen] = useState(false);
+  const computerOverlayRef = useRef<HTMLDivElement>(null);
   const [computerError, setComputerError] = useState<string | null>(null);
+  const [computerSwitching, setComputerSwitching] = useState(false);
   const [usage, setUsage] = useState<{
     inputTokens: number;
     outputTokens: number;
@@ -374,6 +422,7 @@ export function ShellPage() {
   const jumpGeneration = useRef(0);
   const initiallyScrolledThread = useRef<string | null>(null);
   const messageScroll = useRef<HTMLDivElement>(null);
+  const followTranscript = useRef(true);
   const pinnedAroundRef = useRef<{
     botId?: string;
     groupId?: string;
@@ -491,6 +540,35 @@ export function ShellPage() {
     [navigate],
   );
 
+  async function changeWorkspace(run: () => Promise<Me>) {
+    if (workspaceBusy) return;
+    setWorkspaceBusy(true);
+    try {
+      const nextMe = await run();
+      setBootstrapMe(nextMe);
+      const [list, sections, archived, groupList] = await Promise.all([
+        rpc.bots.list(),
+        rpc.botSections.list(),
+        rpc.bots.listArchived(),
+        rpc.groups.list(),
+      ]);
+      setBots(list);
+      setBotSections(sections);
+      setArchivedBots(archived);
+      setGroups(groupList);
+      setInitialBotsLoaded(true);
+      commitSnapshot(null);
+      commitComputer(null);
+      setRoutines([]);
+      setRoutinesBotId(null);
+      setScreenUrl(null);
+      setComputerOpen(false);
+      navigate(firstThreadRoute(list, groupList), { replace: true });
+    } finally {
+      setWorkspaceBusy(false);
+    }
+  }
+
   async function refreshGroupThread(id: string) {
     const scrollElement = messageScroll.current;
     const stickToEnd = !scrollElement || transcriptIsNearEnd(scrollElement);
@@ -517,7 +595,7 @@ export function ShellPage() {
     ) {
       window.requestAnimationFrame(() => {
         const element = messageScroll.current;
-        if (element) element.scrollTop = element.scrollHeight;
+        if (element) scrollTranscriptToEnd(element);
       });
     }
     return snap;
@@ -556,7 +634,7 @@ export function ShellPage() {
     ) {
       window.requestAnimationFrame(() => {
         const element = messageScroll.current;
-        if (element) element.scrollTop = element.scrollHeight;
+        if (element) scrollTranscriptToEnd(element);
       });
     }
     const [routines, skills] = await Promise.all([
@@ -759,7 +837,7 @@ export function ShellPage() {
       autoSpoken.current = lastBot?.id ?? null;
       return;
     }
-    if (snapshot.run && ["running", "queued", "leased"].includes(snapshot.run.status)) return;
+    if (snapshot.run && isWorking(snapshot.run.status)) return;
     if (!lastBot || lastBot.id === autoSpoken.current) return;
     const text = speechFromBlocks(lastBot.blocks);
     if (!text) return;
@@ -1112,14 +1190,75 @@ export function ShellPage() {
       : null;
   const currentRuns = activeThreadRuns(activeSnapshot);
   const answerableAskMessageId = latestAnswerableAskMessageId(activeSnapshot);
-  const workingRuns = currentRuns.filter((run) =>
-    ["running", "queued", "leased"].includes(run.status),
-  );
-  const transcriptRunning = workingRuns.length > 0;
+  const workingRuns = currentRuns.filter((run) => isWorking(run.status));
+  const computerBusyForThread = isComputerBusyForThread({
+    controlHolder: computer?.controlHolder,
+    busyBotName: computer?.busyBotName,
+    threadBotName: inGroup ? null : (active?.name ?? null),
+    memberNames: (activeSnapshot?.members ?? activeGroup?.members)?.map((member) => member.name),
+  });
+  const transcriptRunning = workingRuns.length > 0 || computerBusyForThread;
+  const liveStatusByBotId = new Map<string, string>();
+  for (const bot of bots) {
+    const status = liveStatusForBot({
+      botId: bot.id,
+      botName: bot.name,
+      listedStatus: bot.status,
+      runs: currentRuns,
+      activeBotId: active?.id,
+      busyBotName: computer?.busyBotName,
+      controlHolder: computer?.controlHolder,
+    });
+    if (status !== bot.status) liveStatusByBotId.set(bot.id, status);
+  }
+  const workingStartedAtMs = (() => {
+    let earliest: number | undefined;
+    for (const run of workingRuns) {
+      // Prefer startedAt; fall back to createdAt so queued/leased runs keep a
+      // stable clock across remounts before the executor sets startedAt.
+      const iso = run.startedAt ?? run.createdAt;
+      const ms = Date.parse(iso);
+      if (Number.isNaN(ms)) continue;
+      if (earliest === undefined || ms < earliest) earliest = ms;
+    }
+    return earliest;
+  })();
   const composerRunning = currentRuns.some((run) => isActive(run.status));
   const transcriptArtifactTarget = useMemo<ArtifactTarget>(
     () => (inGroup ? { groupId: groupId ?? "" } : { botId: active?.id ?? "" }),
     [active?.id, groupId, inGroup],
+  );
+  const pendingApprovalHint = useMemo(() => {
+    let count = 0;
+    for (const message of snapshot?.messages ?? []) {
+      for (const block of message.blocks) {
+        if (block.kind === "ask" && isApprovalAskBlock(block) && block.status !== "answered") {
+          count += 1;
+        }
+      }
+    }
+    return count;
+  }, [snapshot?.messages]);
+  const {
+    items: pendingApprovals,
+    loading: approvalsLoading,
+    refresh: refreshApprovals,
+    setItems: setPendingApprovals,
+  } = usePendingApprovals(pendingApprovalHint);
+  useWorkerStallNotification(pendingApprovals);
+  const stackRepair = pendingApprovals.find(isStackRepairApproval);
+  const canRepairStack = canRepairHostStack(
+    Boolean(bootstrapMe?.isDeploymentOwner),
+    window.location.origin,
+  );
+  const botApprovals = useMemo(
+    () =>
+      pendingApprovals.filter(
+        (item) =>
+          isStackRepairApproval(item) ||
+          (inGroup ? item.groupId === groupId : item.botId === active?.id && !item.groupId),
+      ),
+    [active?.id, groupId, inGroup, pendingApprovals],
   );
   const transcriptMembers = activeSnapshot?.members ?? activeGroup?.members;
   const resolveTranscriptBot = useCallback(
@@ -1134,11 +1273,25 @@ export function ShellPage() {
     const bot = resolveTranscriptBot(run.botId);
     return {
       botId: run.botId,
-      color: bot?.color ?? "#85858A",
+      color: bot?.color ?? "var(--rk-muted)",
       name: bot?.name,
       status: run.status,
     };
   });
+  if (workingBots.length === 0 && computerBusyForThread && computer?.busyBotName) {
+    const busyMember = (activeSnapshot?.members ?? activeGroup?.members)?.find(
+      (member) => member.name === computer.busyBotName,
+    );
+    const busyBot = busyMember ?? bots.find((bot) => bot.name === computer.busyBotName);
+    if (busyBot) {
+      workingBots.push({
+        botId: "botId" in busyBot ? busyBot.botId : busyBot.id,
+        color: busyBot.color,
+        name: busyBot.name,
+        status: "running",
+      });
+    }
+  }
   const resolveTranscriptMemberName = useCallback(
     (botId: string | undefined) => memberName(transcriptMembers, botId),
     [transcriptMembers],
@@ -1283,7 +1436,8 @@ export function ShellPage() {
     }
     const element = messageScroll.current;
     if (!element) return;
-    element.scrollTop = element.scrollHeight;
+    followTranscript.current = true;
+    scrollTranscriptToEnd(element);
     initiallyScrolledThread.current = snapshot.threadId;
   }, [active, groupId, inGroup, snapshot?.botId, snapshot?.groupId, snapshot?.threadId]);
 
@@ -1321,32 +1475,120 @@ export function ShellPage() {
       await refreshThreadRef.current(botId);
     }
   }, []);
+  const openApproval = useCallback(
+    (item: PendingApproval) => {
+      if (isStackRepairApproval(item)) {
+        setApprovalsOpen(true);
+        return;
+      }
+      setApprovalsOpen(false);
+      setMobileSidebarOpen(false);
+      const params = new URLSearchParams();
+      params.set("m", item.messageId);
+      navigate({
+        pathname: item.groupId ? `/app/g/${item.groupId}` : `/app/${item.botId}`,
+        search: `?${params}`,
+      });
+    },
+    [navigate],
+  );
+  const answerApproval = useCallback(
+    async (item: PendingApproval) => {
+      setApprovalBusyId(item.id);
+      try {
+        if (isStackRepairApproval(item)) {
+          const result = await rpc.approvals.repairStack();
+          if (!result.ok) throw new Error(result.error || t`Could not start the worker`);
+          setPendingApprovals((current) => current.filter((row) => row.id !== item.id));
+          await refreshApprovals();
+          return;
+        }
+        await rpc.threads.answer({
+          ...(item.groupId ? { groupId: item.groupId } : { botId: item.botId }),
+          runId: item.runId,
+          messageId: item.messageId,
+          answer: "allow",
+        });
+        setPendingApprovals((current) => current.filter((row) => row.id !== item.id));
+        if (item.groupId && activeGroupId.current === item.groupId) {
+          await refreshGroupThreadRef.current(item.groupId);
+        } else if (!item.groupId && activeBotId.current === item.botId) {
+          await refreshThreadRef.current(item.botId);
+        }
+      } catch {
+        await refreshApprovals();
+      } finally {
+        setApprovalBusyId(null);
+      }
+    },
+    [refreshApprovals, setPendingApprovals, t],
+  );
+  const restartLocalStack = useCallback(async () => {
+    if (!canRepairStack || stackRestartBusy) return;
+    setStackRestartBusy(true);
+    setMenuOpen(false);
+    try {
+      const result = await rpc.approvals.repairStack({ restartApi: true });
+      if (!result.ok) throw new Error(result.error || t`Could not restart the API`);
+      setPendingApprovals((current) => current.filter((row) => !isStackRepairApproval(row)));
+      await refreshApprovals();
+    } catch {
+      await refreshApprovals();
+    } finally {
+      setStackRestartBusy(false);
+    }
+  }, [canRepairStack, refreshApprovals, setPendingApprovals, stackRestartBusy, t]);
+  const restartActiveComputer = useCallback(async () => {
+    const botTarget = activeBotId.current;
+    if (!botTarget || computerRestartBusy) return;
+    setComputerRestartBusy(true);
+    setMenuOpen(false);
+    setSendError(null);
+    try {
+      await rpc.threads.stop({ botId: botTarget }).catch(() => undefined);
+      await rpc.computer.restart({ botId: botTarget });
+      if (activeBotId.current === botTarget) {
+        updateSnapshot((prev) => {
+          if (!prev || (prev.botId !== botTarget && prev.botId)) return prev;
+          return clearActiveThreadRuns(prev);
+        });
+        await refreshThreadRef.current(botTarget).catch(() => undefined);
+      }
+    } catch (error) {
+      if (activeBotId.current === botTarget) {
+        setSendError(error instanceof Error ? error.message : t`Could not restart the computer`);
+      }
+    } finally {
+      setComputerRestartBusy(false);
+    }
+  }, [computerRestartBusy, t]);
   const onAttachmentPick = useCallback(
-    async (files: FileList | null) => {
+    async (files: ArrayLike<File> | null) => {
       const threadKey = activeGroupId.current ?? activeBotId.current;
       if (!threadKey || !files?.length) return;
       const existing = attachmentsForThread(pendingAttachments, threadKey);
       const next: PendingAttachment[] = [];
       const skipped: string[] = [];
       for (const file of Array.from(files)) {
+        const named = namedClipboardFile(file);
         if (existing.length + next.length >= ATTACHMENT_MAX_COUNT) {
-          skipped.push(t`${file.name} (max ${ATTACHMENT_MAX_COUNT} attachments)`);
+          skipped.push(t`${named.name} (max ${ATTACHMENT_MAX_COUNT} attachments)`);
           continue;
         }
-        if (file.size > ATTACHMENT_MAX_BYTES) {
-          skipped.push(t`${file.name} (over 10 MiB)`);
+        if (named.size > ATTACHMENT_MAX_BYTES) {
+          skipped.push(t`${named.name} (over 10 MiB)`);
           continue;
         }
-        const mimeType = inferAttachmentMimeType(file.name, file.type);
+        const mimeType = inferAttachmentMimeType(named.name, named.type);
         if (!mimeType) {
-          skipped.push(file.name);
+          skipped.push(named.name);
           continue;
         }
         next.push({
-          id: `${file.name}-${file.size}-${file.lastModified}-${next.length}`,
+          id: `${named.name}-${named.size}-${named.lastModified}-${next.length}`,
           threadKey,
-          file,
-          previewUrl: mimeType.startsWith("image/") ? URL.createObjectURL(file) : undefined,
+          file: named,
+          previewUrl: isAttachmentImageMimeType(mimeType) ? URL.createObjectURL(named) : undefined,
         });
       }
       if (next.length) setPendingAttachments((current) => [...current, ...next]);
@@ -1378,6 +1620,7 @@ export function ShellPage() {
       const groupTarget = plan.rerouteGroupId ?? initialGroupTarget;
       const botTarget = reroutedToGroup ? undefined : initialBotTarget;
       const trimmed = plan.trimmed;
+      followTranscript.current = true;
       setSending(true);
       setSendError(null);
       try {
@@ -1566,7 +1809,7 @@ export function ShellPage() {
     if (text && id) void speaker.speak(text, { botId: id, messageId: message.id });
   }, []);
 
-  async function createGroup(input: { name: string; botIds: string[] }) {
+  async function createGroup(input: { name: string; botIds: string[]; defaultBotId?: string }) {
     const group = await rpc.groups.create(input);
     setGroups((current) =>
       current.some((item) => item.id === group.id) ? current : [group, ...current],
@@ -1656,8 +1899,18 @@ export function ShellPage() {
   }, [panel, active?.id]);
 
   useEffect(() => {
+    function onFullscreenChange() {
+      setComputerFullscreen(document.fullscreenElement === computerOverlayRef.current);
+    }
+    document.addEventListener("fullscreenchange", onFullscreenChange);
+    return () => document.removeEventListener("fullscreenchange", onFullscreenChange);
+  }, []);
+
+  useEffect(() => {
     setComputerOpen(false);
+    setComputerEnlarged(false);
     setComputerError(null);
+    if (document.fullscreenElement) void document.exitFullscreen().catch(() => undefined);
   }, [active?.id]);
 
   useEffect(() => {
@@ -1695,7 +1948,9 @@ export function ShellPage() {
   useEffect(() => {
     if (!computerOpen) return;
     function onKey(event: KeyboardEvent) {
-      if (event.key === "Escape") setComputerOpen(false);
+      if (event.key !== "Escape") return;
+      if (document.fullscreenElement) return;
+      setComputerOpen(false);
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -1708,6 +1963,22 @@ export function ShellPage() {
     const timer = window.setInterval(ping, 60_000);
     return () => window.clearInterval(timer);
   }, [panel, computerOpen, active?.id, computer?.state]);
+
+  function closeComputerOverlay() {
+    if (document.fullscreenElement) void document.exitFullscreen().catch(() => undefined);
+    setComputerOpen(false);
+  }
+
+  async function toggleComputerFullscreen() {
+    const node = computerOverlayRef.current;
+    if (!node) return;
+    try {
+      if (document.fullscreenElement === node) await document.exitFullscreen();
+      else await node.requestFullscreen();
+    } catch {
+      // Denied by the browser; the overlay already fills the app shell.
+    }
+  }
 
   async function openComputer() {
     if (!active) return;
@@ -1727,7 +1998,7 @@ export function ShellPage() {
 
   async function releaseComputer(reason?: ComputerReleaseReason) {
     if (!active) return;
-    setComputerOpen(false);
+    closeComputerOverlay();
     await rpc.computer.release({ botId: active.id, reason }).catch(() => undefined);
     await refreshThread(active.id);
   }
@@ -1736,6 +2007,29 @@ export function ShellPage() {
   const hasControl = userHoldsComputerControl(computer, active?.id);
   const takeoverBlocked = computerTakeoverBlocked(computer, snapshot?.run?.status);
 
+  async function switchComputerMode(mode: ComputerMode) {
+    if (!active || mode === (computer?.mode ?? active.computerMode) || computerSwitching) return;
+    setComputerSwitching(true);
+    try {
+      if (hasControl) {
+        await rpc.computer.release({
+          botId: active.id,
+          reason: computer?.takeoverRequested ? "skipped" : undefined,
+        });
+      }
+      await rpc.bots.setComputer({ botId: active.id, mode });
+      setScreenUrl(null);
+      autoBooted.current = null;
+      await refreshBots();
+      await refreshThread(active.id);
+      setComputerError(null);
+    } catch (error) {
+      setComputerError(error instanceof Error ? error.message : t`Could not switch computer`);
+    } finally {
+      setComputerSwitching(false);
+    }
+  }
+
   const userName = session.data?.user.name ?? t`You`;
   const initials = userName
     .split(" ")
@@ -1743,12 +2037,14 @@ export function ShellPage() {
     .join("")
     .slice(0, 2)
     .toUpperCase();
+  const showSidePanel =
+    panel === "create" || panel === "create-group" || Boolean(panel && (active || activeGroup));
 
   const shell = (
     <div
       data-testid="shell-root"
       data-ready={shellReady}
-      className="relative flex h-full min-w-0 overflow-hidden bg-[#050506] text-[#DFDFE2]"
+      className="relative flex h-full min-w-0 overflow-hidden bg-[var(--rk-page)] text-[var(--rk-body)]"
     >
       {bootstrapMe !== undefined ? (
         <HostComputerPrompt initialMe={bootstrapMe ?? undefined} />
@@ -1762,7 +2058,7 @@ export function ShellPage() {
         />
       ) : null}
       <aside
-        className={`absolute inset-y-0 start-0 z-40 flex w-[calc(100%-48px)] max-w-[316px] shrink-0 flex-col border-e border-[#171719] bg-[#0B0B0C] transition-transform md:static md:z-auto md:w-[316px] md:translate-x-0 ${
+        className={`absolute inset-y-0 start-0 z-40 flex min-h-0 w-[calc(100%-48px)] max-w-[316px] shrink-0 flex-col border-e border-[var(--rk-hairline)] bg-[var(--rk-sidebar)] transition-transform md:static md:z-auto md:w-[316px] md:translate-x-0 ${
           mobileSidebarOpen ? "translate-x-0" : "-translate-x-full rtl:translate-x-full"
         }`}
       >
@@ -1771,13 +2067,15 @@ export function ShellPage() {
           <div className="relative flex items-center gap-2.5">
             <button
               type="button"
-              aria-label={t`Activity`}
+              aria-label={stackRepair ? t`Activity, AI replies are stuck` : t`Activity`}
               aria-pressed={activityMode}
-              title={t`Activity`}
+              title={stackRepair ? t`AI replies are stuck` : t`Activity`}
               data-activity-mode={activityMode ? "on" : "off"}
               onClick={toggleActivityMode}
-              className={`app-no-drag flex h-7 w-7 items-center justify-center rounded-full ${
-                activityMode ? "bg-[#4C8DFF] text-white" : "text-[#7A7A80] hover:text-[#C9C9CE]"
+              className={`app-no-drag relative flex h-7 w-7 items-center justify-center rounded-full ${
+                activityMode
+                  ? "bg-[var(--rk-solid)] text-[var(--rk-solid-ink)]"
+                  : "text-[var(--rk-muted)] hover:text-[var(--rk-body)]"
               }`}
             >
               <Bell
@@ -1786,20 +2084,27 @@ export function ShellPage() {
                 fill={activityMode ? "currentColor" : "none"}
                 aria-hidden="true"
               />
+              {stackRepair ? (
+                <span
+                  data-testid="worker-stall-bell"
+                  className="absolute end-0 top-0 h-2 w-2 rounded-full bg-[var(--rk-danger)]"
+                  aria-hidden="true"
+                />
+              ) : null}
             </button>
             <button
               type="button"
               onClick={() => setCreateMenuOpen((open) => !open)}
-              className="app-no-drag text-[21px] text-[#7A7A80] hover:text-[#C9C9CE]"
+              className="app-no-drag text-[21px] text-[var(--rk-muted)] hover:text-[var(--rk-body)]"
               title={t`Create`}
             >
               +
             </button>
             {createMenuOpen ? (
-              <div className="app-no-drag absolute end-0 top-full z-20 mt-2 min-w-[160px] rounded-xl border border-[#26262A] bg-[#141416] py-1 shadow-lg">
+              <div className="app-no-drag absolute end-0 top-full z-20 mt-2 min-w-[160px] rounded-xl border border-[var(--rk-hairline-strong)] bg-[var(--rk-surface)] py-1 shadow-lg">
                 <button
                   type="button"
-                  className="block w-full px-3.5 py-2 text-start text-[14px] text-[#ECECEE] hover:bg-[#1A1A1D]"
+                  className="block w-full px-3.5 py-2 text-start text-[14px] text-[var(--rk-ink)] hover:bg-[var(--rk-surface-2)]"
                   onClick={() => {
                     setCreateMenuOpen(false);
                     setPanel("create");
@@ -1809,7 +2114,7 @@ export function ShellPage() {
                 </button>
                 <button
                   type="button"
-                  className="block w-full px-3.5 py-2 text-start text-[14px] text-[#ECECEE] hover:bg-[#1A1A1D]"
+                  className="block w-full px-3.5 py-2 text-start text-[14px] text-[var(--rk-ink)] hover:bg-[var(--rk-surface-2)]"
                   onClick={() => {
                     setCreateMenuOpen(false);
                     setPanel("create-group");
@@ -1821,16 +2126,47 @@ export function ShellPage() {
             ) : null}
           </div>
         </div>
-        <div className="mx-3.5 mb-3 flex items-center gap-2.5 rounded-xl border border-[#202023] bg-[#141416] px-3 py-2 text-[14px] text-[#6C6C70]">
+        {bootstrapMe ? (
+          <WorkspacePicker
+            workspaces={bootstrapMe.workspaces}
+            workspaceId={bootstrapMe.workspaceId}
+            busy={workspaceBusy}
+            onSwitch={(id) =>
+              void changeWorkspace(() => rpc.workspaces.switch({ workspaceId: id }))
+            }
+            onCreate={(name) => void changeWorkspace(() => rpc.workspaces.create({ name }))}
+            onRename={async (id, name) => {
+              const workspace = await rpc.workspaces.update({ workspaceId: id, name });
+              setBootstrapMe((current) =>
+                current
+                  ? {
+                      ...current,
+                      workspaceName:
+                        current.workspaceId === workspace.id
+                          ? workspace.name
+                          : current.workspaceName,
+                      workspaces: current.workspaces.map((entry) =>
+                        entry.id === workspace.id ? workspace : entry,
+                      ),
+                    }
+                  : current,
+              );
+            }}
+            onDelete={(id) =>
+              void changeWorkspace(() => rpc.workspaces.remove({ workspaceId: id }))
+            }
+          />
+        ) : null}
+        <div className="mx-3.5 mb-3 flex items-center gap-2.5 rounded-xl border border-[var(--rk-hairline-strong)] bg-[var(--rk-surface)] px-3 py-2 text-[14px] text-[var(--rk-muted)]">
           <span>⌕</span>
           <input
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder={t`Search`}
-            className="w-full bg-transparent outline-none"
+            className="w-full bg-transparent text-[var(--rk-ink)] outline-none placeholder:text-[var(--rk-muted)]"
           />
         </div>
-        <div className="rk-scroll flex flex-1 flex-col gap-0.5 overflow-y-auto px-2.5 pb-2.5">
+        <div className="rk-scroll relative z-0 isolate flex flex-1 flex-col gap-0.5 overflow-y-auto px-2.5 pb-2.5">
           {showWorkspaceSearch ? (
             <WorkspaceSearchResults
               hits={searchHits}
@@ -1839,6 +2175,13 @@ export function ShellPage() {
             />
           ) : (
             <>
+              <ApprovalsNavButton
+                count={pendingApprovals.length}
+                onOpen={() => {
+                  setMobileSidebarOpen(false);
+                  setApprovalsOpen(true);
+                }}
+              />
               {activityMode ? (
                 <ActivityList
                   onOpenRun={(run) => {
@@ -1851,7 +2194,7 @@ export function ShellPage() {
               {sidebarGroups.map((group) => (
                 <div key={group.key} data-sidebar-group={group.key}>
                   {group.title ? (
-                    <div className="px-2.5 pb-1 pt-3 text-[12.5px] font-medium text-[#6C6C70]">
+                    <div className="px-2.5 pb-1 pt-3 text-[12.5px] font-medium text-[var(--rk-muted)]">
                       {group.title}
                     </div>
                   ) : null}
@@ -1872,20 +2215,21 @@ export function ShellPage() {
                       }}
                       className="flex w-full gap-3 rounded-xl px-2.5 py-[11px] text-start"
                       style={{
-                        background: !inGroup && active?.id === bot.id ? "#161618" : "transparent",
+                        background:
+                          !inGroup && active?.id === bot.id ? "var(--rk-hover)" : "transparent",
                       }}
                     >
                       <BotAvatar
                         color={bot.color}
                         identity={bot.id}
                         size={38}
-                        status={bot.status}
+                        status={liveStatusByBotId.get(bot.id) ?? bot.status}
                       />
                       <div className="min-w-0 flex-1">
                         <div className="flex items-baseline justify-between gap-2">
                           <span
                             dir="auto"
-                            className={`truncate text-[15px] text-[#ECECEE] ${
+                            className={`truncate text-[15px] text-[var(--rk-ink)] ${
                               bot.unread ? "font-semibold" : "font-medium"
                             }`}
                           >
@@ -1896,12 +2240,14 @@ export function ShellPage() {
                               </span>
                             ) : null}
                           </span>
-                          <span className="flex shrink-0 items-center gap-1.5 text-[12.5px] text-[#6C6C70]">
-                            {bot.status === "idle" ? "" : bot.status}
+                          <span className="flex shrink-0 items-center gap-1.5 text-[12.5px] text-[var(--rk-muted-2)]">
+                            {(liveStatusByBotId.get(bot.id) ?? bot.status) === "idle"
+                              ? ""
+                              : (liveStatusByBotId.get(bot.id) ?? bot.status)}
                             {bot.unread ? (
                               <span
                                 aria-hidden="true"
-                                className="inline-block h-2 w-2 rounded-full bg-[#8B5CF6]"
+                                className="inline-block h-2 w-2 rounded-full bg-[var(--rk-queued)]"
                               />
                             ) : null}
                           </span>
@@ -1909,7 +2255,9 @@ export function ShellPage() {
                         <div
                           dir="auto"
                           className={`mt-0.5 truncate text-[13.5px] ${
-                            bot.unread ? "font-medium text-[#C9C9CE]" : "text-[#85858A]"
+                            bot.unread
+                              ? "font-medium text-[var(--rk-body)]"
+                              : "text-[var(--rk-muted)]"
                           }`}
                         >
                           {bot.preview || bot.title}
@@ -1932,22 +2280,25 @@ export function ShellPage() {
                   }}
                   className="flex gap-3 rounded-xl px-2.5 py-[11px] text-start"
                   style={{
-                    background: inGroup && activeGroup?.id === group.id ? "#161618" : "transparent",
+                    background:
+                      inGroup && activeGroup?.id === group.id ? "var(--rk-hover)" : "transparent",
                   }}
                 >
                   <GroupAvatar
-                    members={
-                      group.id === activeSnapshot?.groupId
-                        ? (activeSnapshot.members ?? group.members)
-                        : group.members
-                    }
+                    members={(group.id === activeSnapshot?.groupId
+                      ? (activeSnapshot.members ?? group.members)
+                      : group.members
+                    ).map((member) => ({
+                      ...member,
+                      status: liveStatusByBotId.get(member.botId) ?? member.status,
+                    }))}
                     size={38}
                   />
                   <div className="min-w-0 flex-1">
                     <div className="flex items-baseline justify-between gap-2">
                       <span
                         dir="auto"
-                        className={`min-w-0 truncate text-[15px] text-[#ECECEE] ${
+                        className={`min-w-0 truncate text-[15px] text-[var(--rk-ink)] ${
                           group.unread ? "font-semibold" : "font-medium"
                         }`}
                       >
@@ -1956,11 +2307,14 @@ export function ShellPage() {
                       {group.unread ? (
                         <span
                           aria-hidden="true"
-                          className="inline-block h-2 w-2 rounded-full bg-[#8B5CF6]"
+                          className="inline-block h-2 w-2 rounded-full bg-[var(--rk-queued)]"
                         />
                       ) : null}
                     </div>
-                    <div dir="auto" className="mt-0.5 truncate text-[13.5px] text-[#85858A]">
+                    <div
+                      dir="auto"
+                      className="mt-0.5 truncate text-[13.5px] text-[var(--rk-muted)]"
+                    >
                       {group.members.map((member) => member.name).join(", ")}
                     </div>
                   </div>
@@ -1968,12 +2322,12 @@ export function ShellPage() {
               ))
             : null}
           {archivedBots.length > 0 && !showWorkspaceSearch ? (
-            <div className="mt-2 border-t border-[#202023] pt-2">
+            <div className="mt-2 border-t border-[var(--rk-hairline-strong)] pt-2">
               <button
                 type="button"
                 aria-expanded={archivedOpen}
                 onClick={() => setArchivedOpen((open) => !open)}
-                className="flex w-full items-center justify-between rounded-lg px-2.5 py-2 text-[13.5px] text-[#85858A] hover:bg-[#131315]"
+                className="flex w-full items-center justify-between rounded-lg px-2.5 py-2 text-[13.5px] text-[var(--rk-muted)] hover:bg-[var(--rk-hover)]"
               >
                 <span>
                   <Trans>Archived</Trans>
@@ -1990,7 +2344,7 @@ export function ShellPage() {
                         status={bot.status}
                       />
                       <span
-                        className="min-w-0 flex-1 truncate text-[14px] text-[#A8A8AD]"
+                        className="min-w-0 flex-1 truncate text-[14px] text-[var(--rk-muted)]"
                         dir="auto"
                       >
                         {bot.name}
@@ -2000,7 +2354,7 @@ export function ShellPage() {
                         onClick={() =>
                           void rpc.bots.restore({ botId: bot.id }).then(() => refreshBots(true))
                         }
-                        className="text-[12.5px] text-[#C9C9CE] hover:text-white"
+                        className="text-[12.5px] text-[var(--rk-body)] hover:text-[var(--rk-ink)]"
                       >
                         <Trans>Restore</Trans>
                       </button>
@@ -2008,7 +2362,7 @@ export function ShellPage() {
                         type="button"
                         aria-label={t`Delete ${bot.name}`}
                         onClick={() => setDeleteTarget(bot)}
-                        className="text-[12.5px] text-[#FF5364]"
+                        className="text-[12.5px] text-[var(--rk-danger)]"
                       >
                         <Trans>Delete</Trans>
                       </button>
@@ -2021,166 +2375,245 @@ export function ShellPage() {
         <button
           type="button"
           onClick={() => setPluginsOpen(true)}
-          className="mx-3 mb-1 flex items-center gap-3 rounded-[11px] px-2.5 py-2 hover:bg-[#131315]"
+          className="mx-3 mb-1 flex items-center gap-3 rounded-[11px] px-2.5 py-2 hover:bg-[var(--rk-hover)]"
         >
-          <span className="grid h-[30px] w-[30px] place-items-center rounded-full bg-[#17171A] text-[#9A9AA0]">
+          <span className="grid h-[30px] w-[30px] place-items-center rounded-full bg-[var(--rk-surface-2)] text-[var(--rk-ink)]">
             <Puzzle size={15} strokeWidth={1.7} />
           </span>
-          <span className="text-[14.5px] text-[#C9C9CE]">
-            <Trans>Integrations</Trans>
+          <span className="text-[14.5px] text-[var(--rk-body)]">
+            <Trans>Plugins</Trans>
           </span>
         </button>
-        <div className="relative">
+        <div className="relative z-20">
           {menuOpen ? (
-            <div className="absolute bottom-14 inset-x-3 rounded-2xl border border-[#2A2A2F] bg-[#1A1A1D] p-2 shadow-[0_22px_50px_rgba(0,0,0,.55)]">
-              <button
-                type="button"
-                aria-label={t`Settings`}
-                onClick={() => {
-                  setMenuOpen(false);
-                  setAccountSettingsFocusUsage(false);
-                  setAccountSettingsOpen(true);
-                }}
-                className="flex w-full items-center gap-3 rounded-[11px] px-3 py-2.5 hover:bg-[#232327]"
-              >
-                <span className="text-[#9A9AA0]">⚙</span>
-                <span className="flex-1 text-start text-[14.5px] text-[#ECECEE]">
-                  <Trans>Settings</Trans>
-                </span>
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setMenuOpen(false);
-                  setModelsOpen(true);
-                }}
-                className="flex w-full items-center gap-3 rounded-[11px] px-3 py-2.5 hover:bg-[#232327]"
-              >
-                <Cpu size={16} strokeWidth={1.7} className="text-[#9A9AA0]" />
-                <span className="flex-1 text-start text-[14.5px] text-[#ECECEE]">
-                  <Trans>Models</Trans>
-                </span>
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setMenuOpen(false);
-                  setMemorySettingsOpen(true);
-                }}
-                className="flex w-full items-center gap-3 rounded-[11px] px-3 py-2.5 hover:bg-[#232327]"
-              >
-                <span className="text-[#9A9AA0]">◇</span>
-                <span className="flex-1 text-start text-[14.5px] text-[#ECECEE]">
-                  <Trans>Memory</Trans>
-                </span>
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setMenuOpen(false);
-                  setVoiceOpen(true);
-                }}
-                className="flex w-full items-center gap-3 rounded-[11px] px-3 py-2.5 hover:bg-[#232327]"
-              >
-                <Volume2 size={16} strokeWidth={1.7} className="text-[#9A9AA0]" />
-                <span className="flex-1 text-start text-[14.5px] text-[#ECECEE]">
-                  <Trans>Voice</Trans>
-                </span>
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setMenuOpen(false);
-                  setRedactionOpen(true);
-                }}
-                className="flex w-full items-center gap-3 rounded-[11px] px-3 py-2.5 hover:bg-[#232327]"
-              >
-                <span className="text-[#9A9AA0]">▧</span>
-                <span className="flex-1 text-start text-[14.5px] text-[#ECECEE]">
-                  <Trans>Screen privacy</Trans>
-                </span>
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setMenuOpen(false);
-                  setSkillRevisionsOpen(true);
-                }}
-                className="flex w-full items-center gap-3 rounded-[11px] px-3 py-2.5 hover:bg-[#232327]"
-              >
-                <span className="text-[#9A9AA0]">✎</span>
-                <span className="flex-1 text-start text-[14.5px] text-[#ECECEE]">
-                  <Trans>Skill revisions</Trans>
-                </span>
-              </button>
-              {active && !inGroup ? (
-                <button
-                  type="button"
-                  onClick={() => {
-                    setMenuOpen(false);
-                    setSentinelsOpen(true);
-                  }}
-                  className="flex w-full items-center gap-3 rounded-[11px] px-3 py-2.5 hover:bg-[#232327]"
-                >
-                  <span className="text-[#9A9AA0]">◎</span>
-                  <span className="flex-1 text-start text-[14.5px] text-[#ECECEE]">
-                    <Trans>Sentinels</Trans>
-                  </span>
-                </button>
-              ) : null}
-              <button
-                type="button"
-                className="flex w-full items-center gap-3 rounded-[11px] px-3 py-2.5 hover:bg-[#232327]"
-                onClick={async () => {
-                  setUsage(await rpc.usage.summary());
-                }}
-              >
-                <Gauge size={16} strokeWidth={1.7} className="text-[#9A9AA0]" />
-                <span className="flex-1 text-start text-[14.5px] text-[#ECECEE]">
-                  <Trans>Usage</Trans>
-                </span>
-              </button>
-              {usage ? (
-                <p className="px-3 pb-2 text-[12.5px] text-[#85858A]">
-                  <Trans>
-                    {usage.runs} runs · {usage.inputTokens + usage.outputTokens} tokens
-                  </Trans>
-                </p>
-              ) : null}
-              <button
-                type="button"
-                onClick={() => void authClient.signOut().then(() => navigate("/"))}
-                className="flex w-full items-center gap-3 rounded-[11px] px-3 py-2.5 hover:bg-[#232327]"
-              >
-                <LogOut size={16} strokeWidth={1.7} className="text-[#9A9AA0]" />
-                <span className="text-[14.5px] text-[#ECECEE]">
-                  <Trans>Log out</Trans>
-                </span>
-              </button>
+            <div className="absolute bottom-14 inset-x-3 z-30 rounded-2xl border border-[var(--rk-hairline-strong)] bg-[var(--rk-surface-2)] p-2 shadow-[var(--rk-shadow)]">
+              {themePickerOpen ? (
+                <>
+                  <button
+                    type="button"
+                    aria-label={t`Back`}
+                    onClick={() => setThemePickerOpen(false)}
+                    className="flex w-full items-center gap-3 rounded-[11px] px-3 py-2.5 hover:bg-[var(--rk-hover)]"
+                  >
+                    <ChevronLeft size={16} strokeWidth={1.7} className="text-[var(--rk-ink)]" />
+                    <span className="flex-1 text-start text-[14.5px] text-[var(--rk-ink)]">
+                      <Trans>Themes</Trans>
+                    </span>
+                  </button>
+                  <UiThemePicker
+                    value={uiTheme}
+                    onChange={(id) => {
+                      setUiThemeId(id);
+                      setUiTheme(id);
+                    }}
+                  />
+                </>
+              ) : (
+                <>
+                  <button
+                    type="button"
+                    aria-label={t`Settings`}
+                    onClick={() => {
+                      setMenuOpen(false);
+                      setAccountSettingsFocusUsage(false);
+                      setAccountSettingsOpen(true);
+                    }}
+                    className="flex w-full items-center gap-3 rounded-[11px] px-3 py-2.5 hover:bg-[var(--rk-hover)]"
+                  >
+                    <span className="text-[var(--rk-ink)]">⚙</span>
+                    <span className="flex-1 text-start text-[14.5px] text-[var(--rk-ink)]">
+                      <Trans>Settings</Trans>
+                    </span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setMenuOpen(false);
+                      setModelsOpen(true);
+                    }}
+                    className="flex w-full items-center gap-3 rounded-[11px] px-3 py-2.5 hover:bg-[var(--rk-hover)]"
+                  >
+                    <Cpu size={16} strokeWidth={1.7} className="text-[var(--rk-ink)]" />
+                    <span className="flex-1 text-start text-[14.5px] text-[var(--rk-ink)]">
+                      <Trans>Models</Trans>
+                    </span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setMenuOpen(false);
+                      setMemorySettingsOpen(true);
+                    }}
+                    className="flex w-full items-center gap-3 rounded-[11px] px-3 py-2.5 hover:bg-[var(--rk-hover)]"
+                  >
+                    <span className="text-[var(--rk-ink)]">◇</span>
+                    <span className="flex-1 text-start text-[14.5px] text-[var(--rk-ink)]">
+                      <Trans>Memory</Trans>
+                    </span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setMenuOpen(false);
+                      setVoiceOpen(true);
+                    }}
+                    className="flex w-full items-center gap-3 rounded-[11px] px-3 py-2.5 hover:bg-[var(--rk-hover)]"
+                  >
+                    <Volume2 size={16} strokeWidth={1.7} className="text-[var(--rk-ink)]" />
+                    <span className="flex-1 text-start text-[14.5px] text-[var(--rk-ink)]">
+                      <Trans>Voice</Trans>
+                    </span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setMenuOpen(false);
+                      setRedactionOpen(true);
+                    }}
+                    className="flex w-full items-center gap-3 rounded-[11px] px-3 py-2.5 hover:bg-[var(--rk-hover)]"
+                  >
+                    <span className="text-[var(--rk-ink)]">▧</span>
+                    <span className="flex-1 text-start text-[14.5px] text-[var(--rk-ink)]">
+                      <Trans>Screen privacy</Trans>
+                    </span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setMenuOpen(false);
+                      setSkillRevisionsOpen(true);
+                    }}
+                    className="flex w-full items-center gap-3 rounded-[11px] px-3 py-2.5 hover:bg-[var(--rk-hover)]"
+                  >
+                    <span className="text-[var(--rk-ink)]">✎</span>
+                    <span className="flex-1 text-start text-[14.5px] text-[var(--rk-ink)]">
+                      <Trans>Skill revisions</Trans>
+                    </span>
+                  </button>
+                  {active && !inGroup ? (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setMenuOpen(false);
+                        setSentinelsOpen(true);
+                      }}
+                      className="flex w-full items-center gap-3 rounded-[11px] px-3 py-2.5 hover:bg-[var(--rk-hover)]"
+                    >
+                      <span className="text-[var(--rk-ink)]">◎</span>
+                      <span className="flex-1 text-start text-[14.5px] text-[var(--rk-ink)]">
+                        <Trans>Sentinels</Trans>
+                      </span>
+                    </button>
+                  ) : null}
+                  <button
+                    type="button"
+                    className="flex w-full items-center gap-3 rounded-[11px] px-3 py-2.5 hover:bg-[var(--rk-hover)]"
+                    onClick={async () => {
+                      setUsage(await rpc.usage.summary());
+                    }}
+                  >
+                    <Gauge size={16} strokeWidth={1.7} className="text-[var(--rk-ink)]" />
+                    <span className="flex-1 text-start text-[14.5px] text-[var(--rk-ink)]">
+                      <Trans>Usage</Trans>
+                    </span>
+                  </button>
+                  {usage ? (
+                    <p className="px-3 pb-2 text-[12.5px] text-[var(--rk-muted)]">
+                      <Trans>
+                        {usage.runs} runs · {usage.inputTokens + usage.outputTokens} tokens
+                      </Trans>
+                    </p>
+                  ) : null}
+                  <button
+                    type="button"
+                    data-testid="ui-theme-menu"
+                    onClick={() => setThemePickerOpen(true)}
+                    className="flex w-full items-center gap-3 rounded-[11px] px-3 py-2.5 hover:bg-[var(--rk-hover)]"
+                  >
+                    <Palette size={16} strokeWidth={1.7} className="text-[var(--rk-ink)]" />
+                    <span className="flex-1 text-start text-[14.5px] text-[var(--rk-ink)]">
+                      <Trans>Themes</Trans>
+                    </span>
+                    <span className="text-[12.5px] text-[var(--rk-body)]">
+                      {uiThemeById(uiTheme).label}
+                    </span>
+                  </button>
+                  {active && !inGroup ? (
+                    <button
+                      type="button"
+                      data-testid="restart-computer-menu"
+                      disabled={computerRestartBusy}
+                      aria-label={t`Restart computer`}
+                      onClick={() => void restartActiveComputer()}
+                      className="flex w-full items-center gap-3 rounded-[11px] px-3 py-2.5 hover:bg-[var(--rk-hover)] disabled:opacity-40"
+                    >
+                      <Monitor size={16} strokeWidth={1.7} className="text-[var(--rk-muted)]" />
+                      <span className="flex-1 text-start text-[14.5px] text-[var(--rk-ink)]">
+                        {computerRestartBusy ? (
+                          <Trans>Restarting…</Trans>
+                        ) : (
+                          <Trans>Restart computer</Trans>
+                        )}
+                      </span>
+                    </button>
+                  ) : null}
+                  {canRepairStack ? (
+                    <button
+                      type="button"
+                      data-testid="restart-api-menu"
+                      disabled={stackRestartBusy}
+                      aria-label={t`Restart API`}
+                      onClick={() => void restartLocalStack()}
+                      className="flex w-full items-center gap-3 rounded-[11px] px-3 py-2.5 hover:bg-[var(--rk-hover)] disabled:opacity-40"
+                    >
+                      <RefreshCw size={16} strokeWidth={1.7} className="text-[var(--rk-muted)]" />
+                      <span className="flex-1 text-start text-[14.5px] text-[var(--rk-ink)]">
+                        {stackRestartBusy ? <Trans>Restarting…</Trans> : <Trans>Restart API</Trans>}
+                      </span>
+                    </button>
+                  ) : null}
+                  <button
+                    type="button"
+                    onClick={() => void authClient.signOut().then(() => navigate("/"))}
+                    className="flex w-full items-center gap-3 rounded-[11px] px-3 py-2.5 hover:bg-[var(--rk-hover)]"
+                  >
+                    <LogOut size={16} strokeWidth={1.7} className="text-[var(--rk-ink)]" />
+                    <span className="text-[14.5px] text-[var(--rk-ink)]">
+                      <Trans>Log out</Trans>
+                    </span>
+                  </button>
+                </>
+              )}
             </div>
           ) : null}
           <button
             type="button"
             data-testid="user-menu-trigger"
-            onClick={() => setMenuOpen((v) => !v)}
+            onClick={() => {
+              setMenuOpen((open) => {
+                if (!open) setUiThemeId(resolveUiTheme());
+                return !open;
+              });
+              setThemePickerOpen(false);
+            }}
             className="flex items-center gap-[11px] px-[18px] py-3.5"
           >
-            <span className="grid h-8 w-8 place-items-center rounded-full bg-[#232326] text-[12px] text-[#A8A8AD]">
+            <span className="grid h-8 w-8 place-items-center rounded-full bg-[var(--rk-surface)] text-[12px] text-[var(--rk-muted)]">
               {initials}
             </span>
-            <span className="text-[14.5px] text-[#C9C9CE]">{userName}</span>
+            <span className="text-[14.5px] text-[var(--rk-body)]">{userName}</span>
           </button>
         </div>
       </aside>
 
-      <main className="flex min-w-0 flex-1 flex-col bg-[#0D0D0E]">
-        <div className="flex items-center justify-between border-b border-[#141416] px-3 py-[17px] md:px-[22px]">
+      <main className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-[var(--rk-main)]">
+        <div className="flex items-center justify-between border-b border-[var(--rk-surface)] px-3 py-[17px] md:px-[22px]">
           <div className="flex min-w-0 items-center gap-2">
             <button
               type="button"
               aria-label={t`Open navigation`}
               onClick={() => setMobileSidebarOpen(true)}
-              className="grid h-8 w-8 shrink-0 place-items-center rounded-lg text-[#A8A8AD] hover:bg-[#1B1B1E] md:hidden"
+              className="grid h-8 w-8 shrink-0 place-items-center rounded-lg text-[var(--rk-muted)] hover:bg-[var(--rk-hover)] md:hidden"
             >
               <Menu size={19} strokeWidth={1.7} />
             </button>
@@ -2192,7 +2625,12 @@ export function ShellPage() {
             >
               {inGroup ? (
                 <GroupAvatar
-                  members={activeSnapshot?.members ?? activeGroup?.members ?? []}
+                  members={(activeSnapshot?.members ?? activeGroup?.members ?? []).map(
+                    (member) => ({
+                      ...member,
+                      status: liveStatusByBotId.get(member.botId) ?? member.status,
+                    }),
+                  )}
                   size={26}
                 />
               ) : active ? (
@@ -2200,11 +2638,14 @@ export function ShellPage() {
                   color={active.color}
                   identity={active.id}
                   size={26}
-                  status={active.status}
+                  status={liveStatusByBotId.get(active.id) ?? active.status}
                 />
               ) : null}
               <span className="min-w-0">
-                <span className="block truncate text-[16px] font-medium text-[#ECECEE]" dir="auto">
+                <span
+                  className="block truncate text-[16px] font-medium text-[var(--rk-ink)]"
+                  dir="auto"
+                >
                   {inGroup
                     ? (activeGroup?.name ?? activeSnapshot?.groupName ?? t`Group`)
                     : (active?.name ?? t`Select a bot`)}
@@ -2212,48 +2653,53 @@ export function ShellPage() {
               </span>
             </button>
           </div>
-          <div className="flex items-center gap-1">
-            {!inGroup && active ? (
-              <button
-                type="button"
-                title={voiceStatus?.ready ? t`Call` : t`Set up voice to call`}
-                aria-label={t`Call`}
-                onClick={() => {
-                  if (!voiceStatus?.ready) {
-                    setVoiceOpen(true);
-                    return;
-                  }
-                  setCallOpen(true);
-                }}
-                className="grid h-[30px] w-[34px] place-items-center rounded-[9px] hover:bg-[#1B1B1E]"
-                style={{ background: callOpen ? "#1B1B1E" : "transparent" }}
-              >
-                <Phone size={16} strokeWidth={1.6} className="text-[#A8A8AD]" />
-              </button>
-            ) : null}
-            {!inGroup ? (
-              <button
-                type="button"
-                title={t`Agent computer`}
-                onClick={() => {
-                  const next = panel === "computer" ? null : "computer";
-                  setPanel(next);
-                  if (next === "computer" && active) {
-                    // Refresh run/computer so Take control isn't stuck on a stale busyBotName.
-                    void refreshThread(active.id).catch(() => undefined);
-                  }
-                }}
-                className="grid h-[30px] w-[34px] place-items-center rounded-[9px] hover:bg-[#1B1B1E]"
-                style={{ background: panel ? "#1B1B1E" : "transparent" }}
-              >
-                <Monitor size={18} strokeWidth={1.6} className="text-[#A8A8AD]" />
-              </button>
-            ) : null}
+          <div className="flex items-center">
+            <div className="relative z-10 flex items-center gap-1">
+              {!inGroup && active ? (
+                <button
+                  type="button"
+                  title={voiceStatus?.ready ? t`Call` : t`Set up voice to call`}
+                  aria-label={t`Call`}
+                  onClick={() => {
+                    if (!voiceStatus?.ready) {
+                      setVoiceOpen(true);
+                      return;
+                    }
+                    setCallOpen(true);
+                  }}
+                  className="grid h-[30px] w-[34px] place-items-center rounded-[9px] hover:bg-[var(--rk-hover)]"
+                  style={{ background: callOpen ? "var(--rk-hover)" : "transparent" }}
+                >
+                  <Phone size={16} strokeWidth={1.6} className="text-[var(--rk-muted)]" />
+                </button>
+              ) : null}
+              {!inGroup ? (
+                <button
+                  type="button"
+                  title={t`Agent computer`}
+                  aria-label={t`Agent computer`}
+                  onClick={() => {
+                    const next = panel === "computer" ? null : "computer";
+                    setPanel(next);
+                    if (next === "computer" && active) {
+                      // Refresh run/computer so Take control isn't stuck on a stale busyBotName.
+                      void refreshThread(active.id).catch(() => undefined);
+                    }
+                  }}
+                  className="grid h-9 w-9 place-items-center rounded-[9px] text-[var(--rk-ink)] hover:bg-[var(--rk-hover)]"
+                  style={{ background: panel === "computer" ? "var(--rk-hover)" : "transparent" }}
+                >
+                  <Monitor size={18} strokeWidth={1.8} />
+                </button>
+              ) : null}
+            </div>
+            <div className="rk-desktop-caption-gap" aria-hidden="true" />
           </div>
         </div>
         <Transcript
           key={activeSnapshot?.threadId}
           scrollRef={messageScroll}
+          followRef={followTranscript}
           artifactTarget={transcriptArtifactTarget}
           messages={activeSnapshot?.messages ?? []}
           olderCursor={activeSnapshot?.olderCursor ?? null}
@@ -2261,6 +2707,7 @@ export function ShellPage() {
           answerableAskMessageId={answerableAskMessageId}
           running={transcriptRunning}
           workingBots={workingBots}
+          workingStartedAt={workingStartedAtMs}
           onLoadOlder={loadOlder}
           onOpenBot={openBot}
           onAnswer={answerMessage}
@@ -2280,8 +2727,41 @@ export function ShellPage() {
           onSpeak={speakMessage}
         />
         {recordingSkill ? (
-          <div className="px-6 pb-2 text-center text-[13px] text-[#E65707]">
+          <div className="px-6 pb-2 text-center text-[13px] text-[var(--rk-danger)]">
             <Trans>Teaching in progress — stop teaching before sending a new message.</Trans>
+          </div>
+        ) : null}
+        {stackRepair ? (
+          <div className="px-6 pb-2">
+            <BuiCard
+              data-testid="worker-stall-banner"
+              className="flex items-start justify-between gap-3 border border-[var(--rk-hairline-strong)] p-3.5"
+            >
+              <p className="min-w-0 text-[13.5px] leading-[1.45] text-[var(--rk-ink)]">
+                {stackRepair.detail ?? stackRepair.summary}
+              </p>
+              {canRepairStack ? (
+                <BuiButton
+                  tone="accent"
+                  disabled={approvalBusyId === stackRepair.id}
+                  onClick={() => void answerApproval(stackRepair)}
+                >
+                  {approvalBusyId === stackRepair.id ? (
+                    <Trans>Starting…</Trans>
+                  ) : (
+                    <Trans>Start worker</Trans>
+                  )}
+                </BuiButton>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setApprovalsOpen(true)}
+                  className="shrink-0 text-[13px] text-[var(--rk-body)] hover:text-[var(--rk-ink)]"
+                >
+                  <Trans>Approvals</Trans>
+                </button>
+              )}
+            </BuiCard>
           </div>
         ) : null}
         {active && !inGroup && !recordingSkill ? (
@@ -2343,20 +2823,17 @@ export function ShellPage() {
       <aside
         data-testid="side-panel"
         data-panel={panel ?? "closed"}
-        className={`absolute inset-y-0 end-0 z-20 flex min-h-0 shrink-0 flex-col overflow-hidden bg-[#0A0A0B] transition-[width] duration-150 ease-out md:relative ${
-          panel && (active || activeGroup)
-            ? "w-full max-w-[384px] border-s border-[#141416] md:w-[384px] md:max-w-none"
-            : "pointer-events-none w-0"
-        }`}
+        data-computer-enlarged={panel === "computer" && computerEnlarged ? "true" : "false"}
+        className={computerSidePanelClass(showSidePanel, panel === "computer" && computerEnlarged)}
       >
-        {panel && (active || activeGroup) ? (
-          <div className="rk-scroll h-full w-full overflow-y-auto px-5 py-[17px] md:w-[384px]">
+        {showSidePanel ? (
+          <div className={computerSidePanelBodyClass(panel === "computer" && computerEnlarged)}>
             {panel !== "routine" &&
             panel !== "create" &&
             panel !== "create-group" &&
             panel !== "group-settings" ? (
               <div className="mb-4 flex items-center justify-between">
-                <span className="text-[13.5px] text-[#85858A]">
+                <span className="text-[13.5px] text-[var(--rk-muted)]">
                   {panel === "settings" ? (
                     <Trans>Settings</Trans>
                   ) : active ? (
@@ -2366,6 +2843,26 @@ export function ShellPage() {
                   )}
                 </span>
                 <div className="flex gap-3.5">
+                  {panel === "computer" ? (
+                    <button
+                      type="button"
+                      aria-label={computerEnlarged ? t`Shrink computer` : t`Enlarge computer`}
+                      aria-pressed={computerEnlarged}
+                      data-testid="computer-enlarge"
+                      onClick={() => setComputerEnlarged((current) => !current)}
+                      className={
+                        computerEnlarged
+                          ? "text-[var(--rk-ink)]"
+                          : "text-[var(--rk-muted)] hover:text-[var(--rk-ink)]"
+                      }
+                    >
+                      {computerEnlarged ? (
+                        <Minimize2 size={16} strokeWidth={1.7} />
+                      ) : (
+                        <Maximize2 size={16} strokeWidth={1.7} />
+                      )}
+                    </button>
+                  ) : null}
                   {active ? (
                     <button
                       type="button"
@@ -2373,8 +2870,8 @@ export function ShellPage() {
                       onClick={() => setPanel(panel === "settings" ? "computer" : "settings")}
                       className={
                         panel === "settings"
-                          ? "text-[#ECECEE]"
-                          : "text-[#85858A] hover:text-[#ECECEE]"
+                          ? "text-[var(--rk-ink)]"
+                          : "text-[var(--rk-muted)] hover:text-[var(--rk-ink)]"
                       }
                     >
                       <Settings size={16} strokeWidth={1.7} />
@@ -2387,14 +2884,20 @@ export function ShellPage() {
               </div>
             ) : null}
             {panel === "computer" && active ? (
-              <div>
-                <div className="relative aspect-[16/10] overflow-hidden rounded-[14px] bg-[#0E0E10]">
+              <div className={computerEnlarged ? "flex min-h-0 flex-1 flex-col" : undefined}>
+                <div
+                  className={
+                    computerEnlarged
+                      ? "relative min-h-[240px] flex-1 overflow-hidden rounded-[14px] bg-[var(--rk-main)]"
+                      : "relative aspect-[16/10] overflow-hidden rounded-[14px] bg-[var(--rk-main)]"
+                  }
+                >
                   {computerOpen ? (
-                    <div className="grid h-full place-items-center text-sm text-[#6C6C70]">
+                    <div className="grid h-full place-items-center text-sm text-[var(--rk-muted-2)]">
                       <Trans>Open in full window</Trans>
                     </div>
                   ) : computer?.kind === "desktop" ? (
-                    <div className="grid h-full place-items-center px-6 text-center text-sm text-[#6C6C70]">
+                    <div className="grid h-full place-items-center px-6 text-center text-sm text-[var(--rk-muted-2)]">
                       <Trans>
                         This bot runs on this computer, not a Linux desktop. Shell and files use
                         your home folder.
@@ -2410,7 +2913,7 @@ export function ShellPage() {
                       style={{ pointerEvents: "none" }}
                     />
                   ) : (
-                    <div className="grid h-full place-items-center text-sm text-[#6C6C70]">
+                    <div className="grid h-full place-items-center text-sm text-[var(--rk-muted-2)]">
                       {computerPlaceholder(
                         computer?.state,
                         booting,
@@ -2424,9 +2927,28 @@ export function ShellPage() {
                     aria-label={t`Open computer`}
                     onClick={() => void openComputer()}
                   />
+                  {computerOpen ? null : (
+                    <button
+                      type="button"
+                      className="absolute end-2.5 top-2.5 z-10 grid h-8 w-8 place-items-center rounded-[10px] bg-[var(--rk-overlay)] text-[var(--rk-mark-dot)] hover:opacity-90"
+                      aria-label={computerEnlarged ? t`Shrink computer` : t`Enlarge computer`}
+                      aria-pressed={computerEnlarged}
+                      data-testid="computer-enlarge-screen"
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        setComputerEnlarged((current) => !current);
+                      }}
+                    >
+                      {computerEnlarged ? (
+                        <Minimize2 size={14} strokeWidth={1.8} />
+                      ) : (
+                        <Maximize2 size={14} strokeWidth={1.8} />
+                      )}
+                    </button>
+                  )}
                 </div>
                 <div className="mt-3 flex items-center justify-between gap-3">
-                  <span className="min-w-0 text-[13.5px] text-[#85858A]">
+                  <span className="min-w-0 text-[13.5px] text-[var(--rk-body)]">
                     {hasControl
                       ? t`You have control`
                       : computerError
@@ -2445,7 +2967,6 @@ export function ShellPage() {
                   ) : (
                     <Button
                       type="button"
-                      variant="outline"
                       size="sm"
                       disabled={takeoverBlocked}
                       title={takeoverBlocked ? t`Stop the bot first` : undefined}
@@ -2457,6 +2978,7 @@ export function ShellPage() {
                 </div>
                 {computer?.state === "error" ||
                 computer?.state === "stopped" ||
+                computer?.state === "booting" ||
                 (computer?.state === "running" && !embeddedScreenUrl) ? (
                   <ComputerMaintenanceActions
                     botId={active.id}
@@ -2467,84 +2989,103 @@ export function ShellPage() {
                     }}
                   />
                 ) : null}
-                <div className="mt-[30px] mb-3 text-[14px] text-[#85858A]">
-                  <Trans>Routines</Trans>
-                </div>
-                {activeRoutines.map((routine) => {
-                  const routineRunning =
-                    snapshot?.run?.routineId === routine.id && isActive(snapshot.run.status);
-                  return (
-                    <div
-                      key={routine.id}
-                      className="flex w-full items-center gap-2 rounded-[11px] px-2.5 py-2.5 hover:bg-[#121214]"
-                    >
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setRoutineDraft({
-                            name: routine.name,
-                            prompt: routine.prompt,
-                            schedules: routine.crons.map(presetFromCron),
-                          });
-                          setEditingRoutine(routine);
-                          setPanel("routine");
-                        }}
-                        className="flex min-w-0 flex-1 items-center gap-3 text-start"
+                <ComputerModePicker
+                  value={computer?.mode ?? active.computerMode}
+                  disabled={computerSwitching}
+                  onChange={(mode) => void switchComputerMode(mode)}
+                />
+                <div
+                  className={
+                    computerEnlarged ? "mt-3 min-h-0 max-h-[36%] overflow-y-auto" : undefined
+                  }
+                >
+                  <ApprovalsPanelSection
+                    items={botApprovals}
+                    busyId={approvalBusyId}
+                    canRepair={canRepairStack}
+                    onViewAll={() => setApprovalsOpen(true)}
+                    onView={openApproval}
+                    onApprove={(item) => void answerApproval(item)}
+                  />
+                  <div className="mt-[30px] mb-3 text-[14px] text-[var(--rk-body)]">
+                    <Trans>Routines</Trans>
+                  </div>
+                  {activeRoutines.map((routine) => {
+                    const routineRunning =
+                      snapshot?.run?.routineId === routine.id && isActive(snapshot.run.status);
+                    return (
+                      <div
+                        key={routine.id}
+                        className="flex w-full items-center gap-2 rounded-[11px] px-2.5 py-2.5 hover:bg-[var(--rk-hover)]"
                       >
-                        <span className="text-[#E65707]">◷</span>
-                        <span
-                          className="min-w-0 flex-1 truncate text-start text-[14.5px] text-[#ECECEE]"
-                          dir="auto"
-                        >
-                          {routine.name}
-                        </span>
-                        <span className="shrink-0 text-[13px] text-[#6C6C70]">
-                          {routine.crons.map(formatCron).join(" · ")}
-                        </span>
-                      </button>
-                      {routineRunning ? (
                         <button
                           type="button"
-                          onClick={() => void stopRun()}
-                          className="shrink-0 rounded-full bg-[rgba(230,87,7,.14)] px-2.5 py-1 text-[12px] text-[#E65707]"
+                          onClick={() => {
+                            setRoutineDraft({
+                              name: routine.name,
+                              prompt: routine.prompt,
+                              schedules: routine.crons.map(presetFromCron),
+                            });
+                            setEditingRoutine(routine);
+                            setPanel("routine");
+                          }}
+                          className="flex min-w-0 flex-1 items-center gap-3 text-start"
                         >
-                          <Trans>Running · Stop</Trans>
+                          <span className="text-[var(--rk-danger)]">◷</span>
+                          <span
+                            className="min-w-0 flex-1 truncate text-start text-[14.5px] text-[var(--rk-ink)]"
+                            dir="auto"
+                          >
+                            {routine.name}
+                          </span>
+                          <span className="shrink-0 text-[13px] text-[var(--rk-muted-2)]">
+                            {routine.crons.map(formatCron).join(" · ")}
+                          </span>
                         </button>
-                      ) : null}
-                    </div>
-                  );
-                })}
-                <button
-                  type="button"
-                  onClick={() => {
-                    setRoutineDraft({ name: "", prompt: "", schedules: [defaultCronPreset()] });
-                    setEditingRoutine(null);
-                    setPanel("routine");
-                  }}
-                  className="mt-1 flex items-center gap-2.5 px-2.5 py-2.5 text-[14.5px] text-[#7A7A80]"
-                >
-                  + <Trans>New routine</Trans>
-                </button>
-                {active ? (
-                  <TeachComputerSection
-                    botId={active.id}
-                    computer={computer}
-                    skills={activeTaughtSkills}
-                    busy={teachBusy}
-                    onRefresh={refreshActiveThread}
-                    onOpenComputer={openComputer}
-                    onStopTeaching={stopTeaching}
-                    onAddRoutine={(skill) => {
-                      setRoutineDraft({
-                        name: skill.name || skill.goal.slice(0, 80),
-                        prompt: `Run taught skill: ${skill.name || skill.goal}\n${skill.playbook.steps.map((step, index) => `${index + 1}. ${step}`).join("\n")}`,
-                        schedules: [defaultCronPreset()],
-                      });
+                        {routineRunning ? (
+                          <button
+                            type="button"
+                            onClick={() => void stopRun()}
+                            className="shrink-0 rounded-full bg-[color-mix(in_srgb,var(--rk-danger)_14%,transparent)] px-2.5 py-1 text-[12px] text-[var(--rk-danger)]"
+                          >
+                            <Trans>Running · Stop</Trans>
+                          </button>
+                        ) : null}
+                      </div>
+                    );
+                  })}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setRoutineDraft({ name: "", prompt: "", schedules: [defaultCronPreset()] });
                       setEditingRoutine(null);
                       setPanel("routine");
                     }}
-                  />
-                ) : null}
+                    className="mt-1 flex items-center gap-2.5 px-2.5 py-2.5 text-[14.5px] text-[var(--rk-ink)]"
+                  >
+                    + <Trans>New routine</Trans>
+                  </button>
+                  {active ? (
+                    <TeachComputerSection
+                      botId={active.id}
+                      computer={computer}
+                      skills={activeTaughtSkills}
+                      busy={teachBusy}
+                      onRefresh={refreshActiveThread}
+                      onOpenComputer={openComputer}
+                      onStopTeaching={stopTeaching}
+                      onAddRoutine={(skill) => {
+                        setRoutineDraft({
+                          name: skill.name || skill.goal.slice(0, 80),
+                          prompt: `Run taught skill: ${skill.name || skill.goal}\n${skill.playbook.steps.map((step, index) => `${index + 1}. ${step}`).join("\n")}`,
+                          schedules: [defaultCronPreset()],
+                        });
+                        setEditingRoutine(null);
+                        setPanel("routine");
+                      }}
+                    />
+                  ) : null}
+                </div>
               </div>
             ) : null}
             {panel === "create-group" ? (
@@ -2625,37 +3166,41 @@ export function ShellPage() {
                   <button
                     type="button"
                     onClick={() => setPanel("computer")}
-                    className="text-[#9A9AA0]"
+                    className="text-[var(--rk-muted)]"
                   >
                     <ChevronLeft size={18} strokeWidth={1.8} />
                   </button>
-                  <div className="text-[15.5px] font-medium text-[#F1F1F2]">
+                  <div className="text-[15.5px] font-medium text-[var(--rk-ink)]">
                     <Trans>Routine</Trans>
                   </div>
-                  <button type="button" onClick={() => setPanel(null)} className="text-[#6C6C70]">
+                  <button
+                    type="button"
+                    onClick={() => setPanel(null)}
+                    className="text-[var(--rk-muted-2)]"
+                  >
                     <X size={16} strokeWidth={1.8} />
                   </button>
                 </div>
-                <label className="text-[14px] text-[#85858A]">
+                <label className="text-[14px] text-[var(--rk-muted)]">
                   <Trans>Name</Trans>
                   <input
                     value={routineDraft.name}
                     onChange={(e) => setRoutineDraft((s) => ({ ...s, name: e.target.value }))}
-                    className="mt-2 w-full rounded-[11px] border border-[#26262A] bg-transparent px-3.5 py-3 text-[#ECECEE]"
+                    className="mt-2 w-full rounded-[11px] border border-[var(--rk-hairline-strong)] bg-transparent px-3.5 py-3 text-[var(--rk-ink)]"
                   />
                 </label>
-                <label className="mt-5 block text-[14px] text-[#85858A]">
+                <label className="mt-5 block text-[14px] text-[var(--rk-muted)]">
                   <Trans>Instruction</Trans>
                   <textarea
                     value={routineDraft.prompt}
                     onChange={(e) => setRoutineDraft((s) => ({ ...s, prompt: e.target.value }))}
                     rows={4}
-                    className="mt-2 w-full rounded-[11px] border border-[#26262A] bg-transparent px-3.5 py-3 text-[#ECECEE]"
+                    className="mt-2 w-full rounded-[11px] border border-[var(--rk-hairline-strong)] bg-transparent px-3.5 py-3 text-[var(--rk-ink)]"
                   />
                 </label>
-                <div className="mt-5 text-[14px] text-[#85858A]">
+                <div className="mt-5 text-[14px] text-[var(--rk-muted)]">
                   <Trans>When to run</Trans>
-                  <span className="ml-2 text-[12.5px] text-[#6E6E74]">
+                  <span className="ml-2 text-[12.5px] text-[var(--rk-muted-2)]">
                     {editingRoutine?.timezone ?? localTimezone()}
                   </span>
                   <Suspense fallback={null}>
@@ -2727,7 +3272,7 @@ export function ShellPage() {
                         setPanel("computer");
                       }
                     }}
-                    className="rounded-[11px] bg-[#F1F1EF] px-4 py-2 text-[#17171A] disabled:opacity-40"
+                    className="rounded-[11px] bg-[var(--rk-solid)] px-4 py-2 text-[var(--rk-solid-ink)] disabled:opacity-40"
                   >
                     {savingRoutine ? t`Saving…` : t`Save`}
                   </button>
@@ -2751,7 +3296,7 @@ export function ShellPage() {
                             setRunningRoutine(false);
                           }
                         }}
-                        className="rounded-[11px] border border-[#26262A] px-4 py-2 text-[14px] text-[#ECECEE] disabled:opacity-40"
+                        className="rounded-[11px] border border-[var(--rk-hairline-strong)] px-4 py-2 text-[14px] text-[var(--rk-ink)] disabled:opacity-40"
                       >
                         {runningRoutine ? t`Running…` : t`Run now`}
                       </button>
@@ -2759,7 +3304,7 @@ export function ShellPage() {
                         type="button"
                         disabled={savingRoutine || runningRoutine}
                         onClick={() => setDeleteRoutineTarget(editingRoutine)}
-                        className="rounded-[11px] px-4 py-2 text-[14px] text-[#FF5364] disabled:opacity-40"
+                        className="rounded-[11px] px-4 py-2 text-[14px] text-[var(--rk-danger)] disabled:opacity-40"
                       >
                         <Trans>Delete routine</Trans>
                       </button>
@@ -2767,7 +3312,7 @@ export function ShellPage() {
                   ) : null}
                 </div>
                 {routineError ? (
-                  <p role="alert" className="mt-3 text-[13px] text-[#EF6461]">
+                  <p role="alert" className="mt-3 text-[13px] text-[var(--rk-danger)]">
                     {routineError}
                   </p>
                 ) : null}
@@ -2903,6 +3448,17 @@ export function ShellPage() {
             }}
           />
         ) : null}
+        {approvalsOpen ? (
+          <ApprovalsOverlay
+            items={pendingApprovals}
+            loading={approvalsLoading}
+            busyId={approvalBusyId}
+            canRepair={canRepairStack}
+            onClose={() => setApprovalsOpen(false)}
+            onView={openApproval}
+            onApprove={(item) => void answerApproval(item)}
+          />
+        ) : null}
         {mcpOpen ? <McpServersOverlay onClose={() => setMcpOpen(false)} /> : null}
       </Suspense>
 
@@ -2995,23 +3551,26 @@ export function ShellPage() {
       </Suspense>
 
       {booting ? (
-        <div className="absolute inset-0 z-30 flex flex-col items-center justify-center gap-[22px] bg-[rgba(4,4,5,.96)]">
-          <div className="text-[19px] font-medium text-[#F1F1F2]">
+        <div className="absolute inset-0 z-30 flex flex-col items-center justify-center gap-[22px] bg-[var(--rk-overlay)]">
+          <div className="text-[19px] font-medium text-[var(--rk-ink)]">
             <Trans>Booting up {active?.name}’s computer</Trans>
           </div>
-          <div className="h-[5px] w-[min(420px,70%)] overflow-hidden rounded-full bg-[#232327]">
-            <div className="h-full w-2/3 rounded-full bg-[#F1F1EF]" />
+          <div className="h-[5px] w-[min(420px,70%)] overflow-hidden rounded-full bg-[var(--rk-hover)]">
+            <div className="h-full w-2/3 rounded-full bg-[var(--rk-solid)]" />
           </div>
         </div>
       ) : computerOpen && active ? (
-        <div className="absolute inset-0 z-30 flex flex-col bg-[#050506]">
-          <div className="flex items-center justify-between gap-4 border-b border-[#171719] px-[18px] py-3.5">
+        <div
+          ref={computerOverlayRef}
+          className="rk-computer-overlay absolute inset-0 z-30 flex h-full w-full flex-col bg-[var(--rk-page)]"
+        >
+          <div className="flex items-center justify-between gap-4 border-b border-[var(--rk-hairline)] px-[18px] py-3.5">
             <div className="flex min-w-0 flex-1 items-center gap-3">
               <BotAvatar
                 color={active.color}
                 identity={active.id}
                 size={28}
-                status={active.status}
+                status={liveStatusByBotId.get(active.id) ?? active.status}
               />
               {recordingSkill ? (
                 <TeachRecordingChrome
@@ -3021,12 +3580,15 @@ export function ShellPage() {
                   variant="overlay"
                 />
               ) : (
-                <span className="truncate text-[15.5px] font-medium text-[#ECECEE]" dir="auto">
+                <span
+                  className="truncate text-[15.5px] font-medium text-[var(--rk-ink)]"
+                  dir="auto"
+                >
                   {computerLabel(computer?.mode, active.name)}
                 </span>
               )}
               {!recordingSkill && hasControl ? (
-                <span className="rounded-full bg-[rgba(48,162,75,.14)] px-[11px] py-1 text-[13px] text-[#4ECB71]">
+                <span className="rounded-full bg-[color-mix(in_srgb,var(--rk-success)_14%,transparent)] px-[11px] py-1 text-[13px] text-[var(--rk-success)]">
                   <Trans>You have control</Trans>
                 </span>
               ) : null}
@@ -3054,7 +3616,6 @@ export function ShellPage() {
               ) : (
                 <Button
                   type="button"
-                  variant="outline"
                   size="sm"
                   disabled={takeoverBlocked}
                   title={takeoverBlocked ? t`Stop the bot first` : undefined}
@@ -3067,25 +3628,36 @@ export function ShellPage() {
               )}
               <button
                 type="button"
-                className="text-[16px] text-[#85858A] hover:text-[#ECECEE]"
+                className="text-[16px] text-[var(--rk-muted)] hover:text-[var(--rk-ink)]"
+                aria-label={computerFullscreen ? t`Exit fullscreen` : t`Fullscreen`}
+                aria-pressed={computerFullscreen}
+                data-testid="computer-fullscreen"
+                onClick={() => void toggleComputerFullscreen()}
+              >
+                {computerFullscreen ? (
+                  <Minimize2 size={16} strokeWidth={1.8} />
+                ) : (
+                  <Maximize2 size={16} strokeWidth={1.8} />
+                )}
+              </button>
+              <button
+                type="button"
+                className="text-[16px] text-[var(--rk-muted)] hover:text-[var(--rk-ink)]"
                 aria-label={t`Close computer`}
-                onClick={() => setComputerOpen(false)}
+                onClick={closeComputerOverlay}
               >
                 <X size={16} strokeWidth={1.8} />
               </button>
             </div>
           </div>
           {sendError ? (
-            <div
-              role="alert"
-              className="border-b border-[#5A2A2A] bg-[#2A1717] px-[18px] py-2 text-[13px] text-[#F1A8A8]"
-            >
+            <div role="alert" className="rk-banner-danger border-b px-[18px] py-2 text-[13px]">
               {sendError}
             </div>
           ) : null}
-          <div className="relative min-h-0 flex-1 bg-[#0E0E10]">
+          <div className="relative min-h-0 flex-1 bg-[var(--rk-main)]">
             {computer?.kind === "desktop" ? (
-              <div className="grid h-full place-items-center px-8 text-center text-sm text-[#6C6C70]">
+              <div className="grid h-full place-items-center px-8 text-center text-sm text-[var(--rk-muted-2)]">
                 <Trans>
                   This bot runs on this computer. There is no separate Linux desktop. Ask it to use
                   the shell; working directories under your home folder are allowed.
@@ -3114,7 +3686,7 @@ export function ShellPage() {
                 ) : null}
               </>
             ) : (
-              <div className="grid h-full place-items-center text-sm text-[#6C6C70]">
+              <div className="grid h-full place-items-center text-sm text-[var(--rk-muted)]">
                 {computer?.state === "suspended"
                   ? t`Computer is asleep`
                   : computerLabel(computer?.mode, active.name)}
@@ -3133,6 +3705,7 @@ export function ShellPage() {
 
 const Transcript = memo(function Transcript({
   scrollRef,
+  followRef,
   artifactTarget,
   messages,
   olderCursor,
@@ -3140,6 +3713,7 @@ const Transcript = memo(function Transcript({
   answerableAskMessageId,
   running,
   workingBots,
+  workingStartedAt,
   onLoadOlder,
   onOpenBot,
   onAnswer,
@@ -3156,6 +3730,7 @@ const Transcript = memo(function Transcript({
   onSpeak,
 }: {
   scrollRef: RefObject<HTMLDivElement | null>;
+  followRef: MutableRefObject<boolean>;
   artifactTarget: ArtifactTarget;
   messages: ThreadMessage[];
   olderCursor: number | null;
@@ -3163,6 +3738,7 @@ const Transcript = memo(function Transcript({
   answerableAskMessageId: string | null;
   running: boolean;
   workingBots: GroupAvatarMember[];
+  workingStartedAt?: number;
   onLoadOlder: () => void | Promise<void>;
   onOpenBot: (botId: string) => void;
   onAnswer: (message: ThreadMessage, text: string) => Promise<void>;
@@ -3178,11 +3754,11 @@ const Transcript = memo(function Transcript({
   speakingMessageId: string | null;
   onSpeak: (message: ThreadMessage) => void;
 }) {
-  const { t } = useLingui();
+  const { t, i18n } = useLingui();
   const [atEnd, setAtEnd] = useState(true);
-  const following = useRef(true);
+  const contentRef = useRef<HTMLDivElement>(null);
+  const pinning = useRef(false);
   const autoScrolling = useRef(false);
-  const lastScrollTop = useRef(0);
   const autoScrollTimer = useRef<number | undefined>(undefined);
   const jumpButtonRef = useRef<HTMLButtonElement>(null);
   const messageById = useMemo(
@@ -3197,17 +3773,27 @@ const Transcript = memo(function Transcript({
   const snapToEnd = useCallback(() => {
     const element = scrollRef.current;
     if (!element) return;
-    following.current = true;
-    autoScrolling.current = false;
+    followRef.current = true;
+    pinning.current = true;
     setAtEnd(true);
-    element.scrollTo({ top: element.scrollHeight, behavior: "auto" });
-  }, [scrollRef]);
+    scrollTranscriptToEnd(element);
+    window.requestAnimationFrame(() => {
+      pinning.current = false;
+      if (followRef.current && !transcriptIsNearEnd(element)) {
+        pinning.current = true;
+        scrollTranscriptToEnd(element);
+        window.requestAnimationFrame(() => {
+          pinning.current = false;
+        });
+      }
+    });
+  }, [followRef, scrollRef]);
 
   const jumpToLatest = useCallback(() => {
     const element = scrollRef.current;
     if (!element) return;
     const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    following.current = true;
+    followRef.current = true;
     autoScrolling.current = !reducedMotion;
     setAtEnd(true);
     element.scrollTo({
@@ -3222,11 +3808,11 @@ const Transcript = memo(function Transcript({
       },
       reducedMotion ? 0 : 2_000,
     );
-  }, [scrollRef]);
+  }, [followRef, scrollRef]);
 
   useLayoutEffect(() => {
-    if (following.current) snapToEnd();
-  }, [messages, running, snapToEnd]);
+    if (followRef.current) snapToEnd();
+  }, [followRef, messages, running, snapToEnd]);
 
   useLayoutEffect(() => {
     const button = jumpButtonRef.current;
@@ -3235,22 +3821,39 @@ const Transcript = memo(function Transcript({
     }
   }, [atEnd]);
 
+  useEffect(() => {
+    const element = scrollRef.current;
+    const content = contentRef.current;
+    if (!element || typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(() => {
+      if (!followRef.current) return;
+      pinning.current = true;
+      scrollTranscriptToEnd(element);
+      window.requestAnimationFrame(() => {
+        pinning.current = false;
+      });
+    });
+    observer.observe(element);
+    if (content) observer.observe(content);
+    return () => observer.disconnect();
+  }, [followRef, scrollRef]);
+
   const loadOlder = useCallback(() => {
-    const wasFollowing = following.current;
+    const wasFollowing = followRef.current;
     // Prepend must not race the messages-driven snap-to-end follow path.
-    following.current = false;
+    followRef.current = false;
     autoScrolling.current = false;
     const pending = onLoadOlder();
     if (!pending) return;
     return Promise.resolve(pending).catch((error) => {
       const element = scrollRef.current;
       if (wasFollowing && element && transcriptIsNearEnd(element)) {
-        following.current = true;
+        followRef.current = true;
         setAtEnd(true);
       }
       throw error;
     });
-  }, [onLoadOlder, scrollRef]);
+  }, [followRef, onLoadOlder, scrollRef]);
 
   useEffect(
     () => () => {
@@ -3266,85 +3869,111 @@ const Transcript = memo(function Transcript({
         data-testid="transcript"
         onPointerDown={() => {
           autoScrolling.current = false;
-          following.current = false;
         }}
         onTouchStart={() => {
           autoScrolling.current = false;
-          following.current = false;
         }}
         onWheel={(event) => {
           if (event.deltaY < 0) {
             autoScrolling.current = false;
-            following.current = false;
+            followRef.current = false;
           }
         }}
         onScroll={(event) => {
-          const scrolledDown = event.currentTarget.scrollTop >= lastScrollTop.current;
-          lastScrollTop.current = event.currentTarget.scrollTop;
           const nearEnd = transcriptIsNearEnd(event.currentTarget);
           setAtEnd(nearEnd);
-          if (nearEnd) {
-            if (scrolledDown) following.current = true;
-            if (autoScrolling.current) {
-              autoScrolling.current = false;
-              window.clearTimeout(autoScrollTimer.current);
-            }
-          } else if (!autoScrolling.current) {
-            following.current = false;
+          const programmatic = pinning.current || autoScrolling.current;
+          followRef.current = transcriptFollowAfterScroll({ nearEnd, programmatic });
+          if (nearEnd && autoScrolling.current) {
+            autoScrolling.current = false;
+            window.clearTimeout(autoScrollTimer.current);
           }
         }}
-        className="rk-scroll flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto px-4 py-5 md:px-7 md:py-6"
+        className="rk-scroll rk-transcript-scroll flex min-h-0 flex-1 flex-col overflow-y-auto px-4 py-5 md:px-7 md:py-6"
       >
-        {olderCursor != null ? (
-          <button
-            type="button"
-            disabled={loadingOlder}
-            onClick={() => void loadOlder()}
-            className="self-center rounded-lg px-3 py-1.5 text-[13px] text-[#85858A] hover:bg-[#1A1A1D] hover:text-[#C9C9CE] disabled:opacity-50"
-          >
-            {loadingOlder ? t`Loading…` : t`Load earlier messages`}
-          </button>
-        ) : null}
-        {messages.map((message) => (
-          <div
-            key={message.id}
-            data-message-id={message.id}
-            className="group/message relative pt-9 hover:z-20"
-          >
-            <MessageHoverActions message={message} onReply={onReply} />
-            <MessageView
-              artifactTarget={artifactTarget}
-              message={message}
-              canAnswer={message.id === answerableAskMessageId}
-              onOpenBot={onOpenBot}
-              onOpenPeerMessages={onOpenPeerMessages}
-              onAnswer={onAnswer}
-              speakerName={message.role === "bot" ? memberName?.(message.botId) : undefined}
-              memberName={memberName}
-              peerBot={peerBot}
-              replyPreview={
-                message.replyToMessageId ? messageById.get(message.replyToMessageId) : undefined
-              }
-              replyToMessageId={message.replyToMessageId}
-              onJumpToMessage={onJumpToMessage}
-              onRefresh={onRefresh}
-              onBotChanged={onBotChanged}
-              onAddRoutine={onAddRoutine}
-              voiceReady={voiceReady}
-              speaking={speakingMessageId === message.id}
-              onSpeak={() => onSpeak(message)}
-            />
-          </div>
-        ))}
-        {running &&
-        !messages.some(
-          (message) =>
-            message.id.startsWith("progress:") &&
-            message.blocks[0]?.kind === "progress" &&
-            message.blocks[0].text,
-        ) ? (
-          <ActiveBotGlyph bots={workingBots} label={workingLabel} />
-        ) : null}
+        <div ref={contentRef} className="flex flex-col gap-2">
+          {olderCursor != null ? (
+            <button
+              type="button"
+              disabled={loadingOlder}
+              onClick={() => void loadOlder()}
+              className="self-center rounded-lg px-3 py-1.5 text-[13px] text-[var(--rk-muted)] hover:bg-[var(--rk-surface-2)] hover:text-[var(--rk-body)] disabled:opacity-50"
+            >
+              {loadingOlder ? t`Loading…` : t`Load earlier messages`}
+            </button>
+          ) : null}
+          {messages.map((message, index, rows) => {
+            const isProgress = message.id.startsWith("progress:");
+            const showBreak =
+              !isProgress && shouldBreakBefore(rows[index - 1]?.createdAt, message.createdAt);
+            const clock = isProgress
+              ? ""
+              : formatMessageClock(message.createdAt, i18n.locale || "en");
+            return (
+              <Fragment key={message.id}>
+                {showBreak ? (
+                  <div className="flex justify-center pt-3 pb-1">
+                    <span className="rounded-full bg-[var(--rk-surface-2)] px-2.5 py-0.5 text-[12px] font-medium text-[var(--rk-muted)]">
+                      {formatMessageBreak(
+                        message.createdAt,
+                        { yesterday: t`Yesterday` },
+                        i18n.locale || "en",
+                      )}
+                    </span>
+                  </div>
+                ) : null}
+                <div
+                  data-message-id={message.id}
+                  className="group/message relative pt-9 hover:z-20"
+                >
+                  <MessageHoverActions message={message} onReply={onReply} />
+                  <MessageView
+                    artifactTarget={artifactTarget}
+                    message={message}
+                    canAnswer={message.id === answerableAskMessageId}
+                    onOpenBot={onOpenBot}
+                    onOpenPeerMessages={onOpenPeerMessages}
+                    onAnswer={onAnswer}
+                    speakerName={message.role === "bot" ? memberName?.(message.botId) : undefined}
+                    memberName={memberName}
+                    peerBot={peerBot}
+                    replyPreview={
+                      message.replyToMessageId
+                        ? messageById.get(message.replyToMessageId)
+                        : undefined
+                    }
+                    replyToMessageId={message.replyToMessageId}
+                    onJumpToMessage={onJumpToMessage}
+                    onRefresh={onRefresh}
+                    onBotChanged={onBotChanged}
+                    onAddRoutine={onAddRoutine}
+                    voiceReady={voiceReady}
+                    speaking={speakingMessageId === message.id}
+                    onSpeak={() => onSpeak(message)}
+                  />
+                  {clock ? (
+                    <div
+                      className={`mt-1 flex ${
+                        message.role === "user" ? "justify-end" : "justify-start"
+                      }`}
+                    >
+                      <span className="text-[11px] text-[var(--rk-muted)]">{clock}</span>
+                    </div>
+                  ) : null}
+                </div>
+              </Fragment>
+            );
+          })}
+          {running &&
+          !messages.some(
+            (message) =>
+              message.id.startsWith("progress:") &&
+              message.blocks[0]?.kind === "progress" &&
+              message.blocks[0].text,
+          ) ? (
+            <ActiveBotGlyph bots={workingBots} label={workingLabel} startedAt={workingStartedAt} />
+          ) : null}
+        </div>
       </div>
       <button
         ref={jumpButtonRef}
@@ -3353,7 +3982,7 @@ const Transcript = memo(function Transcript({
         aria-hidden={atEnd}
         tabIndex={atEnd ? -1 : 0}
         onClick={jumpToLatest}
-        className={`absolute bottom-4 left-1/2 z-20 grid h-9 w-9 -translate-x-1/2 place-items-center rounded-full border border-[#303034] bg-[#1A1A1D]/95 text-[#C9C9CE] shadow-[0_8px_24px_rgba(0,0,0,.45)] backdrop-blur transition-[opacity,transform,background-color] duration-200 ease-[cubic-bezier(.22,1,.36,1)] hover:bg-[#242428] motion-reduce:transition-none ${
+        className={`absolute bottom-4 left-1/2 z-20 grid h-9 w-9 -translate-x-1/2 place-items-center rounded-full border border-[var(--rk-hairline-strong)] bg-[var(--rk-surface-2)]/95 text-[var(--rk-body)] shadow-[0_8px_24px_rgba(0,0,0,.45)] backdrop-blur transition-[opacity,transform,background-color] duration-200 ease-[cubic-bezier(.22,1,.36,1)] hover:bg-[var(--rk-hover)] motion-reduce:transition-none ${
           atEnd ? "pointer-events-none translate-y-2 opacity-0" : "translate-y-0 opacity-100"
         }`}
       >
@@ -3398,7 +4027,7 @@ const Composer = memo(function Composer({
   dictationError: string | null;
   sending: boolean;
   fileInputRef: RefObject<HTMLInputElement | null>;
-  onAttachmentPick: (files: FileList | null) => void | Promise<void>;
+  onAttachmentPick: (files: ArrayLike<File> | null) => void | Promise<void>;
   onRemoveAttachment: (attachment: PendingAttachment) => void;
   onSend: (text: string, mentions?: ComposerMention[]) => Promise<void>;
   onStop: () => Promise<void>;
@@ -3416,6 +4045,7 @@ const Composer = memo(function Composer({
 }) {
   const { t } = useLingui();
   const [draft, setDraft] = useState("");
+  const [dropActive, setDropActive] = useState(false);
   const [mentionQuery, setMentionQuery] = useState<string | null>(null);
   const [slashQuery, setSlashQuery] = useState<string | null>(null);
   const [selectedSkill, setSelectedSkill] = useState<AgentSkillCatalogEntry | null>(null);
@@ -3543,31 +4173,40 @@ const Composer = memo(function Composer({
     draft.length === 0 && selectedSkill === null && selectedMentions.length === 0;
   const replyName = replyTarget ? (replyTargetName ?? previewMessageText(replyTarget)) : "";
 
+  function attachFromClipboard(event: ClipboardEvent<HTMLElement> | DragEvent<HTMLElement>) {
+    if (disabled) return;
+    const data = "clipboardData" in event ? event.clipboardData : event.dataTransfer;
+    const files = filesFromDataTransfer(data);
+    if (!files.length) return;
+    event.preventDefault();
+    void onAttachmentPick(files);
+  }
+
   return (
     <div className="relative z-30 px-3 pb-4 pt-3 md:px-6 md:pb-6">
       {sendError || dictationError ? (
-        <div className="mb-3 rounded-[14px] border border-[#5A2A2A] bg-[#2A1717] px-4 py-2 text-[13px] text-[#F1A8A8]">
+        <div className="mb-3 rk-banner-danger rounded-[14px] px-4 py-2 text-[13px]">
           {sendError ?? dictationError}
         </div>
       ) : null}
       {replyTarget ? (
         <div
           data-testid="reply-chip"
-          className="mb-2 flex items-center gap-2 rounded-full border border-[#26262A] bg-[#17171A] px-3 py-1.5 text-[13px] text-[#C9C9CE]"
+          className="mb-2 flex items-center gap-2 rounded-full border border-[var(--rk-hairline-strong)] bg-[var(--rk-surface)] px-3 py-1.5 text-[13px] text-[var(--rk-body)]"
         >
-          <span className="min-w-0 flex-1 truncate text-[#85858A]">{t`Replying to ${replyName}`}</span>
+          <span className="min-w-0 flex-1 truncate text-[var(--rk-muted)]">{t`Replying to ${replyName}`}</span>
           <button
             type="button"
             aria-label={t`Cancel reply`}
             onClick={onClearReply}
-            className="shrink-0 text-[#85858A] hover:text-[#ECECEE]"
+            className="shrink-0 text-[var(--rk-muted)] hover:text-[var(--rk-ink)]"
           >
             <X size={13} strokeWidth={2} />
           </button>
         </div>
       ) : null}
       {attachmentNotice ? (
-        <div className="mb-3 rounded-[14px] border border-[#3A3A20] bg-[#232316] px-4 py-2 text-[13px] text-[#D6CFA0]">
+        <div className="mb-3 rk-banner-warning rounded-[14px] px-4 py-2 text-[13px]">
           {attachmentNotice}
         </div>
       ) : null}
@@ -3576,7 +4215,7 @@ const Composer = memo(function Composer({
           {pendingAttachments.map((attachment) => (
             <div
               key={attachment.id}
-              className="flex items-center gap-2 rounded-full border border-[#26262A] bg-[#17171A] px-3 py-1.5 text-[13px] text-[#C9C9CE]"
+              className="flex items-center gap-2 rounded-full border border-[var(--rk-hairline-strong)] bg-[var(--rk-surface)] px-3 py-1.5 text-[13px] text-[var(--rk-body)]"
             >
               {attachment.previewUrl ? (
                 <img
@@ -3594,7 +4233,7 @@ const Composer = memo(function Composer({
                 type="button"
                 aria-label={t`Remove ${attachment.file.name}`}
                 onClick={() => onRemoveAttachment(attachment)}
-                className="text-[#85858A] hover:text-[#ECECEE]"
+                className="text-[var(--rk-muted)] hover:text-[var(--rk-ink)]"
               >
                 <X size={13} strokeWidth={2} />
               </button>
@@ -3605,7 +4244,7 @@ const Composer = memo(function Composer({
       {mentionOptions.length ? (
         <div
           data-testid="mention-picker"
-          className="mb-2 overflow-hidden rounded-[14px] border border-[#26262A] bg-[#17171A]"
+          className="mb-2 overflow-hidden rounded-[14px] border border-[var(--rk-hairline-strong)] bg-[var(--rk-surface)]"
         >
           {mentionOptions.map((mention) => (
             <button
@@ -3613,15 +4252,15 @@ const Composer = memo(function Composer({
               type="button"
               aria-label={t`@${mention.name}`}
               onClick={() => insertMention(mention)}
-              className="flex w-full items-start gap-3 px-4 py-2.5 text-start hover:bg-[#1F1F22]"
+              className="flex w-full items-start gap-3 px-4 py-2.5 text-start hover:bg-[var(--rk-hover)]"
             >
               <MentionOptionIcon mention={mention} />
               <span className="min-w-0">
-                <span dir="auto" className="block text-[14px] text-[#ECECEE]">
+                <span dir="auto" className="block text-[14px] text-[var(--rk-ink)]">
                   @{mention.name}
                 </span>
                 {mention.subtitle ? (
-                  <span dir="auto" className="block truncate text-[12.5px] text-[#85858A]">
+                  <span dir="auto" className="block truncate text-[12.5px] text-[var(--rk-muted)]">
                     {mention.subtitle}
                   </span>
                 ) : null}
@@ -3633,7 +4272,7 @@ const Composer = memo(function Composer({
       {showSlashPicker ? (
         <div
           data-testid="slash-picker"
-          className="mb-2 overflow-hidden rounded-[14px] border border-[#26262A] bg-[#17171A]"
+          className="mb-2 overflow-hidden rounded-[14px] border border-[var(--rk-hairline-strong)] bg-[var(--rk-surface)]"
         >
           {slashSkillOptions.map((skill) => (
             <button
@@ -3641,14 +4280,14 @@ const Composer = memo(function Composer({
               type="button"
               aria-label={t`Skill ${skill.name}`}
               onClick={() => insertSkill(skill)}
-              className="flex w-full items-start gap-3 px-4 py-2.5 text-start hover:bg-[#1F1F22]"
+              className="flex w-full items-start gap-3 px-4 py-2.5 text-start hover:bg-[var(--rk-hover)]"
             >
-              <Box size={16} strokeWidth={1.7} className="mt-0.5 shrink-0 text-[#9A9AA0]" />
+              <Box size={16} strokeWidth={1.7} className="mt-0.5 shrink-0 text-[var(--rk-muted)]" />
               <span className="min-w-0">
-                <span dir="auto" className="block text-[14px] text-[#ECECEE]">
+                <span dir="auto" className="block text-[14px] text-[var(--rk-ink)]">
                   {skill.name}
                 </span>
-                <span dir="auto" className="block truncate text-[12.5px] text-[#85858A]">
+                <span dir="auto" className="block truncate text-[12.5px] text-[var(--rk-muted)]">
                   {truncateSlashDescription(skill.description)}
                 </span>
               </span>
@@ -3662,21 +4301,24 @@ const Composer = memo(function Composer({
                 type="button"
                 aria-label={label}
                 onClick={() => runSlashAction(action.id)}
-                className="flex w-full items-center gap-3 px-4 py-2.5 text-start hover:bg-[#1F1F22]"
+                className="flex w-full items-center gap-3 px-4 py-2.5 text-start hover:bg-[var(--rk-hover)]"
               >
-                <Settings size={16} strokeWidth={1.7} className="shrink-0 text-[#9A9AA0]" />
-                <span className="text-[14px] text-[#ECECEE]">{label}</span>
+                <Settings size={16} strokeWidth={1.7} className="shrink-0 text-[var(--rk-muted)]" />
+                <span className="text-[14px] text-[var(--rk-ink)]">{label}</span>
               </button>
             );
           })}
         </div>
       ) : null}
-      <div className="flex items-end gap-3.5 rounded-full border border-[#202023] bg-[#131315] py-[9px] pe-2.5 ps-3">
+      <div
+        className={`flex items-end gap-3.5 rounded-full border bg-[var(--rk-hover)] py-[9px] pe-2.5 ps-3 ${
+          dropActive ? "border-[var(--rk-ink)]" : "border-[var(--rk-hairline-strong)]"
+        }`}
+      >
         <input
           ref={fileInputRef}
           type="file"
           multiple
-          accept={ATTACHMENT_ACCEPT}
           className="hidden"
           onChange={(event) => void onAttachmentPick(event.target.files)}
         />
@@ -3685,7 +4327,7 @@ const Composer = memo(function Composer({
           aria-label={t`Attach file`}
           disabled={disabled}
           onClick={() => fileInputRef.current?.click()}
-          className="grid h-[34px] w-[34px] shrink-0 place-items-center rounded-full border border-[#26262A] text-[#9A9AA0] disabled:opacity-40"
+          className="grid h-[34px] w-[34px] shrink-0 place-items-center rounded-full border border-[var(--rk-hairline-strong)] text-[var(--rk-muted)] disabled:opacity-40"
         >
           <Plus size={17} strokeWidth={1.8} />
         </button>
@@ -3707,8 +4349,8 @@ const Composer = memo(function Composer({
           onTouchEnd={onDictateStop}
           className={`grid h-[34px] w-[34px] shrink-0 place-items-center rounded-full border ${
             dictating
-              ? "border-[#4ECB71] bg-[rgba(48,162,75,.16)] text-[#4ECB71]"
-              : "border-[#26262A] text-[#9A9AA0]"
+              ? "border-[var(--rk-success)] bg-[color-mix(in_srgb,var(--rk-success)_16%,transparent)] text-[var(--rk-success)]"
+              : "border-[var(--rk-hairline-strong)] text-[var(--rk-muted)]"
           }`}
           title={transcribe ? t`Hold to talk` : t`Hold to talk (on-device dictation)`}
         >
@@ -3718,9 +4360,9 @@ const Composer = memo(function Composer({
           {selectedSkill ? (
             <span
               data-testid="skill-chip"
-              className="inline-flex max-w-full items-center gap-1.5 rounded-full bg-[#1C1C1F] px-2.5 py-1 text-[13px] text-[#ECECEE]"
+              className="inline-flex max-w-full items-center gap-1.5 rounded-full bg-[var(--rk-surface-2)] px-2.5 py-1 text-[13px] text-[var(--rk-ink)]"
             >
-              <Box size={13} strokeWidth={1.7} className="shrink-0 text-[#B0B0B6]" />
+              <Box size={13} strokeWidth={1.7} className="shrink-0 text-[var(--rk-muted)]" />
               <span dir="auto" className="truncate">
                 {selectedSkill.name}
               </span>
@@ -3728,7 +4370,7 @@ const Composer = memo(function Composer({
                 type="button"
                 aria-label={t`Remove skill ${selectedSkill.name}`}
                 onClick={() => setSelectedSkill(null)}
-                className="text-[#85858A] hover:text-[#ECECEE]"
+                className="text-[var(--rk-muted)] hover:text-[var(--rk-ink)]"
               >
                 <X size={12} strokeWidth={2} />
               </button>
@@ -3739,7 +4381,7 @@ const Composer = memo(function Composer({
               key={mentionChipKey(mention)}
               data-testid="mention-chip"
               data-mention-kind={mention.kind}
-              className="inline-flex max-w-full items-center gap-1.5 rounded-full bg-[#1C1C1F] px-2.5 py-1 text-[13px] text-[#ECECEE]"
+              className="inline-flex max-w-full items-center gap-1.5 rounded-full bg-[var(--rk-surface-2)] px-2.5 py-1 text-[13px] text-[var(--rk-ink)]"
             >
               <MentionChipIcon mention={mention} />
               <span dir="auto" className="truncate">
@@ -3755,7 +4397,7 @@ const Composer = memo(function Composer({
                     ),
                   )
                 }
-                className="text-[#85858A] hover:text-[#ECECEE]"
+                className="text-[var(--rk-muted)] hover:text-[var(--rk-ink)]"
               >
                 <X size={12} strokeWidth={2} />
               </button>
@@ -3793,7 +4435,23 @@ const Composer = memo(function Composer({
             autoComplete="off"
             dir="auto"
             rows={1}
-            className="max-h-32 min-h-[24px] min-w-[8rem] flex-1 resize-none overflow-y-auto bg-transparent py-0.5 text-[15.5px] leading-6 text-[#E9E9EA] outline-none disabled:opacity-40"
+            onPaste={(event) => {
+              attachFromClipboard(event);
+            }}
+            onDragOver={(event) => {
+              const transfer = event.dataTransfer;
+              if (disabled || !transfer || !Array.from(transfer.types).includes("Files")) return;
+              event.preventDefault();
+              transfer.dropEffect = "copy";
+              setDropActive(true);
+            }}
+            onDragLeave={() => setDropActive(false)}
+            onDrop={(event) => {
+              event.preventDefault();
+              setDropActive(false);
+              attachFromClipboard(event);
+            }}
+            className="max-h-32 min-h-[24px] min-w-[8rem] flex-1 resize-none overflow-y-auto bg-transparent py-0.5 text-[15.5px] leading-6 text-[var(--rk-ink)] outline-none placeholder:text-[var(--rk-muted)] disabled:opacity-40"
           />
         </div>
         {running ? (
@@ -3801,7 +4459,7 @@ const Composer = memo(function Composer({
             type="button"
             aria-label={t`Stop`}
             onClick={() => void onStop()}
-            className="grid h-9 w-9 place-items-center rounded-full bg-[#F1F1EF] text-[#17171A]"
+            className="grid h-9 w-9 place-items-center rounded-full bg-[var(--rk-solid)] text-[var(--rk-solid-ink)]"
           >
             <Square size={12} strokeWidth={0} fill="currentColor" />
           </button>
@@ -3811,7 +4469,7 @@ const Composer = memo(function Composer({
             aria-label={t`Send`}
             disabled={sending || !canSend || disabled}
             onClick={send}
-            className="grid h-9 w-9 place-items-center rounded-full bg-[#F1F1EF] text-[#17171A] disabled:opacity-50"
+            className="grid h-9 w-9 place-items-center rounded-full bg-[var(--rk-solid)] text-[var(--rk-solid-ink)] disabled:opacity-50"
           >
             <ArrowUp size={18} strokeWidth={2} />
           </button>
@@ -3834,43 +4492,45 @@ function slashActionLabel(id: SlashActionId) {
 
 function MentionOptionIcon({ mention }: { mention: ComposerMention }) {
   if (mention.kind === "routine") {
-    return <Clock size={16} strokeWidth={1.7} className="mt-0.5 shrink-0 text-[#9A9AA0]" />;
+    return <Clock size={16} strokeWidth={1.7} className="mt-0.5 shrink-0 text-[var(--rk-muted)]" />;
   }
   if (mention.kind === "connector") {
-    return <Puzzle size={16} strokeWidth={1.7} className="mt-0.5 shrink-0 text-[#9A9AA0]" />;
+    return (
+      <Puzzle size={16} strokeWidth={1.7} className="mt-0.5 shrink-0 text-[var(--rk-muted)]" />
+    );
   }
   if (mention.kind === "group") {
     return (
-      <span className="mt-0.5 grid h-4 w-4 shrink-0 place-items-center rounded-full bg-[#2A2A2E] text-[9px] text-[#C9C9CE]">
+      <span className="mt-0.5 grid h-4 w-4 shrink-0 place-items-center rounded-full bg-[var(--rk-surface-2)] text-[9px] text-[var(--rk-body)]">
         G
       </span>
     );
   }
   if (mention.kind === "everyone") {
     return (
-      <span className="mt-0.5 grid h-4 w-4 shrink-0 place-items-center rounded-full bg-[#2A2A2E] text-[9px] text-[#C9C9CE]">
+      <span className="mt-0.5 grid h-4 w-4 shrink-0 place-items-center rounded-full bg-[var(--rk-surface-2)] text-[9px] text-[var(--rk-body)]">
         @
       </span>
     );
   }
-  return <BotAvatar color={mention.color ?? "#85858A"} identity={mention.id} size={16} />;
+  return <BotAvatar color={mention.color ?? "var(--rk-muted)"} identity={mention.id} size={16} />;
 }
 
 function MentionChipIcon({ mention }: { mention: ComposerMention }) {
   if (mention.kind === "routine") {
-    return <Clock size={13} strokeWidth={1.7} className="shrink-0 text-[#B0B0B6]" />;
+    return <Clock size={13} strokeWidth={1.7} className="shrink-0 text-[var(--rk-muted)]" />;
   }
   if (mention.kind === "connector") {
-    return <Puzzle size={13} strokeWidth={1.7} className="shrink-0 text-[#B0B0B6]" />;
+    return <Puzzle size={13} strokeWidth={1.7} className="shrink-0 text-[var(--rk-muted)]" />;
   }
   if (mention.kind === "group" || mention.kind === "everyone") {
     return (
-      <span className="grid h-4 w-4 shrink-0 place-items-center rounded-full bg-[#2A2A2E] text-[9px] text-[#C9C9CE]">
+      <span className="grid h-4 w-4 shrink-0 place-items-center rounded-full bg-[var(--rk-surface-2)] text-[9px] text-[var(--rk-body)]">
         {mention.kind === "group" ? "G" : "@"}
       </span>
     );
   }
-  return <BotAvatar color={mention.color ?? "#85858A"} identity={mention.id} size={16} />;
+  return <BotAvatar color={mention.color ?? "var(--rk-muted)"} identity={mention.id} size={16} />;
 }
 
 function previewMessageText(message: ThreadMessage): string {
@@ -3920,13 +4580,13 @@ function MessageHoverActions({
   return (
     <div
       data-testid="message-hover-actions"
-      className="pointer-events-none absolute end-0 top-0 z-10 flex items-center gap-0.5 rounded-full bg-[#1C1C1F] p-0.5 opacity-0 shadow-[0_1px_4px_rgba(0,0,0,0.45)] transition-opacity group-hover/message:pointer-events-auto group-hover/message:opacity-100 focus-within:pointer-events-auto focus-within:opacity-100"
+      className="pointer-events-none absolute end-0 top-0 z-10 flex items-center gap-0.5 rounded-full bg-[var(--rk-surface-2)] p-0.5 opacity-0 shadow-[0_1px_4px_rgba(0,0,0,0.45)] transition-opacity group-hover/message:pointer-events-auto group-hover/message:opacity-100 focus-within:pointer-events-auto focus-within:opacity-100"
     >
       <button
         type="button"
         aria-label={t`Reply`}
         onClick={() => onReply(message)}
-        className="grid h-7 w-7 place-items-center rounded-full text-[#C9C9CE] hover:bg-[#2A2A2F] hover:text-[#ECECEE]"
+        className="grid h-7 w-7 place-items-center rounded-full text-[var(--rk-body)] hover:bg-[var(--rk-hairline-strong)] hover:text-[var(--rk-ink)]"
       >
         <Reply size={14} strokeWidth={1.8} />
       </button>
@@ -3934,7 +4594,7 @@ function MessageHoverActions({
         type="button"
         aria-label={t`Copy`}
         onClick={copyMessage}
-        className="grid h-7 w-7 place-items-center rounded-full text-[#C9C9CE] hover:bg-[#2A2A2F] hover:text-[#ECECEE]"
+        className="grid h-7 w-7 place-items-center rounded-full text-[var(--rk-body)] hover:bg-[var(--rk-hairline-strong)] hover:text-[var(--rk-ink)]"
       >
         <Copy size={14} strokeWidth={1.8} />
       </button>
@@ -4010,7 +4670,7 @@ function ToolSteps({
             <span
               className="text-[13px]"
               style={{
-                color: isCurrent ? "#F5A03C" : "#4ECB71",
+                color: isCurrent ? "var(--rk-warning)" : "var(--rk-success)",
                 animation: isCurrent ? "rkPulse 1.2s ease-in-out infinite" : undefined,
               }}
             >
@@ -4018,7 +4678,7 @@ function ToolSteps({
             </span>
             <span
               className="truncate text-[14px]"
-              style={{ color: isCurrent ? "#DFDFE2" : "#85858A" }}
+              style={{ color: isCurrent ? "var(--rk-body)" : "var(--rk-muted)" }}
             >
               {step.label}
               {step.count > 1 ? ` ×${step.count}` : ""}
@@ -4081,7 +4741,7 @@ const MessageView = memo(function MessageView({
   const messageContext = (
     <>
       {speakerName ? (
-        <div className="mb-1 text-[12.5px] font-medium text-[#85858A]" dir="auto">
+        <div className="mb-1 text-[12.5px] font-medium text-[var(--rk-muted)]" dir="auto">
           {speakerName}
         </div>
       ) : null}
@@ -4091,7 +4751,7 @@ const MessageView = memo(function MessageView({
           data-testid="reply-parent-preview"
           aria-label={t`Jump to replied message`}
           onClick={() => onJumpToMessage?.(parentJumpId)}
-          className="mb-2 block max-w-[74%] truncate rounded-[14px] border border-[#26262A] bg-[#131315] px-3 py-2 text-start text-[12.5px] text-[#85858A] hover:border-[#34343B] hover:text-[#C9C9CE]"
+          className="mb-2 block max-w-[74%] truncate rounded-[14px] border border-[var(--rk-hairline-strong)] bg-[var(--rk-hover)] px-3 py-2 text-start text-[12.5px] text-[var(--rk-muted)] hover:border-[var(--rk-hairline-strong)] hover:text-[var(--rk-body)]"
           dir="auto"
         >
           {replyPreview ? previewMessageText(replyPreview) : t`Earlier message`}
@@ -4105,7 +4765,7 @@ const MessageView = memo(function MessageView({
         {messageContext}
         <div className="flex justify-start">
           <div
-            className="max-w-[74%] space-y-2.5 rounded-[20px] bg-[#1A1A1D] px-[18px] py-3 text-[15.5px] leading-[1.5] text-[#DFDFE2]"
+            className="max-w-[74%] space-y-2.5 rounded-[20px] bg-[var(--rk-surface-2)] px-[18px] py-3 text-[15.5px] leading-[1.5] text-[var(--rk-body)]"
             dir="auto"
           >
             {message.blocks.map((block, i) => {
@@ -4134,7 +4794,7 @@ const MessageView = memo(function MessageView({
                 type="button"
                 aria-label={speaking ? t`Stop speaking` : t`Speak this reply`}
                 onClick={onSpeak}
-                className="text-[12px] text-[#85858A] hover:text-[#ECECEE]"
+                className="text-[12px] text-[var(--rk-muted)] hover:text-[var(--rk-ink)]"
               >
                 {speaking ? <Trans>Stop</Trans> : <Trans>Speak</Trans>}
               </button>
@@ -4154,7 +4814,7 @@ const MessageView = memo(function MessageView({
           return (
             <div
               key={i}
-              className="flex items-center justify-center gap-2 py-1 text-[13.5px] text-[#85858A]"
+              className="flex items-center justify-center gap-2 py-1 text-[13.5px] text-[var(--rk-muted)]"
             >
               <span>
                 ↪ {to} ← {from}
@@ -4172,7 +4832,7 @@ const MessageView = memo(function MessageView({
             <CollaborationMarker
               key={i}
               ariaLabel={label}
-              color={peerBot(peerBotId)?.color ?? "#85858A"}
+              color={peerBot(peerBotId)?.color ?? "#6B7280"}
               identity={peerBotId}
               label={label}
               onClick={() => onOpenPeerMessages(peerBotId)}
@@ -4183,9 +4843,9 @@ const MessageView = memo(function MessageView({
           return (
             <div
               key={i}
-              className="flex items-center justify-center gap-2 py-1 text-[13.5px] text-[#85858A]"
+              className="flex items-center justify-center gap-2 py-1 text-[13.5px] text-[var(--rk-muted)]"
             >
-              <span className="text-[#E65707]">◷</span>
+              <span className="text-[var(--rk-danger)]">◷</span>
               <span>{block.text}</span>
             </div>
           );
@@ -4194,7 +4854,7 @@ const MessageView = memo(function MessageView({
           return (
             <div key={i} className="flex justify-start">
               <div
-                className="max-w-[74%] rounded-[20px] bg-[#1A1A1D] px-[18px] py-3 text-[15.5px] leading-[1.5] text-[#DFDFE2]"
+                className="max-w-[74%] rounded-[20px] bg-[var(--rk-surface-2)] px-[18px] py-3 text-[15.5px] leading-[1.5] text-[var(--rk-body)]"
                 dir="auto"
               >
                 <ChatMarkdown streaming>{block.text}</ChatMarkdown>
@@ -4206,7 +4866,7 @@ const MessageView = memo(function MessageView({
           return (
             <div key={i} className="flex justify-start">
               <div
-                className="max-w-[74%] space-y-1.5 rounded-[20px] bg-[#1A1A1D] px-[18px] py-3"
+                className="max-w-[74%] space-y-1.5 rounded-[20px] bg-[var(--rk-surface-2)] px-[18px] py-3"
                 dir="ltr"
               >
                 <ToolSteps
@@ -4223,30 +4883,34 @@ const MessageView = memo(function MessageView({
           return (
             <div
               key={i}
-              className="w-[min(420px,90%)] rounded-[18px] border border-[#232326] bg-[#17171A] px-[18px] py-4"
+              className="w-[min(420px,90%)] rounded-[18px] border border-[var(--rk-hairline-strong)] bg-[var(--rk-surface)] px-[18px] py-4"
             >
               <div className="flex items-center justify-between gap-3">
-                <span className="text-[15px] font-medium text-[#ECECEE]" dir="auto">
+                <span className="text-[15px] font-medium text-[var(--rk-ink)]" dir="auto">
                   {block.name}
                 </span>
                 <span
                   className="rounded-full px-[11px] py-1 text-[13px]"
                   style={{
                     background: failed
-                      ? "rgba(230,87,7,.14)"
+                      ? "color-mix(in srgb, var(--rk-danger) 14%, transparent)"
                       : running
-                        ? "rgba(245,160,60,.14)"
-                        : "rgba(48,162,75,.14)",
-                    color: failed ? "#E65707" : running ? "#F5A03C" : "#4ECB71",
+                        ? "color-mix(in srgb, var(--rk-warning) 14%, transparent)"
+                        : "color-mix(in srgb, var(--rk-success) 14%, transparent)",
+                    color: failed
+                      ? "var(--rk-danger)"
+                      : running
+                        ? "var(--rk-warning)"
+                        : "var(--rk-success)",
                     animation: running ? "rkPulse 1.2s ease-in-out infinite" : undefined,
                   }}
                 >
                   {running ? <Trans>subagent</Trans> : block.status}
                 </span>
               </div>
-              <div className="mt-2 text-[13.5px] text-[#85858A]">{block.task}</div>
+              <div className="mt-2 text-[13.5px] text-[var(--rk-muted)]">{block.task}</div>
               {block.progress || block.result ? (
-                <div className="mt-2.5 text-[14.5px] leading-[1.5] text-[#A8A8AD]">
+                <div className="mt-2.5 text-[14.5px] leading-[1.5] text-[var(--rk-muted)]">
                   <ChatMarkdown streaming={running}>
                     {block.result || block.progress || ""}
                   </ChatMarkdown>
@@ -4263,17 +4927,19 @@ const MessageView = memo(function MessageView({
               type="button"
               disabled={removed}
               onClick={() => onOpenBot(block.botId)}
-              className="w-[min(340px,90%)] rounded-[18px] border border-[#232326] bg-[#17171A] px-[18px] py-4 text-start disabled:opacity-60"
+              className="w-[min(340px,90%)] rounded-[18px] border border-[var(--rk-hairline-strong)] bg-[var(--rk-surface)] px-[18px] py-4 text-start disabled:opacity-60"
             >
               <div className="flex items-center justify-between">
-                <span className="text-[15px] font-medium text-[#ECECEE]" dir="auto">
+                <span className="text-[15px] font-medium text-[var(--rk-ink)]" dir="auto">
                   {block.name}
                 </span>
                 <span
                   className="rounded-full px-[11px] py-1 text-[13px]"
                   style={{
-                    background: removed ? "rgba(230,87,7,.14)" : "rgba(48,162,75,.14)",
-                    color: removed ? "#E65707" : "#4ECB71",
+                    background: removed
+                      ? "color-mix(in srgb, var(--rk-danger) 14%, transparent)"
+                      : "color-mix(in srgb, var(--rk-success) 14%, transparent)",
+                    color: removed ? "var(--rk-danger)" : "var(--rk-success)",
                   }}
                 >
                   {block.status === "archived" ? (
@@ -4285,7 +4951,7 @@ const MessageView = memo(function MessageView({
                   )}
                 </span>
               </div>
-              <div className="mt-2 text-[14.5px] leading-[1.5] text-[#A8A8AD]" dir="auto">
+              <div className="mt-2 text-[14.5px] leading-[1.5] text-[var(--rk-muted)]" dir="auto">
                 {removed
                   ? block.status === "archived"
                     ? t`Archived. Chat, memory, and files kept.`
@@ -4364,7 +5030,7 @@ const MessageView = memo(function MessageView({
           return (
             <div key={i} className="flex justify-end">
               <div
-                className="max-w-[70%] rounded-[20px] bg-[#F1F1EF] px-[18px] py-3 text-[15.5px] leading-[1.45] text-[#1A1A1A]"
+                className="max-w-[70%] rounded-[20px] bg-[var(--rk-solid)] px-[18px] py-3 text-[15.5px] leading-[1.45] text-[var(--rk-user-ink)]"
                 dir="auto"
               >
                 {block.text}
@@ -4376,7 +5042,7 @@ const MessageView = memo(function MessageView({
           return (
             <div key={i} className="flex justify-start">
               <div
-                className="max-w-[74%] rounded-[20px] bg-[#1A1A1D] px-[18px] py-3 text-[15.5px] leading-[1.5] text-[#DFDFE2]"
+                className="max-w-[74%] rounded-[20px] bg-[var(--rk-surface-2)] px-[18px] py-3 text-[15.5px] leading-[1.5] text-[var(--rk-body)]"
                 dir="auto"
               >
                 <ChatMarkdown>{block.text}</ChatMarkdown>
@@ -4385,7 +5051,7 @@ const MessageView = memo(function MessageView({
                     type="button"
                     aria-label={speaking ? t`Stop speaking` : t`Speak this reply`}
                     onClick={onSpeak}
-                    className="mt-2 text-[12px] text-[#85858A] hover:text-[#ECECEE]"
+                    className="mt-2 text-[12px] text-[var(--rk-muted)] hover:text-[var(--rk-ink)]"
                   >
                     {speaking ? <Trans>Stop</Trans> : <Trans>Speak</Trans>}
                   </button>
@@ -4397,12 +5063,12 @@ const MessageView = memo(function MessageView({
         if (block.kind === "card") {
           return (
             <div key={i} className="flex justify-start">
-              <div className="flex flex-col gap-2 rounded-[20px] bg-[#1A1A1D] px-5 py-4">
+              <div className="flex flex-col gap-2 rounded-[20px] bg-[var(--rk-surface-2)] px-5 py-4">
                 {block.lines.map((line) => (
                   <div key={line.k} className="flex items-baseline gap-2.5 text-[15px]">
-                    <span className="text-[#30A24B]">✓</span>
-                    <span className="font-semibold text-white">{line.k}</span>
-                    <span className="text-[#85858A]">→</span>
+                    <span className="text-[var(--rk-success)]">✓</span>
+                    <span className="font-semibold text-[var(--rk-ink)]">{line.k}</span>
+                    <span className="text-[var(--rk-muted)]">→</span>
                     <span>{line.v}</span>
                   </div>
                 ))}
@@ -4431,17 +5097,17 @@ const MessageView = memo(function MessageView({
           return (
             <div
               key={i}
-              className="w-[340px] rounded-[18px] border border-[#232326] bg-[#17171A] px-[18px] py-4"
+              className="w-[340px] rounded-[18px] border border-[var(--rk-hairline-strong)] bg-[var(--rk-surface)] px-[18px] py-4"
             >
               <div className="flex items-center justify-between">
-                <span className="text-[15px] font-medium text-[#ECECEE]">
+                <span className="text-[15px] font-medium text-[var(--rk-ink)]">
                   <Trans>Computer</Trans>
                 </span>
-                <span className="rounded-full bg-[rgba(48,162,75,.14)] px-[11px] py-1 text-[13px] text-[#4ECB71]">
+                <span className="rounded-full bg-[color-mix(in_srgb,var(--rk-success)_14%,transparent)] px-[11px] py-1 text-[13px] text-[var(--rk-success)]">
                   {block.state}
                 </span>
               </div>
-              <div className="my-2.5 text-[14.5px] leading-[1.5] text-[#A8A8AD]">
+              <div className="my-2.5 text-[14.5px] leading-[1.5] text-[var(--rk-muted)]">
                 <ChatMarkdown>{block.text}</ChatMarkdown>
               </div>
             </div>
@@ -4456,13 +5122,16 @@ const MessageView = memo(function MessageView({
 function ComputerModePicker({
   value,
   onChange,
+  disabled = false,
 }: {
   value: ComputerMode;
   onChange: (value: ComputerMode) => void;
+  disabled?: boolean;
 }) {
+  const hintId = useId();
   return (
     <div className="mt-4">
-      <div className="text-[14px] text-[#85858A]">
+      <div className="text-[14px] text-[var(--rk-body)]">
         <Trans>Computer</Trans>
       </div>
       <div className="mt-2 grid grid-cols-2 gap-2">
@@ -4471,17 +5140,26 @@ function ComputerModePicker({
             key={mode}
             type="button"
             aria-pressed={value === mode}
+            aria-describedby={hintId}
+            disabled={disabled}
             onClick={() => onChange(mode)}
-            className={`rounded-[11px] border px-3.5 py-3 text-[14px] capitalize ${
+            className={`rounded-[11px] border px-3.5 py-3 text-[14px] capitalize disabled:opacity-40 ${
               value === mode
-                ? "border-[#6C6C70] bg-[#1A1A1D] text-[#ECECEE]"
-                : "border-[#26262A] text-[#85858A]"
+                ? "border-[var(--rk-ink)] bg-[var(--rk-surface-2)] text-[var(--rk-ink)]"
+                : "border-[var(--rk-ink)] bg-[var(--rk-surface)] text-[var(--rk-ink)]"
             }`}
           >
             {mode === "team" ? <Trans>Team</Trans> : <Trans>Private</Trans>}
           </button>
         ))}
       </div>
+      <p id={hintId} className="mt-2 text-[13px] leading-relaxed text-[var(--rk-body)]">
+        {value === "dedicated" ? (
+          <Trans>Only this bot uses this computer.</Trans>
+        ) : (
+          <Trans>Shared with other bots. Switch to Private for this bot’s own computer.</Trans>
+        )}
+      </p>
     </div>
   );
 }
@@ -4522,7 +5200,7 @@ function CreateBotForm({
   return (
     <div>
       <div className="mb-4 flex items-center justify-between">
-        <span className="text-[13.5px] text-[#85858A]">
+        <span className="text-[13.5px] text-[var(--rk-muted)]">
           <Trans>New bot</Trans>
         </span>
         <button type="button" aria-label={t`Cancel new bot`} onClick={onCancel}>
@@ -4530,31 +5208,35 @@ function CreateBotForm({
         </button>
       </div>
       {error ? (
-        <p role="alert" data-testid="create-bot-error" className="mb-3 text-[13px] text-[#C94244]">
+        <p
+          role="alert"
+          data-testid="create-bot-error"
+          className="mb-3 text-[13px] text-[var(--rk-danger)]"
+        >
           {error}
         </p>
       ) : null}
-      <label className="mt-6 block text-[14px] text-[#85858A]">
+      <label className="mt-6 block text-[14px] text-[var(--rk-muted)]">
         <Trans>Name</Trans>
         <input
           value={name}
           maxLength={BOT_NAME_MAX_LENGTH}
           onChange={(e) => setName(e.target.value)}
           placeholder={t`Name this bot`}
-          className="mt-2 w-full rounded-[11px] border border-[#26262A] bg-transparent px-3.5 py-3 text-[#ECECEE]"
+          className="mt-2 w-full rounded-[11px] border border-[var(--rk-hairline-strong)] bg-transparent px-3.5 py-3 text-[var(--rk-ink)]"
         />
       </label>
-      <label className="mt-4 block text-[14px] text-[#85858A]">
+      <label className="mt-4 block text-[14px] text-[var(--rk-muted)]">
         <Trans>Title</Trans>
         <input
           value={title}
           maxLength={BOT_TITLE_MAX_LENGTH}
           onChange={(e) => setTitle(e.target.value)}
           placeholder={t`Describe what this bot does`}
-          className="mt-2 w-full rounded-[11px] border border-[#26262A] bg-transparent px-3.5 py-3 text-[#ECECEE]"
+          className="mt-2 w-full rounded-[11px] border border-[var(--rk-hairline-strong)] bg-transparent px-3.5 py-3 text-[var(--rk-ink)]"
         />
       </label>
-      <label className="mt-4 block text-[14px] text-[#85858A]">
+      <label className="mt-4 block text-[14px] text-[var(--rk-muted)]">
         <Trans>Description</Trans>
         <textarea
           value={description}
@@ -4562,7 +5244,7 @@ function CreateBotForm({
           onChange={(e) => setDescription(e.target.value)}
           placeholder={t`What this bot is for`}
           rows={4}
-          className="mt-2 w-full rounded-[11px] border border-[#26262A] bg-transparent px-3.5 py-3 text-[#ECECEE]"
+          className="mt-2 w-full rounded-[11px] border border-[var(--rk-hairline-strong)] bg-transparent px-3.5 py-3 text-[var(--rk-ink)]"
         />
       </label>
       <ComputerModePicker value={computerMode} onChange={setComputerMode} />
@@ -4570,7 +5252,7 @@ function CreateBotForm({
         type="button"
         disabled={!name.trim() || submitting}
         onClick={() => void handleSubmit()}
-        className="mt-5 rounded-[11px] bg-[#F1F1EF] px-4 py-2 text-[#17171A] disabled:opacity-40"
+        className="mt-5 rounded-[11px] bg-[var(--rk-solid)] px-4 py-2 text-[var(--rk-solid-ink)] disabled:opacity-40"
       >
         {submitting ? <Trans>Creating…</Trans> : <Trans>Create</Trans>}
       </button>
@@ -4624,8 +5306,20 @@ function BotSettings({
   const [catalog, setCatalog] = useState<ModelCatalogEntry[]>([]);
   const [me, setMe] = useState<Me | null>(null);
   const [modelMetaReady, setModelMetaReady] = useState(false);
+  const [soulDoc, setSoulDoc] = useState<MemoryDocument | null>(null);
+  const [identityDoc, setIdentityDoc] = useState<MemoryDocument | null>(null);
+  const [soul, setSoul] = useState("");
+  const [identity, setIdentity] = useState("");
   const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const savedTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (savedTimeout.current) clearTimeout(savedTimeout.current);
+    };
+  }, []);
 
   useEffect(() => {
     void rpc.voice
@@ -4642,7 +5336,22 @@ function BotSettings({
         setModelMetaReady(true);
       })
       .catch(() => undefined);
-  }, []);
+    void rpc.memory
+      .list({ botId: bot.id })
+      .then((documents) => {
+        const soulFile = identityDocumentByPath(documents, SOUL_IDENTITY_PATH);
+        const identityFile = identityDocumentByPath(documents, BOT_IDENTITY_PATH);
+        if (soulFile) {
+          setSoulDoc(soulFile);
+          setSoul(soulFile.content);
+        }
+        if (identityFile) {
+          setIdentityDoc(identityFile);
+          setIdentity(identityFile.content);
+        }
+      })
+      .catch(() => undefined);
+  }, [bot.id]);
 
   const connectedOptions: Array<{
     key: string;
@@ -4702,37 +5411,49 @@ function BotSettings({
       <div className="flex justify-center">
         <BotAvatar color={bot.color} identity={bot.id} size={64} status={bot.status} />
       </div>
-      <label className="mt-6 block text-[14px] text-[#85858A]">
+      <label className="mt-6 block text-[14px] text-[var(--rk-muted)]">
         <Trans>Name</Trans>
         <input
           value={name}
           maxLength={BOT_NAME_MAX_LENGTH}
           onChange={(e) => setName(e.target.value)}
-          className="mt-2 w-full rounded-[11px] border border-[#26262A] bg-transparent px-3.5 py-3 text-[#ECECEE]"
+          className="mt-2 w-full rounded-[11px] border border-[var(--rk-hairline-strong)] bg-transparent px-3.5 py-3 text-[var(--rk-ink)]"
         />
       </label>
-      <label className="mt-4 block text-[14px] text-[#85858A]">
+      <label className="mt-4 block text-[14px] text-[var(--rk-muted)]">
         <Trans>Title</Trans>
         <input
           value={title}
           maxLength={BOT_TITLE_MAX_LENGTH}
           onChange={(e) => setTitle(e.target.value)}
-          className="mt-2 w-full rounded-[11px] border border-[#26262A] bg-transparent px-3.5 py-3 text-[#ECECEE]"
+          className="mt-2 w-full rounded-[11px] border border-[var(--rk-hairline-strong)] bg-transparent px-3.5 py-3 text-[var(--rk-ink)]"
         />
       </label>
-      <label className="mt-4 block text-[14px] text-[#85858A]">
+      <label className="mt-4 block text-[14px] text-[var(--rk-muted)]">
         <Trans>Description</Trans>
         <textarea
           value={description}
           maxLength={BOT_DESCRIPTION_MAX_LENGTH}
           onChange={(e) => setDescription(e.target.value)}
           rows={4}
-          className="mt-2 w-full rounded-[11px] border border-[#26262A] bg-transparent px-3.5 py-3 text-[#ECECEE]"
+          className="mt-2 w-full rounded-[11px] border border-[var(--rk-hairline-strong)] bg-transparent px-3.5 py-3 text-[var(--rk-ink)]"
         />
       </label>
+      <IdentityMarkdownField
+        path={SOUL_IDENTITY_PATH}
+        hint={<Trans>How it speaks.</Trans>}
+        value={soul}
+        onChange={setSoul}
+      />
+      <IdentityMarkdownField
+        path={BOT_IDENTITY_PATH}
+        hint={<Trans>How it acts.</Trans>}
+        value={identity}
+        onChange={setIdentity}
+      />
       <details data-testid="bot-settings-advanced" className="group mt-5">
-        <summary className="flex cursor-pointer list-none items-center justify-between gap-3 text-[14px] text-[#85858A]">
-          <span className="text-[#85858A]">
+        <summary className="flex cursor-pointer list-none items-center justify-between gap-3 text-[14px] text-[var(--rk-muted)]">
+          <span className="text-[var(--rk-muted)]">
             <Trans>Advanced</Trans>
           </span>
           <span aria-hidden="true" className="transition-transform group-open:rotate-90">
@@ -4743,7 +5464,7 @@ function BotSettings({
         <Suspense fallback={null}>
           <ScratchpadSection botId={bot.id} />
         </Suspense>
-        <label className="mt-4 block text-[14px] text-[#85858A]">
+        <label className="mt-4 block text-[14px] text-[var(--rk-muted)]">
           <Trans>Model</Trans>
           <select
             value={modelKey}
@@ -4751,7 +5472,7 @@ function BotSettings({
               setModelKey(event.target.value);
               setThinkingLevel("");
             }}
-            className="mt-2 w-full rounded-[11px] border border-[#26262A] bg-transparent px-3.5 py-3 text-[#ECECEE]"
+            className="mt-2 w-full rounded-[11px] border border-[var(--rk-hairline-strong)] bg-transparent px-3.5 py-3 text-[var(--rk-ink)]"
           >
             <option value="">
               {t`Workspace default`}
@@ -4770,12 +5491,12 @@ function BotSettings({
           </select>
         </label>
         {thinkingOptions.length ? (
-          <label className="mt-4 block text-[14px] text-[#85858A]">
+          <label className="mt-4 block text-[14px] text-[var(--rk-muted)]">
             <Trans>Thinking</Trans>
             <select
               value={thinkingLevel}
               onChange={(event) => setThinkingLevel(event.target.value)}
-              className="mt-2 w-full rounded-[11px] border border-[#26262A] bg-transparent px-3.5 py-3 text-[#ECECEE]"
+              className="mt-2 w-full rounded-[11px] border border-[var(--rk-hairline-strong)] bg-transparent px-3.5 py-3 text-[var(--rk-ink)]"
             >
               <option value="">{t`Default (medium)`}</option>
               {thinkingOptions.map((level) => (
@@ -4787,7 +5508,7 @@ function BotSettings({
           </label>
         ) : null}
         {memoryProviderConfigured ? (
-          <div className="mt-4 text-[14px] text-[#85858A]">
+          <div className="mt-4 text-[14px] text-[var(--rk-muted)]">
             <Trans>Memory scope</Trans>
             <div className="mt-2 flex gap-2">
               {(
@@ -4804,8 +5525,8 @@ function BotSettings({
                   onClick={() => setMemoryScope(option.value)}
                   className={`flex-1 rounded-[11px] border px-3 py-2 text-[13px] ${
                     memoryScope === option.value
-                      ? "border-[#4A4A50] bg-[#1A1A1D] text-[#ECECEE]"
-                      : "border-[#26262A] text-[#85858A]"
+                      ? "border-[var(--rk-hairline-strong)] bg-[var(--rk-surface-2)] text-[var(--rk-ink)]"
+                      : "border-[var(--rk-hairline-strong)] text-[var(--rk-muted)]"
                   }`}
                 >
                   {option.label}
@@ -4814,7 +5535,7 @@ function BotSettings({
             </div>
           </div>
         ) : null}
-        <label className="mt-5 flex cursor-pointer items-center gap-3 text-[14px] text-[#C9C9CE]">
+        <label className="mt-5 flex cursor-pointer items-center gap-3 text-[14px] text-[var(--rk-body)]">
           <input
             type="checkbox"
             checked={autoSpeak}
@@ -4823,12 +5544,12 @@ function BotSettings({
           <Trans>Read replies aloud</Trans>
         </label>
         {voices.length ? (
-          <label className="mt-4 block text-[14px] text-[#85858A]">
+          <label className="mt-4 block text-[14px] text-[var(--rk-muted)]">
             <Trans>Voice</Trans>
             <select
               value={voiceId}
               onChange={(event) => setVoiceId(event.target.value)}
-              className="mt-2 w-full rounded-[11px] border border-[#26262A] bg-transparent px-3.5 py-3 text-[#ECECEE]"
+              className="mt-2 w-full rounded-[11px] border border-[var(--rk-hairline-strong)] bg-transparent px-3.5 py-3 text-[var(--rk-ink)]"
             >
               <option value="">{t`Account default`}</option>
               {voices.map((voice) => (
@@ -4840,51 +5561,78 @@ function BotSettings({
           </label>
         ) : null}
       </details>
-      {error ? <p className="mt-2 text-[13px] text-[#E65707]">{error}</p> : null}
+      {error ? <p className="mt-2 text-[13px] text-[var(--rk-danger)]">{error}</p> : null}
       <div className="mt-5 flex flex-col items-start gap-3">
         <button
           type="button"
           disabled={saving}
           onClick={() => {
             setSaving(true);
+            setSaved(false);
             setError(null);
+            if (savedTimeout.current) clearTimeout(savedTimeout.current);
             const selected = modelKey ? parseModelOptionKey(modelKey) : null;
-            void onSave({
-              name,
-              title,
-              description,
-              instructions: description,
-              computerMode,
-              memoryScope,
-              autoSpeak,
-              voiceId: voiceId || null,
-              modelProvider: selected?.provider ?? null,
-              modelId: selected?.modelId ?? null,
-              // Only clear thinking when catalog metadata is available; otherwise
-              // preserve the stored override if models.list failed or is still loading.
-              ...(modelMetaReady
-                ? {
-                    thinkingLevel: thinkingOptions.length
-                      ? ((thinkingLevel || null) as ThinkingLevel | null)
-                      : null,
-                  }
-                : {}),
-            })
+            void (async () => {
+              const writes: Array<Promise<void>> = [];
+              // Compare against "" when the doc is missing so an edit still
+              // counts; a missing doc means the server never provisioned it, so
+              // surface that instead of silently dropping the change.
+              if (soul !== (soulDoc?.content ?? "")) {
+                if (!soulDoc) {
+                  throw new Error(t`Identity files aren't available on this server yet`);
+                }
+                writes.push(
+                  rpc.memory.update({ documentId: soulDoc.id, content: soul }).then(setSoulDoc),
+                );
+              }
+              if (identity !== (identityDoc?.content ?? "")) {
+                if (!identityDoc) {
+                  throw new Error(t`Identity files aren't available on this server yet`);
+                }
+                writes.push(
+                  rpc.memory
+                    .update({ documentId: identityDoc.id, content: identity })
+                    .then(setIdentityDoc),
+                );
+              }
+              if (writes.length) await Promise.all(writes);
+              await onSave({
+                name,
+                title,
+                description,
+                instructions: description,
+                computerMode,
+                memoryScope,
+                autoSpeak,
+                voiceId: voiceId || null,
+                modelProvider: selected?.provider ?? null,
+                modelId: selected?.modelId ?? null,
+                ...(modelMetaReady
+                  ? {
+                      thinkingLevel: thinkingOptions.length
+                        ? ((thinkingLevel || null) as ThinkingLevel | null)
+                        : null,
+                    }
+                  : {}),
+              });
+              setSaved(true);
+              savedTimeout.current = setTimeout(() => setSaved(false), 2000);
+            })()
               .catch((err) => setError(err instanceof Error ? err.message : t`Could not save`))
               .finally(() => setSaving(false));
           }}
-          className="rounded-[11px] bg-[#F1F1EF] px-4 py-2 text-[#17171A] disabled:opacity-40"
+          className="rounded-[11px] bg-[var(--rk-solid)] px-4 py-2 text-[var(--rk-solid-ink)] disabled:opacity-40"
         >
-          <Trans>Save</Trans>
+          {saving ? t`Saving…` : saved ? t`Saved` : t`Save`}
         </button>
         <button
           type="button"
           onClick={() => void onExport()}
-          className="text-[14px] text-[#85858A]"
+          className="text-[14px] text-[var(--rk-muted)]"
         >
           <Trans>Export</Trans>
         </button>
-        <button type="button" onClick={onClear} className="text-[14px] text-[#E65707]">
+        <button type="button" onClick={onClear} className="text-[14px] text-[var(--rk-danger)]">
           <Trans>Clear conversation</Trans>
         </button>
         <ComputerMaintenanceActions
@@ -4951,7 +5699,7 @@ function NewBotSectionDialog({
   return (
     <div
       role="presentation"
-      className="absolute inset-0 z-50 grid place-items-center bg-[rgba(4,4,5,.76)] px-5"
+      className="absolute inset-0 z-50 grid place-items-center bg-[var(--rk-overlay)] px-5"
       onPointerDown={() => {
         if (!saving) onCancel();
       }}
@@ -4960,7 +5708,7 @@ function NewBotSectionDialog({
         role="dialog"
         aria-modal="true"
         aria-labelledby="new-bot-section-title"
-        className="w-full max-w-[420px] rounded-[18px] border border-[#343438] bg-[#1A1A1D] p-5 shadow-[0_24px_70px_rgba(0,0,0,.65)]"
+        className="w-full max-w-[420px] rounded-[18px] border border-[var(--rk-hairline-strong)] bg-[var(--rk-surface-2)] p-5 shadow-[0_24px_70px_rgba(0,0,0,.65)]"
         onPointerDown={(event) => event.stopPropagation()}
         onSubmit={(event) => {
           event.preventDefault();
@@ -4974,35 +5722,35 @@ function NewBotSectionDialog({
           });
         }}
       >
-        <h2 id="new-bot-section-title" className="text-[17px] font-medium text-[#F1F1F2]">
+        <h2 id="new-bot-section-title" className="text-[17px] font-medium text-[var(--rk-ink)]">
           <Trans>New section</Trans>
         </h2>
-        <p className="mt-2 text-[14px] leading-6 text-[#9A9AA0]">
+        <p className="mt-2 text-[14px] leading-6 text-[var(--rk-muted)]">
           <Trans>Create a section and move {bot.name} into it.</Trans>
         </p>
-        <label className="mt-4 block text-[13.5px] text-[#C9C9CE]">
+        <label className="mt-4 block text-[13.5px] text-[var(--rk-body)]">
           <Trans>Name</Trans>
           <input
             maxLength={60}
             value={name}
             onChange={(event) => setName(event.target.value)}
-            className="mt-2 w-full rounded-[11px] border border-[#343438] bg-[#101012] px-3.5 py-2.5 text-[14.5px] text-[#ECECEE] outline-none focus:border-[#66666D]"
+            className="mt-2 w-full rounded-[11px] border border-[var(--rk-hairline-strong)] bg-[var(--rk-input)] px-3.5 py-2.5 text-[14.5px] text-[var(--rk-ink)] outline-none focus:border-[var(--rk-hairline-strong)]"
           />
         </label>
-        {error ? <p className="mt-3 text-[13.5px] text-[#FF5364]">{error}</p> : null}
+        {error ? <p className="mt-3 text-[13.5px] text-[var(--rk-danger)]">{error}</p> : null}
         <div className="mt-5 flex justify-end gap-2.5">
           <button
             type="button"
             disabled={saving}
             onClick={onCancel}
-            className="rounded-[10px] px-3.5 py-2 text-[14px] text-[#C9C9CE] hover:bg-[#29292D] disabled:opacity-40"
+            className="rounded-[10px] px-3.5 py-2 text-[14px] text-[var(--rk-body)] hover:bg-[var(--rk-hover)] disabled:opacity-40"
           >
             <Trans>Cancel</Trans>
           </button>
           <button
             type="submit"
             disabled={saving || !name.trim()}
-            className="rounded-[10px] bg-[#F1F1EF] px-3.5 py-2 text-[14px] font-medium text-[#17171A] disabled:opacity-40"
+            className="rounded-[10px] bg-[var(--rk-solid)] px-3.5 py-2 text-[14px] font-medium text-[var(--rk-solid-ink)] disabled:opacity-40"
           >
             {saving ? <Trans>Creating…</Trans> : <Trans>Create</Trans>}
           </button>
@@ -5036,7 +5784,7 @@ function ClearConversationDialog({
   return (
     <div
       role="presentation"
-      className="absolute inset-0 z-50 grid place-items-center bg-[rgba(4,4,5,.76)] px-5"
+      className="absolute inset-0 z-50 grid place-items-center bg-[var(--rk-overlay)] px-5"
       onPointerDown={() => {
         if (!clearing) onCancel();
       }}
@@ -5046,28 +5794,28 @@ function ClearConversationDialog({
         aria-modal="true"
         aria-labelledby="clear-conversation-title"
         aria-describedby="clear-conversation-description"
-        className="w-full max-w-[420px] rounded-[18px] border border-[#343438] bg-[#1A1A1D] p-5 shadow-[0_24px_70px_rgba(0,0,0,.65)]"
+        className="w-full max-w-[420px] rounded-[18px] border border-[var(--rk-hairline-strong)] bg-[var(--rk-surface-2)] p-5 shadow-[0_24px_70px_rgba(0,0,0,.65)]"
         onPointerDown={(event) => event.stopPropagation()}
       >
-        <h2 id="clear-conversation-title" className="text-[17px] font-medium text-[#F1F1F2]">
+        <h2 id="clear-conversation-title" className="text-[17px] font-medium text-[var(--rk-ink)]">
           <Trans>Clear {bot.name}’s conversation?</Trans>
         </h2>
         <p
           id="clear-conversation-description"
-          className="mt-2 text-[14px] leading-6 text-[#9A9AA0]"
+          className="mt-2 text-[14px] leading-6 text-[var(--rk-muted)]"
         >
           <Trans>
             This permanently removes every message and stops current work. The bot, computer,
             memory, and routines are kept.
           </Trans>
         </p>
-        {error ? <p className="mt-3 text-[13.5px] text-[#FF5364]">{error}</p> : null}
+        {error ? <p className="mt-3 text-[13.5px] text-[var(--rk-danger)]">{error}</p> : null}
         <div className="mt-5 flex justify-end gap-2.5">
           <button
             type="button"
             disabled={clearing}
             onClick={onCancel}
-            className="rounded-[10px] px-3.5 py-2 text-[14px] text-[#C9C9CE] hover:bg-[#29292D] disabled:opacity-40"
+            className="rounded-[10px] px-3.5 py-2 text-[14px] text-[var(--rk-body)] hover:bg-[var(--rk-hover)] disabled:opacity-40"
           >
             <Trans>Cancel</Trans>
           </button>
@@ -5082,7 +5830,7 @@ function ClearConversationDialog({
                 setClearing(false);
               });
             }}
-            className="rounded-[10px] bg-[#FF5364] px-3.5 py-2 text-[14px] font-medium text-white disabled:opacity-40"
+            className="rounded-[10px] bg-[var(--rk-danger)] px-3.5 py-2 text-[14px] font-medium text-[var(--rk-danger-ink)] disabled:opacity-40"
           >
             {clearing ? <Trans>Clearing…</Trans> : <Trans>Clear</Trans>}
           </button>
@@ -5117,7 +5865,7 @@ function DeleteBotDialog({
   return (
     <div
       role="presentation"
-      className="absolute inset-0 z-50 grid place-items-center bg-[rgba(4,4,5,.76)] px-5"
+      className="absolute inset-0 z-50 grid place-items-center bg-[var(--rk-overlay)] px-5"
       onPointerDown={() => {
         if (!deleting) onCancel();
       }}
@@ -5127,23 +5875,26 @@ function DeleteBotDialog({
         aria-modal="true"
         aria-labelledby="delete-bot-title"
         aria-describedby="delete-bot-description"
-        className="w-full max-w-[420px] rounded-[18px] border border-[#343438] bg-[#1A1A1D] p-5 shadow-[0_24px_70px_rgba(0,0,0,.65)]"
+        className="w-full max-w-[420px] rounded-[18px] border border-[var(--rk-hairline-strong)] bg-[var(--rk-surface-2)] p-5 shadow-[0_24px_70px_rgba(0,0,0,.65)]"
         onPointerDown={(event) => event.stopPropagation()}
       >
-        <h2 id="delete-bot-title" className="text-[17px] font-medium text-[#F1F1F2]">
+        <h2 id="delete-bot-title" className="text-[17px] font-medium text-[var(--rk-ink)]">
           <Trans>Delete {bot.name}?</Trans>
         </h2>
-        <p id="delete-bot-description" className="mt-2 text-[14px] leading-6 text-[#9A9AA0]">
+        <p
+          id="delete-bot-description"
+          className="mt-2 text-[14px] leading-6 text-[var(--rk-muted)]"
+        >
           <Trans>
             Its conversation, files, and routines will be permanently deleted. Bots it created stay
             in your list.
           </Trans>
         </p>
         <fieldset className="mt-4 space-y-2">
-          <legend className="mb-2 text-[13.5px] text-[#C9C9CE]">
+          <legend className="mb-2 text-[13.5px] text-[var(--rk-body)]">
             <Trans>What about its memories?</Trans>
           </legend>
-          <label className="flex cursor-pointer gap-3 rounded-[11px] border border-[#343438] p-3">
+          <label className="flex cursor-pointer gap-3 rounded-[11px] border border-[var(--rk-hairline-strong)] p-3">
             <input
               type="radio"
               name="delete-memory"
@@ -5151,15 +5902,15 @@ function DeleteBotDialog({
               onChange={() => setDeleteMemories(false)}
             />
             <span>
-              <span className="block text-[14px] text-[#ECECEE]">
+              <span className="block text-[14px] text-[var(--rk-ink)]">
                 <Trans>Keep memories</Trans>
               </span>
-              <span className="mt-0.5 block text-[12.5px] text-[#85858A]">
+              <span className="mt-0.5 block text-[12.5px] text-[var(--rk-muted)]">
                 <Trans>Move them to your shared memory.</Trans>
               </span>
             </span>
           </label>
-          <label className="flex cursor-pointer gap-3 rounded-[11px] border border-[#343438] p-3">
+          <label className="flex cursor-pointer gap-3 rounded-[11px] border border-[var(--rk-hairline-strong)] p-3">
             <input
               type="radio"
               name="delete-memory"
@@ -5167,22 +5918,22 @@ function DeleteBotDialog({
               onChange={() => setDeleteMemories(true)}
             />
             <span>
-              <span className="block text-[14px] text-[#ECECEE]">
+              <span className="block text-[14px] text-[var(--rk-ink)]">
                 <Trans>Delete memories too</Trans>
               </span>
-              <span className="mt-0.5 block text-[12.5px] text-[#85858A]">
+              <span className="mt-0.5 block text-[12.5px] text-[var(--rk-muted)]">
                 <Trans>This cannot be undone.</Trans>
               </span>
             </span>
           </label>
         </fieldset>
-        {error ? <p className="mt-3 text-[13.5px] text-[#FF5364]">{error}</p> : null}
+        {error ? <p className="mt-3 text-[13.5px] text-[var(--rk-danger)]">{error}</p> : null}
         <div className="mt-5 flex justify-end gap-2.5">
           <button
             type="button"
             disabled={deleting}
             onClick={onCancel}
-            className="rounded-[10px] px-3.5 py-2 text-[14px] text-[#C9C9CE] hover:bg-[#29292D] disabled:opacity-40"
+            className="rounded-[10px] px-3.5 py-2 text-[14px] text-[var(--rk-body)] hover:bg-[var(--rk-hover)] disabled:opacity-40"
           >
             <Trans>Cancel</Trans>
           </button>
@@ -5197,7 +5948,7 @@ function DeleteBotDialog({
                 setDeleting(false);
               });
             }}
-            className="rounded-[10px] bg-[#FF5364] px-3.5 py-2 text-[14px] font-medium text-white disabled:opacity-40"
+            className="rounded-[10px] bg-[var(--rk-danger)] px-3.5 py-2 text-[14px] font-medium text-[var(--rk-danger-ink)] disabled:opacity-40"
           >
             {deleting ? <Trans>Deleting…</Trans> : <Trans>Delete</Trans>}
           </button>
@@ -5231,7 +5982,7 @@ function DeleteRoutineDialog({
   return (
     <div
       role="presentation"
-      className="absolute inset-0 z-50 grid place-items-center bg-[rgba(4,4,5,.76)] px-5"
+      className="absolute inset-0 z-50 grid place-items-center bg-[var(--rk-overlay)] px-5"
       onPointerDown={() => {
         if (!deleting) onCancel();
       }}
@@ -5241,22 +5992,25 @@ function DeleteRoutineDialog({
         aria-modal="true"
         aria-labelledby="delete-routine-title"
         aria-describedby="delete-routine-description"
-        className="w-full max-w-[420px] rounded-[18px] border border-[#343438] bg-[#1A1A1D] p-5 shadow-[0_24px_70px_rgba(0,0,0,.65)]"
+        className="w-full max-w-[420px] rounded-[18px] border border-[var(--rk-hairline-strong)] bg-[var(--rk-surface-2)] p-5 shadow-[0_24px_70px_rgba(0,0,0,.65)]"
         onPointerDown={(event) => event.stopPropagation()}
       >
-        <h2 id="delete-routine-title" className="text-[17px] font-medium text-[#F1F1F2]">
+        <h2 id="delete-routine-title" className="text-[17px] font-medium text-[var(--rk-ink)]">
           <Trans>Delete {routine.name}?</Trans>
         </h2>
-        <p id="delete-routine-description" className="mt-2 text-[14px] leading-6 text-[#9A9AA0]">
+        <p
+          id="delete-routine-description"
+          className="mt-2 text-[14px] leading-6 text-[var(--rk-muted)]"
+        >
           <Trans>This cannot be undone.</Trans>
         </p>
-        {error ? <p className="mt-3 text-[13.5px] text-[#FF5364]">{error}</p> : null}
+        {error ? <p className="mt-3 text-[13.5px] text-[var(--rk-danger)]">{error}</p> : null}
         <div className="mt-5 flex justify-end gap-2.5">
           <button
             type="button"
             disabled={deleting}
             onClick={onCancel}
-            className="rounded-[10px] px-3.5 py-2 text-[14px] text-[#C9C9CE] hover:bg-[#29292D] disabled:opacity-40"
+            className="rounded-[10px] px-3.5 py-2 text-[14px] text-[var(--rk-body)] hover:bg-[var(--rk-hover)] disabled:opacity-40"
           >
             <Trans>Cancel</Trans>
           </button>
@@ -5271,7 +6025,7 @@ function DeleteRoutineDialog({
                 setDeleting(false);
               });
             }}
-            className="rounded-[10px] bg-[#FF5364] px-3.5 py-2 text-[14px] font-medium text-white disabled:opacity-40"
+            className="rounded-[10px] bg-[var(--rk-danger)] px-3.5 py-2 text-[14px] font-medium text-[var(--rk-danger-ink)] disabled:opacity-40"
           >
             {deleting ? <Trans>Deleting…</Trans> : <Trans>Delete</Trans>}
           </button>
@@ -5351,10 +6105,10 @@ function ChoiceCard({
 
   return (
     <div className="flex justify-start">
-      <div className="w-[min(420px,80%)] rounded-[20px] bg-[#1A1A1D] px-[18px] py-[14px]">
-        <div className="text-[15.5px] text-[#DFDFE2]">{block.question}</div>
+      <div className="w-[min(420px,80%)] rounded-[20px] bg-[var(--rk-surface-2)] px-[18px] py-[14px]">
+        <div className="text-[15.5px] text-[var(--rk-body)]">{block.question}</div>
         {block.subtitle ? (
-          <div className="mt-0.5 text-[13px] text-[#85858A]">{block.subtitle}</div>
+          <div className="mt-0.5 text-[13px] text-[var(--rk-muted)]">{block.subtitle}</div>
         ) : null}
         <div className="mt-3 space-y-1.5">
           {block.options
@@ -5365,21 +6119,23 @@ function ChoiceCard({
                 type="button"
                 disabled={Boolean(block.answerId) || pending}
                 onClick={() => void choose(option.id)}
-                className={`flex w-full items-center gap-3 rounded-[12px] border border-[#2A2A2F] px-3.5 py-3 text-start disabled:opacity-60 ${block.answerId ? "bg-[#1F1F23]" : "bg-[#161619] hover:bg-[#222226]"}`}
+                className={`flex w-full items-center gap-3 rounded-[12px] border border-[var(--rk-hairline-strong)] px-3.5 py-3 text-start disabled:opacity-60 ${block.answerId ? "bg-[var(--rk-hover)]" : "bg-[var(--rk-surface)] hover:bg-[var(--rk-hover)]"}`}
               >
-                <span className="grid h-[24px] w-[24px] place-items-center rounded-[7px] bg-[#232327] text-[12.5px] text-[#9A9AA0]">
+                <span className="grid h-[24px] w-[24px] place-items-center rounded-[7px] bg-[var(--rk-hover)] text-[12.5px] text-[var(--rk-muted)]">
                   {option.letter}
                 </span>
                 <span
-                  className={`flex-1 text-[15px] ${block.answerId ? "text-[#85858A]" : "text-[#ECECEE]"}`}
+                  className={`flex-1 text-[15px] ${block.answerId ? "text-[var(--rk-muted)]" : "text-[var(--rk-ink)]"}`}
                 >
                   {option.label}
                 </span>
-                {block.answerId === option.id ? <span className="text-[#B9B9C0]">✓</span> : null}
+                {block.answerId === option.id ? (
+                  <span className="text-[var(--rk-muted)]">✓</span>
+                ) : null}
               </button>
             ))}
         </div>
-        {error ? <p className="mt-2 text-xs text-[#F07178]">{error}</p> : null}
+        {error ? <p className="mt-2 text-xs text-[var(--rk-danger)]">{error}</p> : null}
       </div>
     </div>
   );
@@ -5455,7 +6211,7 @@ function AppConnectCard({
             className="h-10 w-10 rounded-[10px] bg-white object-contain p-1"
           />
         ) : (
-          <span className="grid h-10 w-10 place-items-center rounded-[10px] bg-[#30356A] text-[15px] text-[#E2E4FF]">
+          <span className="grid h-10 w-10 place-items-center rounded-[10px] bg-[var(--rk-surface-2)] text-[15px] text-[var(--rk-ink)]">
             {block.name.slice(0, 1).toUpperCase()}
           </span>
         )}
@@ -5475,7 +6231,7 @@ function AppConnectCard({
           </BuiButton>
         )}
       </div>
-      {error ? <p className="mt-2 text-xs text-[#F07178]">{error}</p> : null}
+      {error ? <p className="mt-2 text-xs text-[var(--rk-danger)]">{error}</p> : null}
     </BuiCard>
   );
 }
@@ -5533,21 +6289,21 @@ function ChartCanvas({
   }, [spec, data, width, height, t]);
   if (error)
     return (
-      <div className="text-[13px] text-[#F3A2AA]">
+      <div className="text-[13px] text-[var(--rk-danger)]">
         <Trans>Chart failed to render: {error}</Trans>
       </div>
     );
   return (
-    <div className="text-[#C9C9CE]">
+    <div className="text-[var(--rk-body)]">
       {meta.title ? (
-        <div className="mb-1 text-[14.5px] font-semibold text-[#ECECEE]">{meta.title}</div>
+        <div className="mb-1 text-[14.5px] font-semibold text-[var(--rk-ink)]">{meta.title}</div>
       ) : null}
       {meta.swatches.length > 0 ? (
         <div className="mb-2 flex flex-wrap gap-x-3 gap-y-1">
           {meta.swatches.map((swatch) => (
             <span
               key={swatch.label}
-              className="flex items-center gap-1.5 text-[12px] text-[#A6A6AD]"
+              className="flex items-center gap-1.5 text-[12px] text-[var(--rk-muted)]"
             >
               <span
                 className="h-[10px] w-[10px] rounded-[3px]"
@@ -5613,7 +6369,7 @@ function McpApprovalCard({
   return (
     <BuiCard className="max-w-[74%] p-4">
       <div className="flex items-center gap-2">
-        <span className="grid h-7 w-7 place-items-center rounded-lg bg-[#30356A] text-xs text-[#E2E4FF]">
+        <span className="grid h-7 w-7 place-items-center rounded-lg bg-[var(--rk-surface-2)] text-xs text-[var(--rk-ink)]">
           M
         </span>
         <span className="text-[14.5px] font-medium" style={{ color: "var(--bui-ink)" }}>
@@ -5630,7 +6386,7 @@ function McpApprovalCard({
               ? t`This server uses browser sign-in. Authorize it to let your agents use its tools — a popup will open.`
               : t`Approve this server to let your agent use its tools.`}
           </p>
-          {error ? <p className="mt-2 text-xs text-[#F07178]">{error}</p> : null}
+          {error ? <p className="mt-2 text-xs text-[var(--rk-danger)]">{error}</p> : null}
           <div className="mt-3 flex gap-2">
             <BuiButton
               tone="accent"
@@ -5651,7 +6407,7 @@ function McpApprovalCard({
         </div>
       ) : null}
       {state === "dismissed" ? (
-        <p className="mt-2 text-[13px] text-[#85858A]">
+        <p className="mt-2 text-[13px] text-[var(--rk-muted)]">
           <Trans>Dismissed — reconnect anytime from MCP settings.</Trans>
         </p>
       ) : null}
@@ -5691,19 +6447,19 @@ function ChartBlockView({
   const expandedViewport = chartViewport(viewport.width, viewport.height);
   return (
     <>
-      <div className="group relative max-w-[74%] rounded-[20px] bg-[#17171A] p-4">
+      <div className="group relative max-w-[74%] rounded-[20px] bg-[var(--rk-surface)] p-4">
         <ChartCanvas spec={spec} data={data} width={520} />
         <button
           type="button"
           onClick={() => setExpanded(true)}
-          className="absolute end-3 top-3 rounded-lg border border-[#34343B] bg-[#1F1F22] px-2.5 py-1 text-[11px] text-[#B9B9C0] opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#A6A6AD]"
+          className="absolute end-3 top-3 rounded-lg border border-[var(--rk-hairline-strong)] bg-[var(--rk-hover)] px-2.5 py-1 text-[11px] text-[var(--rk-muted)] opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--rk-muted)]"
         >
           <Trans>Expand</Trans>
         </button>
       </div>
       {expanded ? (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-[rgba(4,4,5,.78)] p-8"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-[var(--rk-overlay)] p-8"
           role="dialog"
           aria-modal="true"
           aria-label={name}
@@ -5714,14 +6470,14 @@ function ChartBlockView({
             if (event.key === "Escape") setExpanded(false);
           }}
         >
-          <div className="max-h-[92vh] w-[min(1320px,94vw)] overflow-auto rounded-[24px] border border-[#2A2A31] bg-[#141416] p-8 shadow-[0_40px_90px_rgba(0,0,0,.6)]">
+          <div className="max-h-[92vh] w-[min(1320px,94vw)] overflow-auto rounded-[24px] border border-[var(--rk-hairline-strong)] bg-[var(--rk-surface)] p-8 shadow-[var(--rk-shadow)]">
             <div className="mb-3 flex items-center justify-between">
-              <span className="text-[13px] text-[#85858A]">{name}</span>
+              <span className="text-[13px] text-[var(--rk-muted)]">{name}</span>
               <button
                 type="button"
                 aria-label={t`Close chart`}
                 onClick={() => setExpanded(false)}
-                className="text-lg text-[#85858A] hover:text-[#DFDFE2]"
+                className="text-lg text-[var(--rk-muted)] hover:text-[var(--rk-body)]"
               >
                 ✕
               </button>
@@ -5812,7 +6568,7 @@ function ArtifactImage({
           <img src={src} alt={name} className="max-h-48 w-full object-cover" />
         </button>
       ) : (
-        <div className="rounded-[20px] border border-[#26262A] bg-[#17171A] px-4 py-3 text-[14px] text-[#85858A]">
+        <div className="rounded-[20px] border border-[var(--rk-hairline-strong)] bg-[var(--rk-surface)] px-4 py-3 text-[14px] text-[var(--rk-muted)]">
           {name}
         </div>
       )}
@@ -5820,7 +6576,7 @@ function ArtifactImage({
         <button
           type="button"
           aria-label={t`Close image preview`}
-          className="fixed inset-0 z-50 grid place-items-center bg-[rgba(4,4,5,.82)] p-6"
+          className="fixed inset-0 z-50 grid place-items-center bg-[var(--rk-overlay)] p-6"
           onClick={() => setOpen(false)}
         >
           <img

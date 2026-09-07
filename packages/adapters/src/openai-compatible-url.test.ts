@@ -90,4 +90,14 @@ describe("openai-compatible URL policy", () => {
       "https://api.example.com/v1",
     );
   });
+
+  it("allows TokenRouter without the public-host flag", () => {
+    delete process.env.RAKAZO_OPENAI_COMPAT_ALLOW_PUBLIC;
+    expect(assertAllowedOpenAiCompatibleUrl("https://api.tokenrouter.com/v1").href).toBe(
+      "https://api.tokenrouter.com/v1",
+    );
+    expect(() => assertAllowedOpenAiCompatibleUrl("http://api.tokenrouter.com/v1")).toThrow(
+      /must use https/,
+    );
+  });
 });

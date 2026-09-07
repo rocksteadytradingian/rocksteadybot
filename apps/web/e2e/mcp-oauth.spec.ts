@@ -81,7 +81,7 @@ test("connects an MCP server through the OAuth popup callback", async ({ page },
     });
   });
 
-  await page.getByText("Integrations", { exact: true }).click();
+  await page.getByText("Plugins", { exact: true }).click();
   await page.getByTestId("integrations-advanced").evaluate((element) => {
     (element as HTMLDetailsElement).open = true;
   });

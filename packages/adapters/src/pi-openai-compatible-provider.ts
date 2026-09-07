@@ -30,7 +30,7 @@ export const OPENAI_COMPATIBLE_CATALOG_MODEL_ID = "custom";
 
 const DEFAULT_CONTEXT_WINDOW = 32_768;
 const DEFAULT_MAX_TOKENS = 4_096;
-const MAX_MODELS_RESPONSE_BYTES = 64 * 1024;
+const MAX_MODELS_RESPONSE_BYTES = 1024 * 1024;
 const MAX_MODEL_IDS = 500;
 const MAX_MODEL_ID_LENGTH = 256;
 
@@ -247,11 +247,9 @@ function probeModelIds(body: OpenAiCompatibleModelsResponse): string[] {
   }
   const ids: string[] = [];
   for (const entry of entries) {
+    if (ids.length >= MAX_MODEL_IDS) break;
     const id = typeof entry?.id === "string" ? entry.id.trim() : "";
-    if (!id) continue;
-    if (id.length > MAX_MODEL_ID_LENGTH || ids.length >= MAX_MODEL_IDS) {
-      throw new Error("Model server returned too many or overly long model ids");
-    }
+    if (!id || id.length > MAX_MODEL_ID_LENGTH) continue;
     ids.push(id);
   }
   return ids;

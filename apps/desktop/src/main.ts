@@ -3,11 +3,18 @@ import { readFile, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type { DesktopReachability, DesktopSetup } from "@rakazo/contracts";
 import { app, BrowserWindow, ipcMain, Menu, net, type Session, session, shell } from "electron";
+import { shouldQuitWhenAllWindowsClosed } from "./app-lifecycle.js";
 import {
   DesktopUpdateController,
   type ElectronAutoUpdater,
   LAUNCH_CHECK_DELAY_MS,
 } from "./auto-update.js";
+import {
+  createNodeLocalStackHost,
+  ensureLocalStack,
+  localStackAutoConnectOnFirstRun,
+  localStackAutoStartEnabled,
+} from "./local-stack.js";
 import { oauthCallbackFrom } from "./oauth-callback.js";
 import {
   bundledRendererCandidates,
@@ -18,6 +25,7 @@ import {
 } from "./renderer-assets.js";
 import {
   DEFAULT_LOCAL_WEB_URL,
+  isManagedLocalWebUrl,
   isRakazoHealth,
   normalizeServerUrl,
   parseSetupInput,
@@ -28,7 +36,12 @@ import {
   sessionPartitionForServerUrl,
 } from "./setup-config.js";
 import { clearSetup, readSetup, writeSetup } from "./setup-store.js";
-import { browserWindowOptions, setupWindowOptions, warmWindowTtlMs } from "./window-options.js";
+import {
+  browserWindowOptions,
+  setupWindowOptions,
+  TITLEBAR_OVERLAY_HEIGHT,
+  warmWindowTtlMs,
+} from "./window-options.js";
 
 const PERFORMANCE_USER_DATA = process.env.RAKAZO_PERFORMANCE_USER_DATA;
 const PROBE_TIMEOUT_MS = 8_000;
@@ -44,6 +57,8 @@ let openAppPromise: Promise<boolean> | null = null;
 /** Prior app window kept until setup is persisted (or the switch is abandoned). */
 let pendingPreviousWindow: BrowserWindow | null = null;
 let quitting = false;
+/** Hidden session probes close a BrowserWindow before the app window exists. */
+let launching = true;
 let warmWindowTimer: NodeJS.Timeout | undefined;
 const WARM_WINDOW_TTL_MS = warmWindowTtlMs(process.env.RAKAZO_WARM_WINDOW_TTL_MS);
 
@@ -62,6 +77,10 @@ markOnce("rk:main:module-evaluated");
 if (PERFORMANCE_USER_DATA) {
   app.setPath("userData", PERFORMANCE_USER_DATA);
   app.setPath("sessionData", path.join(PERFORMANCE_USER_DATA, "session"));
+}
+const gotSingleInstanceLock = app.requestSingleInstanceLock();
+if (!gotSingleInstanceLock) {
+  app.quit();
 }
 app.once("will-finish-launching", () => markOnce("rk:main:will-finish-launching"));
 app.once("ready", () => markOnce("rk:main:ready"));
@@ -565,7 +584,7 @@ function restoreAppWindowAfterSetup() {
 function installApplicationMenu() {
   const changeServer: Electron.MenuItemConstructorOptions = {
     id: "change-rakazo-server",
-    label: "Change Rakazo Server…",
+    label: "Change RocksteadyBot Server…",
     accelerator: "CmdOrCtrl+Shift+K",
     click: () => showSetupWindow(),
   };
@@ -611,6 +630,34 @@ async function probeServer(rawUrl: string): Promise<DesktopReachability> {
   const url = normalizeServerUrl(rawUrl);
   if (url === null) return { ok: false, error: "Enter a valid http:// or https:// address." };
 
+  if (localStackAutoStartEnabled(process.env)) {
+    const started = await ensureLocalStack({
+      targetUrl: url,
+      searchFrom: [
+        process.env.RAKAZO_REPO_ROOT,
+        process.cwd(),
+        app.getAppPath(),
+        import.meta.dirname,
+      ],
+      host: createNodeLocalStackHost({
+        homedir: app.getPath("home"),
+        writeShortcut: (filePath, details) => {
+          const operation = existsSync(filePath) ? "update" : "create";
+          const icon =
+            details.icon !== undefined && existsSync(details.icon) ? details.icon : undefined;
+          shell.writeShortcutLink(filePath, operation, {
+            target: details.target,
+            cwd: details.cwd,
+            args: details.args,
+            description: details.description,
+            ...(icon === undefined ? {} : { icon, iconIndex: details.iconIndex }),
+          });
+        },
+      }),
+    });
+    if (!started.ok) return { ok: false, url, error: started.error };
+  }
+
   try {
     const response = await net.fetch(`${url}/rpc/health`, {
       method: "POST",
@@ -626,7 +673,7 @@ async function probeServer(rawUrl: string): Promise<DesktopReachability> {
         ok: false,
         status: response.status,
         url,
-        error: "That address redirects elsewhere. Enter the final Rakazo server address.",
+        error: "That address redirects elsewhere. Enter the final RocksteadyBot server address.",
       };
     }
     if (!response.ok) {
@@ -643,7 +690,7 @@ async function probeServer(rawUrl: string): Promise<DesktopReachability> {
         ok: false,
         status: response.status,
         url,
-        error: "That address did not respond like a Rakazo server.",
+        error: "That address did not respond like a RocksteadyBot server.",
       };
     }
     return {
@@ -717,6 +764,9 @@ async function openAppOnce(targetUrl: string) {
     if (documentError !== null) {
       throw new Error(documentError);
     }
+    if (isManagedLocalWebUrl(targetUrl)) {
+      await target.value.clearCache();
+    }
     await installBundledRenderer(targetUrl, target.value, target.partition);
     const created = createWindow(targetUrl, target.partition);
     win = created.win;
@@ -730,10 +780,19 @@ async function openAppOnce(targetUrl: string) {
     return true;
   } catch (error) {
     pendingPreviousWindow = null;
-    if (win !== null && !win.isDestroyed()) win.destroy();
-    // Keep the previous app window so Cancel / close can restore it.
+    const failed = win;
     if (previous !== null && !previous.isDestroyed()) mainWindow = previous;
+    // Create the setup window first. Destroying the last BrowserWindow on
+    // Windows quits the process before setup can open.
     showSetupWindow(`Could not open that server. ${openFailureDetail(error)}`);
+    if (
+      failed !== null &&
+      !failed.isDestroyed() &&
+      failed !== setupWindow &&
+      failed !== mainWindow
+    ) {
+      failed.destroy();
+    }
     return false;
   }
 }
@@ -837,205 +896,275 @@ function safeOrigin(targetUrl: string) {
   }
 }
 
-app.whenReady().then(async () => {
-  const userDataDir = app.getPath("userData");
-  currentSetup = await readSetup(userDataDir);
-  const target = resolveStartupTarget({
-    envUrl: process.env.RAKAZO_WEB_URL,
-    saved: currentSetup,
-    forceSetup: process.env.RAKAZO_FORCE_SETUP === "1",
-  });
-  if (process.env.RAKAZO_PERFORMANCE_CLEAR_CACHE === "1") {
-    const cacheSessions = new Set<Session>([session.defaultSession]);
-    if (target.kind === "app") {
-      cacheSessions.add((await resolveSessionForTarget(target.url)).value);
-    }
-    await Promise.all(
-      [...cacheSessions].flatMap((value) => [value.clearCache(), value.clearCodeCaches({})]),
-    );
-    markOnce("rk:main:caches-cleared");
+/** Bring an already-open setup or app window forward (used for the single-instance relaunch). */
+function focusExistingWindow(): boolean {
+  if (setupWindow !== null && !setupWindow.isDestroyed()) {
+    setupWindow.show();
+    setupWindow.focus();
+    return true;
   }
+  if (mainWindow !== null && !mainWindow.isDestroyed()) {
+    clearTimeout(warmWindowTimer);
+    mainWindow.show();
+    mainWindow.focus();
+    return true;
+  }
+  return false;
+}
 
-  const icon = developmentIcon();
-  if (process.platform === "darwin" && icon) app.dock?.setIcon(icon);
-  installApplicationMenu();
-  ipcMain.handle("desktop.platform", () => process.platform);
-  ipcMain.handle("desktop.window.close", (event) => {
-    windowFrom(event)?.close();
-  });
-  ipcMain.handle("desktop.window.minimize", (event) => {
-    windowFrom(event)?.minimize();
-  });
-  ipcMain.handle("desktop.window.toggleMaximize", (event) => {
-    const win = windowFrom(event);
-    if (!win) return;
-    if (win.isMaximized() || win.isFullScreen()) {
-      win.setFullScreen(false);
-      if (win.isMaximized()) win.unmaximize();
-    } else {
-      win.maximize();
-    }
-  });
-  ipcMain.handle("desktop.window.state", (event) => {
-    const win = windowFrom(event);
-    return {
-      minimized: win?.isMinimized() ?? false,
-      maximized: win?.isMaximized() ?? false,
-      fullScreen: win?.isFullScreen() ?? false,
-    };
-  });
-  ipcMain.handle("desktop.update.state", () => desktopUpdater.state());
-  ipcMain.handle("desktop.update.check", (event) =>
-    fromMainWindow(event) ? desktopUpdater.check(true) : desktopUpdater.state(),
-  );
-  ipcMain.handle("desktop.update.download", (event) =>
-    fromMainWindow(event) ? desktopUpdater.download() : desktopUpdater.state(),
-  );
-  ipcMain.handle("desktop.update.install", async (event) => {
-    if (!fromMainWindow(event) || desktopUpdater.state().phase !== "ready") {
-      return desktopUpdater.state();
-    }
-    quitting = true;
-    const state = await desktopUpdater.install();
-    // Install failures leave ready via installFailed; also clear quitting if still ready
-    // is no longer true for any other reason.
-    if (state.phase !== "ready") quitting = false;
-    return state;
-  });
-  ipcMain.handle("desktop.setup.state", (event) => {
-    if (!fromSetupWindow(event)) return null;
-    return {
-      defaultLocalUrl: DEFAULT_LOCAL_WEB_URL,
+app.on("second-instance", () => {
+  focusExistingWindow();
+});
+
+app.whenReady().then(async () => {
+  if (!gotSingleInstanceLock) return;
+  try {
+    const userDataDir = app.getPath("userData");
+    currentSetup = await readSetup(userDataDir);
+    const target = resolveStartupTarget({
+      envUrl: process.env.RAKAZO_WEB_URL,
       saved: currentSetup,
-      error: setupError ?? undefined,
-    };
-  });
-
-  ipcMain.handle("desktop.setup.test", async (event, url: unknown) => {
-    if (!fromSetupWindow(event)) return { ok: false, error: "Setup is not active." };
-    if (typeof url !== "string") return { ok: false, error: "Enter a server address." };
-    return probeServer(url);
-  });
-
-  ipcMain.handle("desktop.setup.save", async (event, payload: unknown) => {
-    if (!fromSetupWindow(event)) return { ok: false, error: "Setup is not active." };
-    if (setupSaveInProgress)
-      return { ok: false, error: "A connection attempt is already running." };
-    setupSaveInProgress = true;
-    const previousSetup = currentSetup;
-    const previousUrl = currentTargetUrl;
-    try {
-      const setup = parseSetupInput(payload);
-      if (setup === null) {
-        return {
-          ok: false,
-          error:
-            "Enter a valid server address. Public servers require HTTPS; a new local instance must use localhost.",
-        };
+      forceSetup: process.env.RAKAZO_FORCE_SETUP === "1",
+    });
+    if (process.env.RAKAZO_PERFORMANCE_CLEAR_CACHE === "1") {
+      const cacheSessions = new Set<Session>([session.defaultSession]);
+      if (target.kind === "app") {
+        cacheSessions.add((await resolveSessionForTarget(target.url)).value);
       }
+      await Promise.all(
+        [...cacheSessions].flatMap((value) => [value.clearCache(), value.clearCodeCaches({})]),
+      );
+      markOnce("rk:main:caches-cleared");
+    }
 
-      const reachability = await probeServer(setup.serverUrl);
-      if (!reachability.ok) return { ok: false, error: reachability.error };
-
-      // Open before persisting so a failed renderer load keeps the last working setup.
-      currentSetup = setup;
-      const opened = await openApp(setup.serverUrl);
-      if (!opened) {
-        currentSetup = previousSetup;
-        return {
-          ok: false,
-          error: "Could not open that server. The previous instance was left unchanged.",
-        };
+    const icon = developmentIcon();
+    if (process.platform === "darwin" && icon) app.dock?.setIcon(icon);
+    installApplicationMenu();
+    ipcMain.handle("desktop.platform", () => process.platform);
+    ipcMain.handle("desktop.window.close", (event) => {
+      windowFrom(event)?.close();
+    });
+    ipcMain.handle("desktop.window.minimize", (event) => {
+      windowFrom(event)?.minimize();
+    });
+    ipcMain.handle("desktop.window.toggleMaximize", (event) => {
+      const win = windowFrom(event);
+      if (!win) return;
+      if (win.isMaximized() || win.isFullScreen()) {
+        win.setFullScreen(false);
+        if (win.isMaximized()) win.unmaximize();
+      } else {
+        win.maximize();
       }
-
-      const appWindow = mainWindow;
-      const rendererWatch =
-        appWindow !== null && !appWindow.isDestroyed()
-          ? watchRendererUntilCommitted(appWindow)
-          : null;
-      try {
-        await writeSetup(userDataDir, setup);
-        if (rendererWatch?.crashed()) {
-          const message = await recoverFromCrashedSave(userDataDir, previousSetup, previousUrl);
-          return { ok: false, error: message };
-        }
-        // Commit while the crash listener is still armed.
-        commitPendingAppSwitch();
-        if (rendererWatch?.crashed()) {
-          const message = await recoverFromCrashedSave(userDataDir, previousSetup, previousUrl);
-          return { ok: false, error: message };
-        }
-        destroySetupWindow();
-        // Final check after setup closes — a crash in this gap still rolls back.
-        if (rendererWatch?.crashed()) {
-          const message = await recoverFromCrashedSave(userDataDir, previousSetup, previousUrl);
-          return { ok: false, error: message };
-        }
-        return { ok: true };
-      } catch {
-        const outcome = abandonPendingAppSwitch(previousSetup, previousUrl);
-        return {
-          ok: false,
-          error:
-            outcome === "restored"
-              ? "Could not save setup. The previous instance was restored."
-              : "Connected, but could not save setup for the next launch. Try Continue again.",
-        };
-      } finally {
-        rendererWatch?.dispose();
+    });
+    ipcMain.handle("desktop.window.state", (event) => {
+      const win = windowFrom(event);
+      return {
+        minimized: win?.isMinimized() ?? false,
+        maximized: win?.isMaximized() ?? false,
+        fullScreen: win?.isFullScreen() ?? false,
+      };
+    });
+    ipcMain.handle("desktop.window.setTitleBarOverlay", (event, overlay) => {
+      if (process.platform !== "win32") return;
+      const win = windowFrom(event);
+      if (!win || win.isDestroyed()) return;
+      if (
+        typeof overlay !== "object" ||
+        overlay === null ||
+        typeof overlay.color !== "string" ||
+        typeof overlay.symbolColor !== "string"
+      ) {
+        return;
       }
-    } finally {
-      setupSaveInProgress = false;
-    }
-  });
-
-  ipcMain.handle("desktop.setup.quit", (event) => {
-    if (fromSetupWindow(event)) app.quit();
-  });
-
-  // Register before startup awaits so macOS dock clicks during probe/open are handled.
-  app.on("activate", () => {
-    if (setupWindow !== null && !setupWindow.isDestroyed()) {
-      setupWindow.show();
-      setupWindow.focus();
-      return;
-    }
-    if (mainWindow !== null && !mainWindow.isDestroyed()) {
-      clearTimeout(warmWindowTimer);
-      mainWindow.show();
-      mainWindow.focus();
-      return;
-    }
-    if (openAppPromise !== null) return;
-    if (currentTargetUrl === null) showSetupWindow(setupError);
-    else
-      void openApp(currentTargetUrl).then((opened) => {
-        if (opened) commitPendingAppSwitch();
+      win.setTitleBarOverlay({
+        color: overlay.color,
+        symbolColor: overlay.symbolColor,
+        height: TITLEBAR_OVERLAY_HEIGHT,
       });
-  });
+    });
+    ipcMain.handle("desktop.update.state", () => desktopUpdater.state());
+    ipcMain.handle("desktop.update.check", (event) =>
+      fromMainWindow(event) ? desktopUpdater.check(true) : desktopUpdater.state(),
+    );
+    ipcMain.handle("desktop.update.download", (event) =>
+      fromMainWindow(event) ? desktopUpdater.download() : desktopUpdater.state(),
+    );
+    ipcMain.handle("desktop.update.install", async (event) => {
+      if (!fromMainWindow(event) || desktopUpdater.state().phase !== "ready") {
+        return desktopUpdater.state();
+      }
+      quitting = true;
+      const state = await desktopUpdater.install();
+      // Install failures leave ready via installFailed; also clear quitting if still ready
+      // is no longer true for any other reason.
+      if (state.phase !== "ready") quitting = false;
+      return state;
+    });
+    ipcMain.handle("desktop.setup.state", (event) => {
+      if (!fromSetupWindow(event)) return null;
+      return {
+        defaultLocalUrl: DEFAULT_LOCAL_WEB_URL,
+        saved: currentSetup,
+        error: setupError ?? undefined,
+      };
+    });
 
-  if (target.kind === "setup") {
-    showSetupWindow();
-  } else if (target.source === "saved") {
-    const reachability = await probeServer(target.url);
-    if (reachability.ok) {
+    ipcMain.handle("desktop.setup.test", async (event, url: unknown) => {
+      if (!fromSetupWindow(event)) return { ok: false, error: "Setup is not active." };
+      if (typeof url !== "string") return { ok: false, error: "Enter a server address." };
+      return probeServer(url);
+    });
+
+    ipcMain.handle("desktop.setup.save", async (event, payload: unknown) => {
+      if (!fromSetupWindow(event)) return { ok: false, error: "Setup is not active." };
+      if (setupSaveInProgress)
+        return { ok: false, error: "A connection attempt is already running." };
+      setupSaveInProgress = true;
+      const previousSetup = currentSetup;
+      const previousUrl = currentTargetUrl;
+      try {
+        const setup = parseSetupInput(payload);
+        if (setup === null) {
+          return {
+            ok: false,
+            error:
+              "Enter a valid server address. Public servers require HTTPS; a new local instance must use localhost.",
+          };
+        }
+
+        const reachability = await probeServer(setup.serverUrl);
+        if (!reachability.ok) return { ok: false, error: reachability.error };
+
+        // Open before persisting so a failed renderer load keeps the last working setup.
+        currentSetup = setup;
+        const opened = await openApp(setup.serverUrl);
+        if (!opened) {
+          currentSetup = previousSetup;
+          return {
+            ok: false,
+            error: "Could not open that server. The previous instance was left unchanged.",
+          };
+        }
+
+        const appWindow = mainWindow;
+        const rendererWatch =
+          appWindow !== null && !appWindow.isDestroyed()
+            ? watchRendererUntilCommitted(appWindow)
+            : null;
+        try {
+          await writeSetup(userDataDir, setup);
+          if (rendererWatch?.crashed()) {
+            const message = await recoverFromCrashedSave(userDataDir, previousSetup, previousUrl);
+            return { ok: false, error: message };
+          }
+          // Commit while the crash listener is still armed.
+          commitPendingAppSwitch();
+          if (rendererWatch?.crashed()) {
+            const message = await recoverFromCrashedSave(userDataDir, previousSetup, previousUrl);
+            return { ok: false, error: message };
+          }
+          destroySetupWindow();
+          // Final check after setup closes — a crash in this gap still rolls back.
+          if (rendererWatch?.crashed()) {
+            const message = await recoverFromCrashedSave(userDataDir, previousSetup, previousUrl);
+            return { ok: false, error: message };
+          }
+          return { ok: true };
+        } catch {
+          const outcome = abandonPendingAppSwitch(previousSetup, previousUrl);
+          return {
+            ok: false,
+            error:
+              outcome === "restored"
+                ? "Could not save setup. The previous instance was restored."
+                : "Connected, but could not save setup for the next launch. Try Continue again.",
+          };
+        } finally {
+          rendererWatch?.dispose();
+        }
+      } finally {
+        setupSaveInProgress = false;
+      }
+    });
+
+    ipcMain.handle("desktop.setup.quit", (event) => {
+      if (fromSetupWindow(event)) app.quit();
+    });
+
+    // Register before startup awaits so macOS dock clicks during probe/open are handled.
+    app.on("activate", () => {
+      if (setupWindow !== null && !setupWindow.isDestroyed()) {
+        setupWindow.show();
+        setupWindow.focus();
+        return;
+      }
+      if (mainWindow !== null && !mainWindow.isDestroyed()) {
+        clearTimeout(warmWindowTimer);
+        mainWindow.show();
+        mainWindow.focus();
+        return;
+      }
+      if (openAppPromise !== null) return;
+      if (currentTargetUrl === null) showSetupWindow(setupError);
+      else
+        void openApp(currentTargetUrl).then((opened) => {
+          if (opened) commitPendingAppSwitch();
+        });
+    });
+
+    if (target.kind === "setup") {
+      showSetupWindow();
+      if (localStackAutoConnectOnFirstRun(process.env)) {
+        const reachability = await probeServer(DEFAULT_LOCAL_WEB_URL);
+        if (reachability.ok) {
+          const setup = { mode: "new" as const, serverUrl: DEFAULT_LOCAL_WEB_URL };
+          currentSetup = setup;
+          if (await openApp(setup.serverUrl)) {
+            try {
+              await writeSetup(userDataDir, setup);
+              commitPendingAppSwitch();
+              destroySetupWindow();
+            } catch {
+              showSetupWindow(
+                "Connected, but could not save setup for the next launch. Try Continue again.",
+              );
+            }
+          }
+        } else {
+          showSetupWindow(reachability.error ?? null);
+        }
+      }
+    } else if (target.source === "saved") {
+      const reachability = await probeServer(target.url);
+      if (reachability.ok) {
+        if (await openApp(target.url)) {
+          commitPendingAppSwitch();
+          destroySetupWindow();
+        }
+      } else {
+        showSetupWindow(`Could not reconnect to the saved server. ${reachability.error}`);
+      }
+    } else {
       if (await openApp(target.url)) {
         commitPendingAppSwitch();
         destroySetupWindow();
       }
-    } else {
-      showSetupWindow(`Could not reconnect to the saved server. ${reachability.error}`);
     }
-  } else {
-    if (await openApp(target.url)) {
-      commitPendingAppSwitch();
-      destroySetupWindow();
+  } catch (error) {
+    showSetupWindow(error instanceof Error ? error.message : String(error));
+  } finally {
+    launching = false;
+    if (BrowserWindow.getAllWindows().length === 0) {
+      showSetupWindow(setupError);
     }
   }
 });
 
 app.on("window-all-closed", () => {
-  if (process.platform !== "darwin") app.quit();
+  if (shouldQuitWhenAllWindowsClosed(process.platform, { launching, quitting })) {
+    app.quit();
+  }
 });
 
 app.on("before-quit", () => {

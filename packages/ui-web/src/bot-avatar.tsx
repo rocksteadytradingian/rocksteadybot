@@ -1,4 +1,9 @@
-import { ACTIVE_RUN_STATUSES, avatarIdentitySeed, organicAvatarPath } from "@rakazo/core";
+import {
+  ACTIVE_RUN_STATUSES,
+  avatarIdentitySeed,
+  organicAvatarPath,
+  PRODUCT_NAME,
+} from "@rakazo/core";
 import { type CSSProperties, memo, useId, useSyncExternalStore } from "react";
 import { type AvatarStyle, useAvatarStyle } from "./avatar-style.js";
 import { cn } from "./lib/utils.js";
@@ -288,12 +293,12 @@ function adjustColor(hex: string, percent: number): string {
 export function Wordmark({ className }: { className?: string }) {
   return (
     <div className={cn("flex items-center gap-3", className)}>
-      <div className="flex h-11 w-11 items-center justify-center gap-1.5 rounded-full bg-[#16161A]">
-        <span className="h-4 w-[7px] rounded-full bg-[#F7F7F4]" />
-        <span className="h-4 w-[7px] rounded-full bg-[#F7F7F4]" />
+      <div className="flex h-11 w-11 items-center justify-center gap-1.5 rounded-full bg-[var(--rk-ink)]">
+        <span className="h-4 w-[7px] rounded-full bg-[var(--rk-page)]" />
+        <span className="h-4 w-[7px] rounded-full bg-[var(--rk-page)]" />
       </div>
-      <span className="font-[Aeonik,ui-sans-serif] text-[28px] tracking-tight text-[#1B1B1E]">
-        Rakazo
+      <span className="font-[Aeonik,ui-sans-serif] text-[28px] tracking-tight text-[var(--rk-ink)]">
+        {PRODUCT_NAME}
       </span>
     </div>
   );

@@ -8,7 +8,7 @@ export function WindowChrome() {
   if (kind === "spacer") {
     return <div className="h-3 w-[72px]" aria-hidden="true" />;
   }
-  if (kind === "darwin") {
+  if (kind === "darwin" || kind === "overlay") {
     return <div className="app-drag h-3 w-[72px]" aria-hidden="true" />;
   }
   return (

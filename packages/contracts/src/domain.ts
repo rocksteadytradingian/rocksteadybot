@@ -68,6 +68,7 @@ export const GroupSchema = z.object({
   workspaceId: Id,
   name: z.string(),
   members: z.array(GroupMemberSchema),
+  defaultBotId: Id.nullable(),
   threadId: Id,
   preview: z.string(),
   unread: z.boolean(),
@@ -82,17 +83,32 @@ const GroupBotIds = z
   .max(GROUP_MEMBER_MAX)
   .refine((ids) => new Set(ids).size === ids.length, { error: "botIds must be distinct" });
 
-export const CreateGroupInput = z.object({
-  name: z.string().trim().min(1).max(80),
-  botIds: GroupBotIds,
-});
+export const CreateGroupInput = z
+  .object({
+    name: z.string().trim().min(1).max(80),
+    botIds: GroupBotIds,
+    defaultBotId: Id.optional(),
+  })
+  .refine((input) => !input.defaultBotId || input.botIds.includes(input.defaultBotId), {
+    error: "defaultBotId must be a member",
+    path: ["defaultBotId"],
+  });
 export type CreateGroupInput = z.infer<typeof CreateGroupInput>;
 
-export const UpdateGroupInput = z.object({
-  groupId: Id,
-  name: z.string().trim().min(1).max(80).optional(),
-  botIds: GroupBotIds.optional(),
-});
+export const UpdateGroupInput = z
+  .object({
+    groupId: Id,
+    name: z.string().trim().min(1).max(80).optional(),
+    botIds: GroupBotIds.optional(),
+    defaultBotId: Id.nullable().optional(),
+  })
+  .refine(
+    (input) => !input.defaultBotId || !input.botIds || input.botIds.includes(input.defaultBotId),
+    {
+      error: "defaultBotId must be a member",
+      path: ["defaultBotId"],
+    },
+  );
 export type UpdateGroupInput = z.infer<typeof UpdateGroupInput>;
 
 export const GroupDetailSchema = GroupSchema.extend({
@@ -404,8 +420,16 @@ export const ConnectionCatalogItemSchema = z.object({
   logo: z.string().nullable(),
   connected: z.boolean(),
   noAuth: z.boolean(),
+  description: z.string().optional(),
+  categories: z.array(z.string()).optional(),
 });
 export type ConnectionCatalogItem = z.infer<typeof ConnectionCatalogItemSchema>;
+
+export const ComposioProjectKeyStatusSchema = z.object({
+  configured: z.boolean(),
+  source: z.enum(["user", "server", "none"]),
+});
+export type ComposioProjectKeyStatus = z.infer<typeof ComposioProjectKeyStatusSchema>;
 
 export const ActionApprovalRuleSchema = z.object({
   id: Id,
@@ -588,6 +612,18 @@ export const ThreadSnapshotSchema = z.object({
 });
 export type ThreadSnapshot = z.infer<typeof ThreadSnapshotSchema>;
 
+export const OPENAI_COMPATIBLE_PROVIDER_ID = "openai-compatible";
+export const LOCAL_PROVIDER_ID = "local";
+export const TOKENROUTER_PROVIDER_ID = "tokenrouter";
+export const TOKENROUTER_BASE_URL = "https://api.tokenrouter.com/v1";
+/** Synthetic catalog id. Classify the turn, then run a Fast / Smart / Heavy slot. */
+export const COMPLEXITY_ROUTER_MODEL_ID = "auto";
+
+/** Providers whose real model ids are discovered from `/v1/models`, not a static catalog. */
+export function isProbedModelProvider(provider: string): boolean {
+  return provider === OPENAI_COMPATIBLE_PROVIDER_ID || provider === TOKENROUTER_PROVIDER_ID;
+}
+
 export const ModelCredentialSchema = z.object({
   id: Id,
   provider: z.string(),
@@ -596,10 +632,46 @@ export const ModelCredentialSchema = z.object({
   isDefault: z.boolean(),
   baseUrl: z.string().optional(),
   modelId: z.string().optional(),
+  routerFastModel: z.string().optional(),
+  routerSmartModel: z.string().optional(),
+  routerHeavyModel: z.string().optional(),
 });
 export type ModelCredential = z.infer<typeof ModelCredentialSchema>;
 
-export const OPENAI_COMPATIBLE_PROVIDER_ID = "openai-compatible";
+const RouterSlotId = z
+  .string()
+  .trim()
+  .max(200)
+  .nullable()
+  .optional()
+  .transform((value) => {
+    if (value == null) return value;
+    return value.length === 0 ? null : value;
+  });
+
+export const ModelSetRouterInputSchema = z
+  .object({
+    provider: z.string().trim().min(1).max(80),
+    fast: z.string().trim().min(1).max(200),
+    smart: RouterSlotId,
+    heavy: RouterSlotId,
+  })
+  .superRefine((value, ctx) => {
+    for (const [path, slot] of [
+      ["fast", value.fast],
+      ["smart", value.smart],
+      ["heavy", value.heavy],
+    ] as const) {
+      if (slot === COMPLEXITY_ROUTER_MODEL_ID) {
+        ctx.addIssue({
+          code: "custom",
+          message: "Auto cannot be assigned to a routing slot",
+          path: [path],
+        });
+      }
+    }
+  });
+export type ModelSetRouterInput = z.infer<typeof ModelSetRouterInputSchema>;
 
 export const ModelConnectInputSchema = z
   .object({
@@ -608,6 +680,9 @@ export const ModelConnectInputSchema = z
     baseUrl: z.string().optional(),
     label: z.string().optional(),
     modelId: z.string().optional(),
+    routerFastModel: z.string().trim().min(1).max(200).optional(),
+    routerSmartModel: RouterSlotId.optional(),
+    routerHeavyModel: RouterSlotId.optional(),
   })
   .superRefine((value, ctx) => {
     if (value.provider === OPENAI_COMPATIBLE_PROVIDER_ID) {
@@ -625,14 +700,40 @@ export const ModelConnectInputSchema = z
           path: ["modelId"],
         });
       }
-      return;
-    }
-    if (!value.apiKey || value.apiKey.trim().length < 8) {
+    } else if (value.provider === TOKENROUTER_PROVIDER_ID) {
+      if (!value.apiKey || value.apiKey.trim().length < 8) {
+        ctx.addIssue({
+          code: "custom",
+          message: "API key must contain at least 8 characters",
+          path: ["apiKey"],
+        });
+      }
+      if (!value.modelId?.trim()) {
+        ctx.addIssue({
+          code: "custom",
+          message: "Model id is required for TokenRouter",
+          path: ["modelId"],
+        });
+      }
+    } else if (!value.apiKey || value.apiKey.trim().length < 8) {
       ctx.addIssue({
         code: "custom",
         message: "API key must contain at least 8 characters",
         path: ["apiKey"],
       });
+    }
+    for (const [path, slot] of [
+      ["routerFastModel", value.routerFastModel],
+      ["routerSmartModel", value.routerSmartModel],
+      ["routerHeavyModel", value.routerHeavyModel],
+    ] as const) {
+      if (slot === COMPLEXITY_ROUTER_MODEL_ID) {
+        ctx.addIssue({
+          code: "custom",
+          message: "Auto cannot be assigned to a routing slot",
+          path: [path],
+        });
+      }
     }
   });
 export type ModelConnectInput = z.infer<typeof ModelConnectInputSchema>;
@@ -817,11 +918,19 @@ export const ServerUpdateCheckSchema = z.object({
 });
 export type ServerUpdateCheck = z.infer<typeof ServerUpdateCheckSchema>;
 
+export const WorkspaceSchema = z.object({
+  id: Id,
+  name: z.string().min(1),
+});
+export type Workspace = z.infer<typeof WorkspaceSchema>;
+
 export const MeSchema = z.object({
   userId: Id,
   email: z.string().email(),
   name: z.string(),
   workspaceId: Id,
+  workspaceName: z.string().min(1),
+  workspaces: z.array(WorkspaceSchema),
   isDeploymentOwner: z.boolean(),
   needsModel: z.boolean(),
   defaultProvider: z.string().nullable(),

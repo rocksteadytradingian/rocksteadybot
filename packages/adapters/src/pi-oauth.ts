@@ -6,7 +6,7 @@ import type {
   OAuthCredential,
 } from "@earendil-works/pi-ai";
 import { builtinModels } from "@earendil-works/pi-ai/providers/all";
-import type { ModelOAuthBegin, ModelOAuthSignInMode } from "@rakazo/contracts";
+import { type ModelOAuthBegin, type ModelOAuthSignInMode, PRODUCT_NAME } from "@rakazo/contracts";
 import { createManualAnthropicOAuthLogin } from "./pi-anthropic-oauth.js";
 
 export const CHATGPT_OAUTH_PROVIDER = "openai-codex";
@@ -22,32 +22,37 @@ export const SUBSCRIPTION_SIGN_IN_PROVIDERS: Record<
     mode: "device-code",
     loginLabel: "Sign in with ChatGPT Plus/Pro",
     hint: "ChatGPT Plus/Pro",
-    billing:
-      "Sign in with ChatGPT Plus or Pro. Uses your OpenAI subscription. Rakazo does not pay.",
+    billing: `Sign in with ChatGPT Plus or Pro. Uses your OpenAI subscription. ${PRODUCT_NAME} does not pay.`,
   },
   [COPILOT_OAUTH_PROVIDER]: {
     mode: "device-code",
     loginLabel: "Sign in with GitHub Copilot",
     hint: "Copilot",
-    billing: "Sign in with GitHub Copilot. Uses your Copilot subscription. Rakazo does not pay.",
+    billing: `Sign in with GitHub Copilot. Uses your Copilot subscription. ${PRODUCT_NAME} does not pay.`,
   },
   [XAI_OAUTH_PROVIDER]: {
     mode: "device-code",
     loginLabel: "Sign in with SuperGrok or X Premium",
     hint: "SuperGrok / key",
-    billing: "Sign in with SuperGrok or X Premium, or paste an xAI API key. Rakazo does not pay.",
+    billing: `Sign in with SuperGrok or X Premium, or paste an xAI API key. ${PRODUCT_NAME} does not pay.`,
   },
   [ANTHROPIC_OAUTH_PROVIDER]: {
     mode: "auth-url",
     loginLabel: "Sign in with Claude Pro/Max",
     hint: "Claude Pro/Max / key",
-    billing:
-      "Sign in with Claude Pro or Max, or paste an Anthropic API key. Uses your Anthropic subscription. Rakazo does not pay.",
+    billing: `Sign in with Claude Pro or Max, or paste an Anthropic API key. Uses your Anthropic subscription. ${PRODUCT_NAME} does not pay.`,
   },
 };
 
 const MIN_OAUTH_VALIDITY_MS = 5 * 60 * 1000;
 const SIGN_IN_START_WAIT_MS = 30_000;
+
+export class ModelAuthError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "ModelAuthError";
+  }
+}
 
 export type StoredModelSecret =
   | { kind: "api_key"; key: string }
@@ -189,17 +194,26 @@ export async function resolveModelAuth(
   }
   const oauth = opts?.oauth ?? loadProviderOAuth(provider);
   if (!oauth) {
-    throw new Error(`No OAuth handler for ${provider}. Sign in again from onboarding.`);
+    throw new ModelAuthError(`No OAuth handler for ${provider}. Sign in again from onboarding.`);
   }
   const now = opts?.now ?? Date.now();
   let credential = parsed.credential;
   if (credential.expires - now < MIN_OAUTH_VALIDITY_MS) {
-    credential = await oauth.refresh(credential, opts?.signal ?? new AbortController().signal);
+    try {
+      credential = await oauth.refresh(credential, opts?.signal ?? new AbortController().signal);
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : String(error);
+      throw new ModelAuthError(
+        /invalid_grant|Refresh token/i.test(detail)
+          ? `This ${provider} sign-in expired. Connect it again in model settings.`
+          : detail,
+      );
+    }
     await opts?.persist?.(serializeModelSecret({ kind: "oauth", credential }));
   }
   const auth = await oauth.toAuth(credential);
   if (!auth.apiKey) {
-    throw new Error("Subscription sign-in did not produce a usable token. Sign in again.");
+    throw new ModelAuthError("Subscription sign-in did not produce a usable token. Sign in again.");
   }
   return { secret: { kind: "oauth", credential }, apiKey: auth.apiKey };
 }

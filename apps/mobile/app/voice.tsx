@@ -11,6 +11,7 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { rpc } from "../lib/api";
+import { type ThemedStyleArgs, useTheme, useThemedStyles } from "../lib/theme";
 import { playMpeg, speakUtterance } from "../lib/voice";
 
 type VoiceCatalogEntry = {
@@ -44,6 +45,8 @@ export default function VoiceSettings() {
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const { palette } = useTheme();
+  const styles = useThemedStyles(makeStyles);
 
   const load = useCallback(async (nextProvider?: string) => {
     const [nextCatalog, nextCredentials, nextStatus] = await Promise.all([
@@ -134,7 +137,7 @@ export default function VoiceSettings() {
   return (
     <SafeAreaView edges={["bottom"]} style={styles.screen}>
       <ScrollView contentContainerStyle={styles.content}>
-        {loading ? <ActivityIndicator color="#ECECEE" /> : null}
+        {loading ? <ActivityIndicator color={palette.ink} /> : null}
         {error ? <Text style={styles.error}>{error}</Text> : null}
         {notice ? <Text style={styles.notice}>{notice}</Text> : null}
         <Text style={styles.lede}>
@@ -170,7 +173,7 @@ export default function VoiceSettings() {
               value={apiKey}
               onChangeText={setApiKey}
               placeholder={credential ? "Paste a replacement key" : "Paste your API key"}
-              placeholderTextColor="#6C6C70"
+              placeholderTextColor={palette.muted2}
               secureTextEntry
               style={styles.input}
               textContentType="none"
@@ -212,52 +215,53 @@ export default function VoiceSettings() {
   );
 }
 
-const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: "#000" },
-  content: { padding: 20, gap: 10 },
-  lede: { color: "#85858A", fontSize: 14, lineHeight: 20, marginBottom: 8 },
-  error: { color: "#C94244", marginBottom: 8 },
-  notice: { color: "#4ECB71", marginBottom: 8 },
-  card: {
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: "#26262A",
-    padding: 14,
-    backgroundColor: "#101012",
-  },
-  cardActive: { borderColor: "#4A4A50", backgroundColor: "#1A1A1D" },
-  cardTitle: { color: "#ECECEE", fontSize: 16 },
-  cardMeta: { color: "#6C6C70", marginTop: 4, fontSize: 12 },
-  help: { color: "#85858A", fontSize: 13.5, lineHeight: 20, marginTop: 8 },
-  input: {
-    marginTop: 8,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: "#26262A",
-    color: "#ECECEE",
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-  },
-  button: {
-    marginTop: 8,
-    backgroundColor: "#F1F1EF",
-    borderRadius: 12,
-    paddingVertical: 12,
-    alignItems: "center",
-  },
-  disabled: { opacity: 0.4 },
-  buttonLabel: { color: "#17171A", fontWeight: "600" },
-  voices: { marginTop: 12, borderRadius: 12, borderWidth: 1, borderColor: "#26262A" },
-  voiceRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: "#202023",
-  },
-  voiceLabel: { color: "#ECECEE" },
-  check: { color: "#4ECB71" },
-  secondary: { marginTop: 16, alignItems: "center" },
-  secondaryLabel: { color: "#C9C9CE", fontSize: 15 },
-});
+const makeStyles = ({ palette }: ThemedStyleArgs) =>
+  StyleSheet.create({
+    screen: { flex: 1, backgroundColor: palette.page },
+    content: { padding: 20, gap: 10 },
+    lede: { color: palette.muted, fontSize: 14, lineHeight: 20, marginBottom: 8 },
+    error: { color: palette.danger, marginBottom: 8 },
+    notice: { color: palette.success, marginBottom: 8 },
+    card: {
+      borderRadius: 14,
+      borderWidth: 1,
+      borderColor: palette.hairline,
+      padding: 14,
+      backgroundColor: palette.surface,
+    },
+    cardActive: { borderColor: palette.hairlineStrong, backgroundColor: palette.surface2 },
+    cardTitle: { color: palette.ink, fontSize: 16 },
+    cardMeta: { color: palette.muted2, marginTop: 4, fontSize: 12 },
+    help: { color: palette.muted, fontSize: 13.5, lineHeight: 20, marginTop: 8 },
+    input: {
+      marginTop: 8,
+      borderRadius: 12,
+      borderWidth: 1,
+      borderColor: palette.hairline,
+      color: palette.ink,
+      paddingHorizontal: 14,
+      paddingVertical: 12,
+    },
+    button: {
+      marginTop: 8,
+      backgroundColor: palette.solid,
+      borderRadius: 12,
+      paddingVertical: 12,
+      alignItems: "center",
+    },
+    disabled: { opacity: 0.4 },
+    buttonLabel: { color: palette.solidInk, fontWeight: "600" },
+    voices: { marginTop: 12, borderRadius: 12, borderWidth: 1, borderColor: palette.hairline },
+    voiceRow: {
+      flexDirection: "row",
+      justifyContent: "space-between",
+      paddingHorizontal: 14,
+      paddingVertical: 12,
+      borderBottomWidth: 1,
+      borderBottomColor: palette.hairline,
+    },
+    voiceLabel: { color: palette.ink },
+    check: { color: palette.success },
+    secondary: { marginTop: 16, alignItems: "center" },
+    secondaryLabel: { color: palette.muted, fontSize: 15 },
+  });
