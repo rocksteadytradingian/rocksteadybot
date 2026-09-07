@@ -148,7 +148,10 @@ describe("plugin catalog marketplace", () => {
   });
 
   it("filters entries down to one source, or passes everything through for all", () => {
-    const entries = [item("gmail", "Gmail"), item("linear", "Linear", { connectorId: "pipedream" })];
+    const entries = [
+      item("gmail", "Gmail"),
+      item("linear", "Linear", { connectorId: "pipedream" }),
+    ];
     expect(selectPluginEntriesBySource(entries, "composio").map((row) => row.slug)).toEqual([
       "gmail",
     ]);

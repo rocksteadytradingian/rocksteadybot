@@ -179,7 +179,8 @@ export function PluginsOverlay({
   const installed = useMemo(() => entries.filter((item) => item.connected), [entries]);
   const searching = query.trim().length > 0;
   const chips = useMemo(
-    () => marketplaceChips(presentPluginCategories(entries), source === "all" && sources.length > 0),
+    () =>
+      marketplaceChips(presentPluginCategories(entries), source === "all" && sources.length > 0),
     [entries, source, sources.length],
   );
   const catalogFilter: PluginMarketplaceFilter = filter === "mcp" ? "all" : filter;

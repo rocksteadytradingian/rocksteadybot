@@ -86,16 +86,16 @@ export function SkillPromotionCard({
     <div className="mx-6 mb-2 rounded-[14px] border border-[#2A2A2E] bg-[#151517] px-4 py-3">
       <div className="flex items-start justify-between gap-3">
         <div>
-          <div className="text-[13.5px] text-[#ECECEE]">
+          <div className="text-[13.5px] text-[var(--rk-ink)]">
             <Trans>
               You've run these {current.tools.length} steps together in {current.runCount} recent
               tasks. Save them as a skill?
             </Trans>
           </div>
-          <div className="mt-1 font-mono text-[11.5px] text-[#85858A]">
+          <div className="mt-1 font-mono text-[11.5px] text-[var(--rk-muted)]">
             {current.tools.join(" → ")}
           </div>
-          {error ? <div className="mt-1 text-[12px] text-[#FF5364]">{error}</div> : null}
+          {error ? <div className="mt-1 text-[12px] text-[var(--rk-danger)]">{error}</div> : null}
         </div>
         <div className="flex shrink-0 items-center gap-2">
           <Button variant="ghost" onClick={dismiss} disabled={saving}>
