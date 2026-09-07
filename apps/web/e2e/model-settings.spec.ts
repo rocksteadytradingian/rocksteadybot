@@ -116,9 +116,10 @@ test("connects, lists, and uses an OpenAI-compatible endpoint", async ({ page },
     await expect(page.getByRole("combobox", { name: "Models from server" })).toContainText("Auto");
     await expect(page.getByText(`${LOCAL_MODEL_ID} · router-smart · router-heavy`)).toBeVisible();
     await expect(page.getByText("Auto", { exact: true }).first()).toBeVisible();
+    // Filling the three router slots on the default credential already promotes it
+    // to "auto" server-side, so selecting it needs no separate activation step.
     await page.getByRole("combobox", { name: "Models from server" }).selectOption("auto");
-    await page.getByRole("button", { name: "Use this model" }).click();
-    await expect(page.getByText("Model updated.")).toBeVisible();
+    await expect(page.getByRole("button", { name: "Use this model" })).toBeHidden();
 
     await page.getByLabel("OpenAI-compatible server URL").fill("");
     await expect(page.getByRole("button", { name: "Find models" })).toBeDisabled();

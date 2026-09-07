@@ -141,15 +141,18 @@ test("takeover, routine, plugins, and export are reachable", async ({ page }, te
   ).toBeHidden();
   await captureScreenshot(page, testInfo, "11-plugins-catalog");
 
-  // Nearest ancestor with an Add/Remove control (featured tile or catalog row).
+  // Disconnecting a plugin asks for confirmation with a native prompt.
+  page.on("dialog", (dialog) => dialog.accept());
+
+  // Nearest ancestor with an Add/Disconnect control (featured tile or catalog row).
   const gmailRow = featured
     .getByText("Gmail", { exact: true })
     .locator("xpath=ancestor::*[.//button][1]");
   await gmailRow.getByRole("button", { name: "Add Gmail" }).click();
-  await expect(gmailRow.getByRole("button", { name: "Remove Gmail" })).toBeVisible();
+  await expect(gmailRow.getByRole("button", { name: "Disconnect Gmail" })).toBeVisible();
   await captureScreenshot(page, testInfo, "11a-connected-plugins");
 
-  await gmailRow.getByRole("button", { name: "Remove Gmail" }).click();
+  await gmailRow.getByRole("button", { name: "Disconnect Gmail" }).click();
   await expect(gmailRow.getByRole("button", { name: "Add Gmail" })).toBeVisible();
   await captureScreenshot(page, testInfo, "11b-connected-plugins-empty");
 
@@ -160,8 +163,8 @@ test("takeover, routine, plugins, and export are reachable", async ({ page }, te
   await linearRow.getByRole("button", { name: "Add Linear" }).click();
   const popup = await connectPopup;
   await popup.close();
-  await expect(linearRow.getByRole("button", { name: "Remove Linear" })).toBeVisible();
-  await linearRow.getByRole("button", { name: "Remove Linear" }).click();
+  await expect(linearRow.getByRole("button", { name: "Disconnect Linear" })).toBeVisible();
+  await linearRow.getByRole("button", { name: "Disconnect Linear" }).click();
   await expect(linearRow.getByRole("button", { name: "Add Linear" })).toBeVisible();
 
   const advanced = page.getByTestId("integrations-advanced");
