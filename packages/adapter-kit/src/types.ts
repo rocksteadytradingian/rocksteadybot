@@ -1,4 +1,20 @@
-import type { ConnectionCatalogItem, SandboxKind } from "@rakazo/contracts";
+import type {
+  ConnectionCatalogItem,
+  RedactionRegion,
+  SandboxKind,
+  VerdictTier,
+} from "@rakazo/contracts";
+
+export type {
+  OutcomeClaim,
+  OutcomeClaimKind,
+  RedactionEntity,
+  RedactionMode,
+  RedactionPolicy,
+  RedactionRegion,
+  Verdict,
+  VerdictTier,
+} from "@rakazo/contracts";
 
 export interface AdapterContext {
   operationId: string;
@@ -413,10 +429,13 @@ export interface VoiceTranscribeRequest {
 export interface BackgroundJobPayloads {
   "run.continue": { runId: string };
   "routine.wakeup": { routineId: string; scheduledFor: string };
+  "sentinel.wakeup": { sentinelId: string; scheduledFor: string };
   "computer.sleep": { computerId: string };
   "computer.control-expire": { computerId: string; leaseId: string };
   "skill.teaching-expire": { skillId: string };
+  "skill.revise": { skillId: string; runId: string };
   "history.compact": { threadId: string };
+  "memory.reflect": { runId: string };
 }
 
 export type BackgroundJobName = keyof BackgroundJobPayloads;
@@ -451,4 +470,41 @@ export interface NotificationMessage {
   body: string;
   botId: string;
   threadId: string;
+}
+
+export interface OutcomeVerifierCapabilities {
+  /** Verdict tiers this verifier can produce, strongest first. */
+  tiers: VerdictTier[];
+}
+
+/**
+ * A `text-on-screen` claim is checked against the run's live computer; the other claim kinds
+ * do not need one, so `computer` is optional and a verifier returns an `unconfirmed` verdict
+ * when a claim needs it and it is absent.
+ */
+export interface OutcomeVerifyContext extends AdapterContext {
+  computer?: ComputerRef;
+}
+
+export interface ScreenRedactorCapabilities {
+  /** Can blank regions of a raster frame. */
+  image: boolean;
+  /** Can redact entities from a string. */
+  text: boolean;
+  /** Recognises text in the pixels itself (rather than only structured/accessibility text). */
+  ocr: boolean;
+}
+
+/** A raster frame handed to a redactor. The subset of ComputerObservation it needs. */
+export interface RedactableFrame {
+  image: Uint8Array;
+  mimeType: "image/png" | "image/jpeg";
+  width: number;
+  height: number;
+}
+
+export interface RedactedFrame {
+  /** The frame with detected regions blanked. Identical bytes when nothing matched. */
+  image: Uint8Array;
+  regions: RedactionRegion[];
 }

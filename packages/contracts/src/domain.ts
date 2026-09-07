@@ -1,6 +1,6 @@
 import * as z from "zod";
 import { ThreadMessageSchema } from "./events.js";
-import { Id, MemoryScope, RunStatus, SandboxKind } from "./ids.js";
+import { Id, MemoryScope, RunStatus, RunTrigger, SandboxKind } from "./ids.js";
 import { McpHeadersSchema, McpRemoteEndpointSchema, McpTransportSchema } from "./mcp.js";
 
 export const ComputerModeSchema = z.enum(["team", "dedicated"]);
@@ -302,6 +302,15 @@ export type TaughtSkill = z.infer<typeof TaughtSkillSchema>;
 export const AgentSkillSourceSchema = z.enum(["user", "builtin", "plugin"]);
 export type AgentSkillSource = z.infer<typeof AgentSkillSourceSchema>;
 
+/** A proposed SKILL.md edit drafted after a run that leaned on this skill failed its check. */
+export const AgentSkillRevisionSchema = z.object({
+  content: z.string(),
+  reason: z.string(),
+  runId: z.string(),
+  createdAt: z.string(),
+});
+export type AgentSkillRevision = z.infer<typeof AgentSkillRevisionSchema>;
+
 export const AgentSkillSchema = z.object({
   id: Id,
   name: z.string(),
@@ -309,6 +318,12 @@ export const AgentSkillSchema = z.object({
   content: z.string(),
   source: AgentSkillSourceSchema,
   readOnly: z.boolean(),
+  /** Retrieval health folded from the outcome of runs that invoked this skill. */
+  uses: z.number().int().nonnegative().default(0),
+  successCount: z.number().int().nonnegative().default(0),
+  failCount: z.number().int().nonnegative().default(0),
+  lastUsedAt: z.string().nullable().default(null),
+  pendingRevision: AgentSkillRevisionSchema.nullable().default(null),
   createdAt: z.string(),
   updatedAt: z.string(),
 });
@@ -322,6 +337,18 @@ export const AgentSkillCatalogEntrySchema = AgentSkillSchema.pick({
   readOnly: true,
 });
 export type AgentSkillCatalogEntry = z.infer<typeof AgentSkillCatalogEntrySchema>;
+
+/** A recurring tool-call sequence across a bot's recent runs, offered as a skill to save. */
+export const SkillPromotionSuggestionSchema = z.object({
+  /** Stable id for this sequence, so a dismissed suggestion does not return. */
+  hash: z.string(),
+  tools: z.array(z.string()).min(2),
+  /** How many recent runs contained the sequence. */
+  runCount: z.number().int().positive(),
+  /** A ready-to-edit SKILL.md draft built from the sequence. */
+  draft: z.string(),
+});
+export type SkillPromotionSuggestion = z.infer<typeof SkillPromotionSuggestionSchema>;
 
 export const CreateAgentSkillInput = z
   .object({
@@ -552,7 +579,7 @@ export const RunSchema = z.object({
   threadId: Id,
   taskId: Id,
   status: RunStatus,
-  trigger: z.enum(["user", "routine", "resume", "follow_up", "spawn", "skill", "bot_message"]),
+  trigger: RunTrigger,
   routineId: Id.nullable(),
   modelProvider: z.string().nullable(),
   modelId: z.string().nullable(),
@@ -764,6 +791,10 @@ export const VoiceCatalogEntrySchema = z.object({
   name: z.string(),
   description: z.string(),
   transcribe: z.boolean(),
+  /** Can produce speech (TTS). Absent is treated as true for older entries. */
+  synthesize: z.boolean().optional(),
+  /** No API key: verified/enabled by the deployment, not a stored credential. */
+  keyless: z.boolean().optional(),
 });
 export type VoiceCatalogEntry = z.infer<typeof VoiceCatalogEntrySchema>;
 
@@ -790,6 +821,8 @@ export const VoiceStatusSchema = z.object({
   transcribe: z.boolean(),
   provider: z.string().nullable(),
   voiceId: z.string(),
+  /** On-device dictation is available even without a connected provider. */
+  localDictation: z.boolean().optional(),
 });
 export type VoiceStatus = z.infer<typeof VoiceStatusSchema>;
 

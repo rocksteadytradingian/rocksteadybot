@@ -184,6 +184,7 @@ import {
 import type { ContextMenuPosition } from "./BotContextMenu";
 import { CreateGroupForm, GroupSettings, memberName } from "./GroupPanel";
 import { HostComputerPrompt } from "./HostComputerPrompt";
+import { SkillPromotionCard } from "./SkillPromotionCard";
 import { WindowChrome } from "./WindowChrome";
 import { WorkspacePicker } from "./WorkspacePicker";
 import { WorkspaceSearchResults } from "./WorkspaceSearch";
@@ -218,6 +219,19 @@ const RoutineSchedules = lazy(() =>
 );
 const VoiceSettingsOverlay = lazy(() =>
   import("./VoiceSettingsOverlay").then((module) => ({ default: module.VoiceSettingsOverlay })),
+);
+const RedactionSettingsOverlay = lazy(() =>
+  import("./RedactionSettingsOverlay").then((module) => ({
+    default: module.RedactionSettingsOverlay,
+  })),
+);
+const SkillRevisionsOverlay = lazy(() =>
+  import("./SkillRevisionsOverlay").then((module) => ({
+    default: module.SkillRevisionsOverlay,
+  })),
+);
+const SentinelsOverlay = lazy(() =>
+  import("./SentinelsOverlay").then((module) => ({ default: module.SentinelsOverlay })),
 );
 const CallView = lazy(() => import("./CallView").then((module) => ({ default: module.CallView })));
 const ScratchpadSection = lazy(() =>
@@ -338,6 +352,9 @@ export function ShellPage() {
   const [stackRestartBusy, setStackRestartBusy] = useState(false);
   const [computerRestartBusy, setComputerRestartBusy] = useState(false);
   const [memorySettingsOpen, setMemorySettingsOpen] = useState(false);
+  const [redactionOpen, setRedactionOpen] = useState(false);
+  const [skillRevisionsOpen, setSkillRevisionsOpen] = useState(false);
+  const [sentinelsOpen, setSentinelsOpen] = useState(false);
   const [memoryProviderConfig, setMemoryProviderConfig] = useState<
     WorkspaceMemoryConfig | null | undefined
   >(undefined);
@@ -2449,6 +2466,47 @@ export function ShellPage() {
                   </button>
                   <button
                     type="button"
+                    onClick={() => {
+                      setMenuOpen(false);
+                      setRedactionOpen(true);
+                    }}
+                    className="flex w-full items-center gap-3 rounded-[11px] px-3 py-2.5 hover:bg-[var(--rk-hover)]"
+                  >
+                    <span className="text-[var(--rk-ink)]">▧</span>
+                    <span className="flex-1 text-start text-[14.5px] text-[var(--rk-ink)]">
+                      <Trans>Screen privacy</Trans>
+                    </span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setMenuOpen(false);
+                      setSkillRevisionsOpen(true);
+                    }}
+                    className="flex w-full items-center gap-3 rounded-[11px] px-3 py-2.5 hover:bg-[var(--rk-hover)]"
+                  >
+                    <span className="text-[var(--rk-ink)]">✎</span>
+                    <span className="flex-1 text-start text-[14.5px] text-[var(--rk-ink)]">
+                      <Trans>Skill revisions</Trans>
+                    </span>
+                  </button>
+                  {active && !inGroup ? (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setMenuOpen(false);
+                        setSentinelsOpen(true);
+                      }}
+                      className="flex w-full items-center gap-3 rounded-[11px] px-3 py-2.5 hover:bg-[var(--rk-hover)]"
+                    >
+                      <span className="text-[var(--rk-ink)]">◎</span>
+                      <span className="flex-1 text-start text-[14.5px] text-[var(--rk-ink)]">
+                        <Trans>Sentinels</Trans>
+                      </span>
+                    </button>
+                  ) : null}
+                  <button
+                    type="button"
                     className="flex w-full items-center gap-3 rounded-[11px] px-3 py-2.5 hover:bg-[var(--rk-hover)]"
                     onClick={async () => {
                       setUsage(await rpc.usage.summary());
@@ -2705,6 +2763,9 @@ export function ShellPage() {
               )}
             </BuiCard>
           </div>
+        ) : null}
+        {active && !inGroup && !recordingSkill ? (
+          <SkillPromotionCard botId={active.id} onCreated={refreshAgentSkills} />
         ) : null}
         <Composer
           key={inGroup ? `group:${groupId}` : `bot:${active?.id}`}
@@ -3468,6 +3529,24 @@ export function ShellPage() {
               setMemoryProviderConfig(config);
             }}
           />
+        ) : null}
+      </Suspense>
+
+      <Suspense fallback={null}>
+        {redactionOpen ? (
+          <RedactionSettingsOverlay onClose={() => setRedactionOpen(false)} />
+        ) : null}
+      </Suspense>
+
+      <Suspense fallback={null}>
+        {skillRevisionsOpen ? (
+          <SkillRevisionsOverlay onClose={() => setSkillRevisionsOpen(false)} />
+        ) : null}
+      </Suspense>
+
+      <Suspense fallback={null}>
+        {sentinelsOpen && active && !inGroup ? (
+          <SentinelsOverlay botId={active.id} onClose={() => setSentinelsOpen(false)} />
         ) : null}
       </Suspense>
 

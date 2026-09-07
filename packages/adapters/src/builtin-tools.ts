@@ -1,4 +1,5 @@
 import type { ConnectorTool } from "@rakazo/adapter-kit";
+import { DECLARE_OUTCOME_TOOL } from "./outcome-run.js";
 
 export const DELEGATION_TOOL_NAMES = new Set([
   "run_subagent",
@@ -449,6 +450,60 @@ export const builtinAgentTools: ConnectorTool[] = [
     },
   },
   {
+    name: "sentinel_create",
+    description:
+      'Watch a URL and act only when its state changes — not on every check. Use for "tell me when the deploy goes green" or "if the status page starts failing, investigate". Set trigger to becomes-true (fires once when the check first passes), changes (fires when the HTTP status changes), or stays-true-for (fires once the check has passed for `window`, e.g. 15m). On fire it either posts `message` to this thread, or, if `prompt` is given instead, starts a new run for this bot with that prompt. Checks run on the schedule you give (repeating only).',
+    inputSchema: {
+      type: "object",
+      properties: {
+        name: { type: "string", description: "Short label shown in the sentinel list." },
+        url: { type: "string", description: "URL to GET. The check passes on a 2xx response." },
+        trigger: {
+          type: "string",
+          enum: ["becomes-true", "changes", "stays-true-for"],
+          description: "When to fire relative to the check's state.",
+        },
+        window: {
+          type: "string",
+          description: 'For stays-true-for: how long the check must pass first, e.g. "15m", "2h".',
+        },
+        message: {
+          type: "string",
+          description: "Post this to the thread when it fires. Provide message or prompt.",
+        },
+        prompt: {
+          type: "string",
+          description: "Start a run with this instruction when it fires, instead of a message.",
+        },
+        cron: { type: "string", description: "5-field cron for the check cadence." },
+        every: { type: "number", description: "Check interval amount." },
+        unit: {
+          type: "string",
+          enum: ["minutes", "hours", "days"],
+          description: "Unit for every (minimum 1 minute).",
+        },
+        timezone: { type: "string", description: "IANA timezone (default UTC)." },
+      },
+      required: ["name", "url", "trigger"],
+    },
+  },
+  {
+    name: "sentinel_list",
+    description: "List this bot's sentinels (URL watchers).",
+    inputSchema: { type: "object", properties: {} },
+  },
+  {
+    name: "sentinel_cancel",
+    description: "Cancel a sentinel by sentinelId or exact name.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        sentinelId: { type: "string" },
+        name: { type: "string" },
+      },
+    },
+  },
+  {
     name: "skill_read",
     description:
       "Load a Claude Agent Skill (SKILL.md recipe) by exact name. Call this when a catalog skill matches the user's request, then follow it immediately.",
@@ -601,4 +656,5 @@ export const builtinAgentTools: ConnectorTool[] = [
       required: ["message"],
     },
   },
+  DECLARE_OUTCOME_TOOL,
 ];

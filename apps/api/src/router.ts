@@ -112,6 +112,7 @@ import {
   Prisma,
   type PrismaClient,
   parseComputerMode,
+  readWorkspaceRedactionPolicy,
   renameWorkspace,
   requireMembership,
   restoreLastWorkingModel,
@@ -120,6 +121,7 @@ import {
   type ThreadEvents,
   touchGroupUpdatedAt,
   WorkspaceError,
+  writeWorkspaceRedactionPolicy,
 } from "@rakazo/db";
 import { createAgentSkillsService } from "./agent-skills.js";
 import { listPendingApprovals } from "./approvals.js";
@@ -139,7 +141,9 @@ import { chooseFocus, markAppConnected, startOnboarding } from "./onboarding.js"
 import { listWorkspaceRuns } from "./runs.js";
 import { addScreenProxyCapability } from "./screen-proxy.js";
 import { queryWorkspaceSearch } from "./search.js";
+import { createSentinelsService } from "./sentinels.js";
 import { withSerializableRetry } from "./serializable-retry.js";
+import { createSkillPromotionService } from "./skill-promotion.js";
 import { assertTeachingSendAllowed, createTaughtSkillsService } from "./taught-skills.js";
 import { loadAllMessages, loadMessagePage } from "./thread-message-pages.js";
 import {
@@ -153,6 +157,7 @@ import {
   listVoiceCatalog,
   loadDefaultVoiceCredential,
   loadVoiceCredential,
+  localDictationAvailable,
   persistVoiceCredential,
   prepareVoice,
   toVoiceCredential,
@@ -360,6 +365,8 @@ export function createRouter(deps: RouterDeps) {
     dataDir: deps.dataDir,
   });
   const agentSkills = createAgentSkillsService(deps.prisma);
+  const skillPromotion = createSkillPromotionService(deps.prisma);
+  const sentinels = createSentinelsService(deps.prisma, deps.jobs);
 
   const authed = os.use(async ({ context, next }) => {
     if (!context.actor) throw new ORPCError("UNAUTHORIZED");
@@ -2048,6 +2055,26 @@ export function createRouter(deps: RouterDeps) {
       remove: authed.agentSkills.remove.handler(async ({ context, input }) =>
         agentSkills.remove(context.actor, input.skillId),
       ),
+      revisions: authed.agentSkills.revisions.handler(async ({ context }) =>
+        agentSkills.revisions(context.actor),
+      ),
+      applyRevision: authed.agentSkills.applyRevision.handler(async ({ context, input }) =>
+        agentSkills.applyRevision(context.actor, input),
+      ),
+      dismissRevision: authed.agentSkills.dismissRevision.handler(async ({ context, input }) =>
+        agentSkills.dismissRevision(context.actor, input),
+      ),
+      promotionSuggestions: authed.agentSkills.promotionSuggestions.handler(
+        async ({ context, input }) => skillPromotion.suggestions(context.actor, input),
+      ),
+    },
+    sentinels: {
+      list: authed.sentinels.list.handler(async ({ context, input }) =>
+        sentinels.list(context.actor, input),
+      ),
+      cancel: authed.sentinels.cancel.handler(async ({ context, input }) =>
+        sentinels.cancel(context.actor, input),
+      ),
     },
     capabilities: {
       list: authed.capabilities.list.handler(async ({ context }) => {
@@ -3066,11 +3093,27 @@ export function createRouter(deps: RouterDeps) {
         runs: await listWorkspaceRuns(deps.prisma, context.actor, input.filter),
       })),
     },
+    redaction: {
+      get: authed.redaction.get.handler(({ context }) =>
+        readWorkspaceRedactionPolicy(deps.prisma, context.actor.workspaceId),
+      ),
+      set: authed.redaction.set.handler(async ({ context, input }) => {
+        if (!context.actor.isDeploymentOwner) {
+          throw new ORPCError("FORBIDDEN", {
+            message: "Only the deployment owner can change the screen-scrubbing policy.",
+          });
+        }
+        await writeWorkspaceRedactionPolicy(deps.prisma, context.actor.workspaceId, input);
+        return readWorkspaceRedactionPolicy(deps.prisma, context.actor.workspaceId);
+      }),
+    },
     voice: {
       catalog: authed.voice.catalog.handler(async () => listVoiceCatalog()),
       status: authed.voice.status.handler(async ({ context }) => {
         const cred = await findDefaultVoiceCredential(deps.prisma, context.actor);
-        return toVoiceStatus(cred);
+        const localDictation = await localDictationAvailable(context.actor);
+        const base = toVoiceStatus(cred);
+        return { ...base, transcribe: base.transcribe || localDictation, localDictation };
       }),
       credentials: authed.voice.credentials.handler(async ({ context }) => {
         const rows = await deps.prisma.userVoiceCredential.findMany({

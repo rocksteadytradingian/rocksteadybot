@@ -33,4 +33,6 @@ export const slots = {
   auth: "connection-auth",
   runner: "runner",
   voice: "voice",
+  outcomeVerifier: "outcome-verifier",
+  screenRedactor: "screen-redactor",
 } as const;

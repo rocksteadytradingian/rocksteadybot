@@ -12,13 +12,19 @@ const payloadSchemas = {
     routineId: z.string().min(1),
     scheduledFor: z.string().datetime({ offset: true }),
   }),
+  "sentinel.wakeup": z.object({
+    sentinelId: z.string().min(1),
+    scheduledFor: z.string().datetime({ offset: true }),
+  }),
   "computer.sleep": z.object({ computerId: z.string().min(1) }),
   "computer.control-expire": z.object({
     computerId: z.string().min(1),
     leaseId: z.string().min(1),
   }),
   "skill.teaching-expire": z.object({ skillId: z.string().min(1) }),
+  "skill.revise": z.object({ skillId: z.string().min(1), runId: z.string().min(1) }),
   "history.compact": z.object({ threadId: z.string().min(1) }),
+  "memory.reflect": z.object({ runId: z.string().min(1) }),
 } satisfies { [Name in BackgroundJobName]: z.ZodType<BackgroundJobPayloads[Name]> };
 
 export function parseBackgroundJob(name: string, payload: unknown): BackgroundJob {
@@ -46,6 +52,10 @@ export function routineJobKey(routineId: string): string {
   return `routine:${routineId}`;
 }
 
+export function sentinelJobKey(sentinelId: string): string {
+  return `sentinel:${sentinelId}`;
+}
+
 export function computerSleepJobKey(computerId: string): string {
   return `computer.sleep:${computerId}`;
 }
@@ -58,6 +68,18 @@ export function computerControlExpireJobKey(computerId: string, leaseId?: string
 
 export function skillTeachingExpireJobKey(skillId: string): string {
   return `skill.teaching-expire:${skillId}`;
+}
+
+export function skillReviseJobKey(skillId: string): string {
+  return `skill.revise:${skillId}`;
+}
+
+export function skillReviseJob(skillId: string, runId: string): BackgroundJob {
+  return {
+    name: "skill.revise",
+    payload: { skillId, runId },
+    replaceKey: skillReviseJobKey(skillId),
+  };
 }
 
 export function runContinueJob(runId: string): BackgroundJob {
@@ -74,6 +96,15 @@ export function routineWakeupJob(routineId: string, scheduledFor: Date): Backgro
     payload: { routineId, scheduledFor: scheduledFor.toISOString() },
     availableAt: scheduledFor,
     replaceKey: routineJobKey(routineId),
+  };
+}
+
+export function sentinelWakeupJob(sentinelId: string, scheduledFor: Date): BackgroundJob {
+  return {
+    name: "sentinel.wakeup",
+    payload: { sentinelId, scheduledFor: scheduledFor.toISOString() },
+    availableAt: scheduledFor,
+    replaceKey: sentinelJobKey(sentinelId),
   };
 }
 
@@ -117,5 +148,17 @@ export function historyCompactJob(threadId: string): BackgroundJob {
     name: "history.compact",
     payload: { threadId },
     replaceKey: historyCompactJobKey(threadId),
+  };
+}
+
+export function memoryReflectJobKey(runId: string): string {
+  return `memory.reflect:${runId}`;
+}
+
+export function memoryReflectJob(runId: string): BackgroundJob {
+  return {
+    name: "memory.reflect",
+    payload: { runId },
+    replaceKey: memoryReflectJobKey(runId),
   };
 }

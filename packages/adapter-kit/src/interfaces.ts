@@ -29,9 +29,16 @@ import type {
   MemorySearchResult,
   MemorySnapshot,
   NotificationMessage,
+  OutcomeClaim,
+  OutcomeVerifierCapabilities,
+  OutcomeVerifyContext,
   PortableFile,
   ProcessEvent,
+  RedactableFrame,
+  RedactedFrame,
+  RedactionPolicy,
   SandboxCapabilities,
+  ScreenRedactorCapabilities,
   ScreenRequest,
   ScreenSession,
   SecretRecord,
@@ -43,6 +50,7 @@ import type {
   SemanticMemorySaveRequest,
   SnapshotRef,
   SpeechClip,
+  Verdict,
   VoiceCapabilities,
   VoiceInfo,
   VoiceSynthesizeRequest,
@@ -261,4 +269,31 @@ export interface VoiceProvider {
   listVoices(apiKey: string, context: AdapterContext): Promise<VoiceInfo[]>;
   synthesize(request: VoiceSynthesizeRequest, context: AdapterContext): Promise<SpeechClip>;
   transcribe?(request: VoiceTranscribeRequest, context: AdapterContext): Promise<{ text: string }>;
+}
+
+/**
+ * Independently confirms a run's declared outcomes. Given one `OutcomeClaim` it returns a
+ * `Verdict` — `verified`, `unconfirmed` (could not check), or `contradicted` (checked, and the
+ * effect did not happen) — along with the tier it reached and human-readable evidence. It never
+ * throws for an unmeetable claim; that is an `unconfirmed` verdict.
+ */
+export interface OutcomeVerifier {
+  describe(): AdapterDescriptor<OutcomeVerifierCapabilities>;
+  verify(claim: OutcomeClaim, context: OutcomeVerifyContext): Promise<Verdict>;
+}
+
+/**
+ * Removes personal / protected data from a screen frame (and the text sent with it) before it
+ * reaches a model. Applied at one chokepoint on the computer-observation path; the default
+ * provider is a no-op, so a workspace only pays for this after turning a policy on. A redactor
+ * must be deterministic: the same frame and policy in produce byte-identical output.
+ */
+export interface ScreenRedactor {
+  describe(): AdapterDescriptor<ScreenRedactorCapabilities>;
+  redactFrame(
+    frame: RedactableFrame,
+    policy: RedactionPolicy,
+    context: AdapterContext,
+  ): Promise<RedactedFrame>;
+  redactText(value: string, policy: RedactionPolicy, context: AdapterContext): Promise<string>;
 }

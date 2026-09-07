@@ -88,6 +88,9 @@ model Organization {
   logo        String?
   createdAt   DateTime
   metadata    String?
+  // Screen-scrubbing policy for this workspace (see @rakazo/contracts RedactionPolicy).
+  // Null / absent means scrubbing is off.
+  redactionPolicy Json?
   members     Member[]
   invitations Invitation[]
   bots        Bot[]
@@ -98,6 +101,7 @@ model Organization {
   tasks       Task[]
   runs        Run[]
   routines    Routine[]
+  sentinels   Sentinel[]
   scratchpadItems ScratchpadItem[]
   taughtSkills TaughtSkill[]
   agentSkills AgentSkill[]
@@ -264,6 +268,7 @@ model Bot {
   modelId        String?
   thinkingLevel  String?
   routines       Routine[]
+  sentinels      Sentinel[]
   scratchpadItems ScratchpadItem[]
   taughtSkills   TaughtSkill[]
   memoryDocuments MemoryDocument[]
@@ -450,6 +455,10 @@ model Run {
   modelProvider String?
   modelId       String?
   error         String?
+  // Independent verification of the run's declared outcomes (see @rakazo/contracts RunOutcome).
+  // Null until a run that called declare_outcome finishes.
+  outcomeStatus String?
+  outcomeVerdicts Json?
   leaseOwner    String?
   leaseFence    Int       @default(0)
   leaseExpiresAt DateTime?
@@ -534,6 +543,32 @@ model Routine {
   @@map("routines")
 }
 
+model Sentinel {
+  id          String    @id @default(cuid())
+  workspaceId String
+  workspace   Organization @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  botId       String
+  bot         Bot       @relation(fields: [botId], references: [id], onDelete: Cascade)
+  userId      String
+  name        String
+  check       Json
+  trigger     String
+  windowMs    Int?
+  onFire      Json
+  active      Boolean   @default(true)
+  state       Json?
+  cron        String
+  timezone    String    @default("UTC")
+  lastCheckedAt DateTime?
+  nextRunAt   DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([active, nextRunAt])
+  @@index([workspaceId, botId])
+  @@map("sentinels")
+}
+
 model ScratchpadItem {
   id          String   @id @default(cuid())
   workspaceId String
@@ -590,6 +625,13 @@ model AgentSkill {
   content     String
   /// user | builtin | plugin — only user skills are writable via API/tools.
   source      String   @default("user")
+  /// Retrieval health, folded from the outcome of runs that invoked this skill.
+  uses         Int      @default(0)
+  successCount Int      @default(0)
+  failCount    Int      @default(0)
+  lastUsedAt   DateTime?
+  /// A proposed SKILL.md edit awaiting the user's review: { content, reason, runId, createdAt }.
+  pendingRevision Json?
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 

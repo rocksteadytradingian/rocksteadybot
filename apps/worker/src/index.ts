@@ -7,11 +7,14 @@ loadRootEnv();
 import {
   createBackgroundJobHandlers,
   createConnectorStack,
+  createHttpSentinelCheckRunner,
   createJobReconciler,
   createPostgresReconciliationLeadership,
   createRunExecutor,
   createRunSandbox,
   createRunSecretWriter,
+  createScreenRedaction,
+  createWhisperCliEngine,
   EncryptedSecretStore,
   ExpoPushProvider,
   GraphileJobPublisher,
@@ -30,8 +33,13 @@ import {
   PostgresRealtimeFanout,
   pipedreamConfigFromEnv,
   resolveDeploymentModel,
+  resolveWhisperSetup,
   ScriptedAgentRuntime,
+  setWhisperEngine,
+  startSentinelRun,
+  tesseractOcrEngine,
   WorkspaceMemoryProviderResolver,
+  wakeSentinel,
 } from "@rakazo/adapters";
 import { resolveEncryptionKey } from "@rakazo/core";
 import { createDb, createThreadEvents } from "@rakazo/db";
@@ -100,6 +108,8 @@ async function main() {
   );
   const connector = stack.destination;
   await connector.start();
+  const whisperSetup = await resolveWhisperSetup({ dataDir });
+  if (whisperSetup) setWhisperEngine(createWhisperCliEngine(whisperSetup));
   const memoryProviders = new WorkspaceMemoryProviderResolver(prisma, secrets);
   const home = new LocalAgentHomeStore(dataDir);
   const artifacts = new LocalArtifactStore(dataDir);
@@ -124,8 +134,12 @@ async function main() {
     notifications: new ExpoPushProvider(dataDir),
     jobs,
     events,
+    screenRedaction: createScreenRedaction(prisma, {
+      ocr: process.env.RAKAZO_SCREEN_OCR === "tesseract" ? tesseractOcrEngine : undefined,
+    }),
   });
 
+  const httpSentinelCheck = createHttpSentinelCheckRunner();
   const jobHandlers = createBackgroundJobHandlers({
     executor,
     prisma,
@@ -138,6 +152,19 @@ async function main() {
     secretStore: secrets,
     memoryProviders,
     deploymentModelKey,
+    sentinelWake: (sentinelId, scheduledFor) =>
+      wakeSentinel(
+        {
+          prisma,
+          jobs,
+          events,
+          runCheck: httpSentinelCheck,
+          startRun: (runInput) =>
+            startSentinelRun({ prisma, jobs }, runInput).then(() => undefined),
+        },
+        sentinelId,
+        scheduledFor,
+      ).then(() => undefined),
   });
   await jobHost.start(jobHandlers);
   const reconciler = createJobReconciler({

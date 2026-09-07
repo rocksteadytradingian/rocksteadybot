@@ -179,6 +179,7 @@ describe("contracts", () => {
         trigger: run.trigger,
         promptSnippet: "Review the report",
         updatedAt: "2026-08-26T00:00:01.000Z",
+        outcomeStatus: null,
       }).success,
     ).toBe(true);
     expect(
@@ -216,6 +217,23 @@ describe("contracts", () => {
     ).toBe(true);
     expect(appContract.approvals.repairStack).toBeTruthy();
     expect(RepairStackInput.parse({ restartApi: true })).toEqual({ restartApi: true });
+
+    const base = {
+      runId: run.id,
+      botId: run.botId,
+      botName: "Researcher",
+      groupId: null,
+      groupName: null,
+      threadId: run.threadId,
+      status: run.status,
+      trigger: run.trigger,
+      promptSnippet: "Review the report",
+      updatedAt: "2026-08-26T00:00:01.000Z",
+    };
+    expect(RunActivityRowSchema.safeParse({ ...base, outcomeStatus: "needs_review" }).success).toBe(
+      true,
+    );
+    expect(RunActivityRowSchema.safeParse({ ...base, outcomeStatus: "flaky" }).success).toBe(false);
   });
 
   it("caps remote MCP headers", () => {

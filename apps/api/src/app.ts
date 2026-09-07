@@ -11,10 +11,13 @@ import {
   type ConnectorRegistry,
   createBackgroundJobHandlers,
   createConnectorStack,
+  createHttpSentinelCheckRunner,
   createJobReconciler,
   createRunExecutor,
   createRunSandbox,
   createRunSecretWriter,
+  createScreenRedaction,
+  createWhisperCliEngine,
   type DestinationEmulator,
   destroyBot,
   EncryptedSecretStore,
@@ -38,9 +41,14 @@ import {
   pushTokenPath,
   type RemoteConnectorDependencies,
   repairWorkerStack,
+  resolveWhisperSetup,
   ScriptedAgentRuntime,
+  setWhisperEngine,
+  startSentinelRun,
   supabaseAuthConfigFromEnv,
+  tesseractOcrEngine,
   WorkspaceMemoryProviderResolver,
+  wakeSentinel,
 } from "@rakazo/adapters";
 import { blockedAuthPaths, createAuth, type SendResetPassword } from "@rakazo/auth";
 import { createDb, createThreadEvents, type PrismaClient, requireMembership } from "@rakazo/db";
@@ -124,6 +132,8 @@ export async function createApp(
     prisma,
   });
   const mcpOAuth = new McpOAuthBroker(prisma, secrets, remoteConnectors);
+  const whisperSetup = await resolveWhisperSetup({ dataDir: env.dataDir });
+  if (whisperSetup) setWhisperEngine(createWhisperCliEngine(whisperSetup));
   const memoryProviders = new WorkspaceMemoryProviderResolver(prisma, secrets);
   const oauthLogins = new PiOAuthLogins();
   const home = new LocalAgentHomeStore(env.dataDir);
@@ -221,8 +231,12 @@ export async function createApp(
     notifications,
     jobs,
     events,
+    screenRedaction: createScreenRedaction(prisma, {
+      ocr: process.env.RAKAZO_SCREEN_OCR === "tesseract" ? tesseractOcrEngine : undefined,
+    }),
   });
 
+  const httpSentinelCheck = createHttpSentinelCheckRunner();
   const jobHandlers = createBackgroundJobHandlers({
     executor,
     prisma,
@@ -235,6 +249,19 @@ export async function createApp(
     secretStore: secrets,
     memoryProviders,
     deploymentModelKey: env.deploymentModelKey,
+    sentinelWake: (sentinelId, scheduledFor) =>
+      wakeSentinel(
+        {
+          prisma,
+          jobs,
+          events,
+          runCheck: httpSentinelCheck,
+          startRun: (runInput) =>
+            startSentinelRun({ prisma, jobs }, runInput).then(() => undefined),
+        },
+        sentinelId,
+        scheduledFor,
+      ).then(() => undefined),
   });
   if (inMemoryJobs) {
     await inMemoryJobs.start(jobHandlers);

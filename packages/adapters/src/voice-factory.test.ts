@@ -34,11 +34,17 @@ afterEach(() => {
 describe("createVoiceProvider", () => {
   it("exposes the hosted catalog behind one factory", () => {
     process.env.AGENT_RUNTIME = "pi";
-    expect(VOICE_CATALOG.map((entry) => entry.id)).toEqual(["elevenlabs", "openai", "cartesia"]);
+    expect(VOICE_CATALOG.map((entry) => entry.id)).toEqual([
+      "elevenlabs",
+      "openai",
+      "cartesia",
+      "local-whisper",
+    ]);
     expect(listVoiceCatalog().map((entry) => entry.id)).toEqual([
       "elevenlabs",
       "openai",
       "cartesia",
+      "local-whisper",
     ]);
     expect(createVoiceProvider("elevenlabs").describe().id).toBe("elevenlabs");
     expect(createVoiceProvider("openai").describe().capabilities.transcribe).toBe(true);
@@ -48,6 +54,17 @@ describe("createVoiceProvider", () => {
     expect(isVoiceProviderId("piper")).toBe(false);
     expect(() => createVoiceProvider("piper")).toThrow(/unknown voice provider/i);
     expect(() => createVoiceProvider("scripted")).toThrow(/unknown voice provider/i);
+  });
+
+  it("carries the keyless, transcribe-only Local Whisper entry", () => {
+    const entry = VOICE_CATALOG.find((e) => e.id === "local-whisper");
+    expect(entry).toMatchObject({ keyless: true, synthesize: false, transcribe: true });
+    expect(createVoiceProvider("local-whisper").describe().capabilities).toEqual({
+      catalog: false,
+      synthesize: false,
+      transcribe: true,
+    });
+    expect(isVoiceProviderId("local-whisper")).toBe(true);
   });
 
   it("adds the scripted fixture only when the agent runtime is scripted", () => {

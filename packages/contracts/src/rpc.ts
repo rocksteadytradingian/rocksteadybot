@@ -42,6 +42,7 @@ import {
   ScratchpadItemSchema,
   ScratchpadItemStatusSchema,
   SkillPlaybookSchema,
+  SkillPromotionSuggestionSchema,
   TaughtSkillSchema,
   TeachRecordingEventSchema,
   ThreadMessagePageSchema,
@@ -59,6 +60,7 @@ import {
 } from "./domain.js";
 import { ProductEventSchema } from "./events.js";
 import { Id } from "./ids.js";
+import { RedactionPolicySchema } from "./redaction.js";
 import {
   PendingApprovalSchema,
   RepairStackInput,
@@ -66,6 +68,7 @@ import {
   StackRepairResultSchema,
 } from "./runs.js";
 import { SearchQueryOutputSchema } from "./search.js";
+import { StoredSentinelSchema } from "./sentinels.js";
 
 const botId = z.object({ botId: Id });
 const groupId = z.object({ groupId: Id });
@@ -417,6 +420,19 @@ export const appContract = {
     create: oc.input(CreateAgentSkillInput).output(AgentSkillSchema),
     update: oc.input(UpdateAgentSkillInput).output(AgentSkillSchema),
     remove: oc.input(z.object({ skillId: Id })).output(z.object({ ok: z.literal(true) })),
+    /** User skills that have a proposed revision awaiting review (with full content). */
+    revisions: oc.output(z.array(AgentSkillSchema)),
+    applyRevision: oc.input(z.object({ skillId: Id })).output(AgentSkillSchema),
+    dismissRevision: oc.input(z.object({ skillId: Id })).output(AgentSkillSchema),
+    /** Recurring tool-call sequences in this bot's recent runs, offered as skills to save. */
+    promotionSuggestions: oc
+      .input(z.object({ botId: Id }))
+      .output(z.array(SkillPromotionSuggestionSchema)),
+  },
+  /** URL/screen watchers a bot created with sentinel_create. Managed from the bot too. */
+  sentinels: {
+    list: oc.input(botId).output(z.array(StoredSentinelSchema)),
+    cancel: oc.input(z.object({ sentinelId: Id })).output(z.object({ ok: z.literal(true) })),
   },
   capabilities: {
     list: oc.output(z.array(CapabilityInstallSchema)),
@@ -578,6 +594,12 @@ export const appContract = {
   },
   runs: {
     list: oc.input(z.object({ filter: z.enum(["active", "recent"]) })).output(RunsListOutputSchema),
+  },
+  redaction: {
+    /** The workspace's effective screen-scrubbing policy (off when unset). */
+    get: oc.output(RedactionPolicySchema),
+    /** Replace it. Deployment-owner only. */
+    set: oc.input(RedactionPolicySchema).output(RedactionPolicySchema),
   },
   voice: {
     catalog: oc.output(z.array(VoiceCatalogEntrySchema)),

@@ -10,10 +10,13 @@ function handlers(overrides: Partial<BackgroundJobHandlers> = {}): BackgroundJob
   return {
     "run.continue": vi.fn(async () => undefined),
     "routine.wakeup": vi.fn(async () => undefined),
+    "sentinel.wakeup": vi.fn(async () => undefined),
     "computer.sleep": vi.fn(async () => undefined),
     "computer.control-expire": vi.fn(async () => undefined),
     "skill.teaching-expire": vi.fn(async () => undefined),
+    "skill.revise": vi.fn(async () => undefined),
     "history.compact": vi.fn(async () => undefined),
+    "memory.reflect": vi.fn(async () => undefined),
     ...overrides,
   };
 }
