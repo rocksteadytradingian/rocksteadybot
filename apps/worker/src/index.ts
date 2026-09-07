@@ -33,6 +33,7 @@ import {
   resolveDeploymentModel,
   ScriptedAgentRuntime,
   setWhisperEngine,
+  startSentinelRun,
   tesseractOcrEngine,
   WorkspaceMemoryProviderResolver,
   wakeSentinel,
@@ -149,9 +150,8 @@ async function main() {
           jobs,
           events,
           runCheck: httpSentinelCheck,
-          startRun: async () => {
-            throw new Error("sentinel run actions are not enabled");
-          },
+          startRun: (runInput) =>
+            startSentinelRun({ prisma, jobs }, runInput).then(() => undefined),
         },
         sentinelId,
         scheduledFor,

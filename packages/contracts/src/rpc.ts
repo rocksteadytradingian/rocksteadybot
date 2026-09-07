@@ -60,6 +60,7 @@ import { Id } from "./ids.js";
 import { RedactionPolicySchema } from "./redaction.js";
 import { RunsListOutputSchema } from "./runs.js";
 import { SearchQueryOutputSchema } from "./search.js";
+import { StoredSentinelSchema } from "./sentinels.js";
 
 const botId = z.object({ botId: Id });
 const groupId = z.object({ groupId: Id });
@@ -408,6 +409,11 @@ export const appContract = {
     promotionSuggestions: oc
       .input(z.object({ botId: Id }))
       .output(z.array(SkillPromotionSuggestionSchema)),
+  },
+  /** URL/screen watchers a bot created with sentinel_create. Managed from the bot too. */
+  sentinels: {
+    list: oc.input(botId).output(z.array(StoredSentinelSchema)),
+    cancel: oc.input(z.object({ sentinelId: Id })).output(z.object({ ok: z.literal(true) })),
   },
   capabilities: {
     list: oc.output(z.array(CapabilityInstallSchema)),

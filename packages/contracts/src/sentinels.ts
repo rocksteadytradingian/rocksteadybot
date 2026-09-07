@@ -75,11 +75,12 @@ export const StoredSentinelSchema = z.object({
   name: z.string(),
   check: SentinelCheckSchema,
   trigger: SentinelTriggerSchema,
-  window: SentinelWindowSchema.nullable(),
+  windowMs: z.number().int().positive().nullable(),
   onFire: SentinelActionSchema,
   active: z.boolean(),
   state: SentinelStateSchema.nullable(),
   lastCheckedAt: z.string().datetime({ offset: true }).nullable(),
+  nextRunAt: z.string().datetime({ offset: true }).nullable(),
   createdAt: z.string().datetime({ offset: true }),
 });
 export type StoredSentinel = z.infer<typeof StoredSentinelSchema>;

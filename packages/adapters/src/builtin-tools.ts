@@ -405,7 +405,7 @@ export const builtinAgentTools: ConnectorTool[] = [
   {
     name: "sentinel_create",
     description:
-      'Watch a URL and message this thread only when its state changes — not on every check. Use for "tell me when the deploy goes green" or "ping me if the status page starts failing". Set trigger to becomes-true (fires once when the check first passes), changes (fires when the HTTP status changes), or stays-true-for (fires once the check has passed for `window`, e.g. 15m). Checks run on the schedule you give (repeating only).',
+      'Watch a URL and act only when its state changes — not on every check. Use for "tell me when the deploy goes green" or "if the status page starts failing, investigate". Set trigger to becomes-true (fires once when the check first passes), changes (fires when the HTTP status changes), or stays-true-for (fires once the check has passed for `window`, e.g. 15m). On fire it either posts `message` to this thread, or, if `prompt` is given instead, starts a new run for this bot with that prompt. Checks run on the schedule you give (repeating only).',
     inputSchema: {
       type: "object",
       properties: {
@@ -420,7 +420,14 @@ export const builtinAgentTools: ConnectorTool[] = [
           type: "string",
           description: 'For stays-true-for: how long the check must pass first, e.g. "15m", "2h".',
         },
-        message: { type: "string", description: "What to post to the thread when it fires." },
+        message: {
+          type: "string",
+          description: "Post this to the thread when it fires. Provide message or prompt.",
+        },
+        prompt: {
+          type: "string",
+          description: "Start a run with this instruction when it fires, instead of a message.",
+        },
         cron: { type: "string", description: "5-field cron for the check cadence." },
         every: { type: "number", description: "Check interval amount." },
         unit: {
@@ -430,7 +437,7 @@ export const builtinAgentTools: ConnectorTool[] = [
         },
         timezone: { type: "string", description: "IANA timezone (default UTC)." },
       },
-      required: ["name", "url", "trigger", "message"],
+      required: ["name", "url", "trigger"],
     },
   },
   {

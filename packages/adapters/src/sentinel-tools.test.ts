@@ -126,15 +126,19 @@ describe("createSentinelFromTool", () => {
     expect(d.prisma.sentinel.create).not.toHaveBeenCalled();
   });
 
-  it("rejects a run action until run-from-sentinel is enabled", async () => {
+  it("accepts a run action", async () => {
     const d = deps();
     const result = await createSentinelFromTool(d, {
       ...ctx,
       spec: { ...spec, onFire: { kind: "run", prompt: "investigate" } },
       schedule: { every: 5, unit: "minutes" },
     });
-    expect(result).toEqual({ error: 'Sentinels can only "notify" right now, not start a run.' });
-    expect(d.prisma.sentinel.create).not.toHaveBeenCalled();
+    expect(result).toMatchObject({ ok: true });
+    expect(d.prisma.sentinel.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ onFire: { kind: "run", prompt: "investigate" } }),
+      }),
+    );
   });
 });
 

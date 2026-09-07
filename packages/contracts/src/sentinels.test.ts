@@ -58,11 +58,12 @@ describe("StoredSentinelSchema", () => {
       name: "prod health",
       check: { kind: "text-on-screen", text: "All systems operational" },
       trigger: "becomes-true",
-      window: null,
+      windowMs: null,
       onFire: { kind: "notify", message: "prod is back" },
       active: true,
       state: null,
       lastCheckedAt: null,
+      nextRunAt: null,
       createdAt: "2026-09-07T12:00:00.000Z",
     });
     expect(parsed.state).toBeNull();
