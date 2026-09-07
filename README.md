@@ -22,6 +22,20 @@ RocksteadyBot is in beta.
 - Bots delegate to peer bots — each with its own thread and computer — or to short-lived in-thread
   subagents
 - Generated bot avatars with a per-bot style (robot or organic)
+- **Charts** — bots render bar, line, area, scatter, histogram, heatmap, and box plots from inline
+  rows or a `.csv` / `.tsv` / `.json` file in their home, attached to the thread as a PNG
+
+### Automation
+
+- **Routines** — schedule a prompt on a cron expression, a fixed interval, or a one-shot time, with
+  timezone support; reference a skill with `@Name`
+- **Sentinels** — a bot watches a URL or an on-screen condition and either notifies you or starts a
+  run, firing when it first passes, when the status changes, or once it has held for a set window
+- **Skills** — save a repeated run of tool steps as a reusable recipe; call one with `/Name` in the
+  composer or `@Name` from a routine. Built-in, plugin, and your own skills sit side by side, and
+  when a run that followed a skill fails its check a revised version is drafted for you to accept
+- **Scratchpad** — each bot keeps a list of parked, open work that outlives a single turn, separate
+  from scheduled routines
 
 ### Models
 
@@ -44,11 +58,15 @@ RocksteadyBot is in beta.
 - Speak replies, hold-to-talk dictation, and half-duplex calls
 - Bring your own ElevenLabs, OpenAI, or Cartesia key; speech sits behind a provider-neutral
   interface and keys stay on the server
+- Optional local transcription — RocksteadyBot auto-detects a `whisper-cli` / `whisper` binary and a
+  `ggml-*.bin` model on the server, so dictation needs no cloud key
 
 ### Integrations
 
-- Composio or Pipedream Connect app catalogs, plus user-installed Treg, remote MCP, and OpenAPI
-  tool sources
+- Composio or Pipedream Connect app catalogs on separate tabs, plus user-installed Treg, remote MCP,
+  and OpenAPI tool sources
+- A bot can connect a new MCP server itself (streamable HTTP, SSE, or stdio) from the chat, with a
+  browser-authorization approval card when the server needs one
 - Per-connector usage quotas
 - Connect Gmail and other Google apps as plugins instead of a live account sign-in
 
@@ -58,13 +76,16 @@ RocksteadyBot is in beta.
 - Masked secret handoff (`request_secret`): collect a one-shot OTP, password, or API key in a field
   that never reaches the chat transcript or the model
 - `request_takeover` hands you the live desktop for logins, CAPTCHA, and human judgement
+- **Screen privacy** — a per-workspace policy blacks out or blurs personal data in screenshots
+  before a bot's model sees them, with a confidence threshold and a never-redact allowlist
 - Tool output is compacted before it reaches the model, keeping errors and stack traces intact
 - Worker health and stall monitoring, with in-app stack-repair approvals
 
 ### Workspaces and UI
 
 - Multiple workspaces with fast switching and cross-workspace search
-- Light and dark themes with a theme picker and contrast-checked tokens
+- Six built-in themes (Grok, ChatGPT, Claude, Gemini, Perplexity, Copilot) in light and dark, all
+  driven by contrast-checked design tokens
 - Transcript follows new messages without interrupting a reader, with a jump-to-latest control
 - Web (and Electron-hosted) UI in English, Deutsch, and 한국어
 
