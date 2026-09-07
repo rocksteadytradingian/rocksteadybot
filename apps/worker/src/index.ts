@@ -31,6 +31,7 @@ import {
   PostgresRealtimeFanout,
   pipedreamConfigFromEnv,
   resolveDeploymentModel,
+  resolveWhisperSetup,
   ScriptedAgentRuntime,
   setWhisperEngine,
   startSentinelRun,
@@ -100,7 +101,8 @@ async function main() {
   ]);
   const connector = stack.destination;
   await connector.start();
-  if (process.env.RAKAZO_WHISPER_BIN) setWhisperEngine(createWhisperCliEngine());
+  const whisperSetup = await resolveWhisperSetup({ dataDir });
+  if (whisperSetup) setWhisperEngine(createWhisperCliEngine(whisperSetup));
   const memoryProviders = new WorkspaceMemoryProviderResolver(prisma, secrets);
   const home = new LocalAgentHomeStore(dataDir);
   const artifacts = new LocalArtifactStore(dataDir);

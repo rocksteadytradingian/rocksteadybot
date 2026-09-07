@@ -85,6 +85,24 @@ The Electron desktop app is a client of the same API. Docker and E2B still apply
 - **Desktop provider** / **This Mac** runs commands on the API/worker host. Docker stays the default. The Electron app asks once; if you choose This Mac, bots can use working directories under your home folder. Do not enable it on a public or shared service. macOS does not show its own permission dialog for this.
 - **Fake** is only an emulator for verification.
 
+## On-device dictation (optional)
+
+Voice input normally uses a cloud speech-to-text key. To transcribe on the API host instead —
+no key, nothing leaves the machine — give it [whisper.cpp](https://github.com/ggml-org/whisper.cpp)
+and `ffmpeg`:
+
+1. Build or install `whisper.cpp` so its CLI (`whisper-cli`, or the older `main`) is on `PATH`,
+   and install `ffmpeg`.
+2. Download a ggml model and drop it in `DATA_DIR/whisper/` as `ggml-<name>.bin`
+   (e.g. `ggml-base.en.bin` — ~150 MB; `ggml-small` is more accurate and larger). The newest
+   `ggml-*.bin` in that folder is used.
+
+The API and worker pick this up on start: with a whisper binary on `PATH` and a model in
+`DATA_DIR/whisper/`, on-device dictation turns on and the voice settings show it as available.
+Override any part explicitly with `RAKAZO_WHISPER_BIN`, `RAKAZO_WHISPER_MODEL`,
+`RAKAZO_FFMPEG_BIN`. In a Docker deployment, bake the two binaries into the API image and mount
+a model into `DATA_DIR/whisper/`.
+
 ## Backup
 
 ```bash

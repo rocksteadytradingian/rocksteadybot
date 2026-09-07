@@ -39,6 +39,7 @@ import {
   pipedreamConfigFromEnv,
   pushTokenPath,
   type RemoteConnectorDependencies,
+  resolveWhisperSetup,
   ScriptedAgentRuntime,
   setWhisperEngine,
   startSentinelRun,
@@ -124,7 +125,8 @@ export async function createApp(
     prisma,
   });
   const mcpOAuth = new McpOAuthBroker(prisma, secrets, remoteConnectors);
-  if (process.env.RAKAZO_WHISPER_BIN) setWhisperEngine(createWhisperCliEngine());
+  const whisperSetup = await resolveWhisperSetup({ dataDir: env.dataDir });
+  if (whisperSetup) setWhisperEngine(createWhisperCliEngine(whisperSetup));
   const memoryProviders = new WorkspaceMemoryProviderResolver(prisma, secrets);
   const oauthLogins = new PiOAuthLogins();
   const home = new LocalAgentHomeStore(env.dataDir);
