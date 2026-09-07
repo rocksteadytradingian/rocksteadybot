@@ -33,6 +33,7 @@ import {
   appendToolCallSegment,
   assertTransition,
   blocksToAgentHistoryText,
+  browserSurfaceUnavailableNote,
   clampIdentityFileContent,
   compileRecordingToReplay,
   connectedPluginsInstruction,
@@ -60,6 +61,7 @@ import {
   resolveActionApproval,
   resolveComplexityRouterModelId,
   sandboxCommandTimeoutMs,
+  skillSurface,
   type ToolCallStreak,
   toolRequiresApproval,
   userTurnBlocksForRun,
@@ -2238,6 +2240,10 @@ export function createRunExecutor(deps: ExecutorDeps) {
         const invokedSkill = savedSkills.find((skill) =>
           promptInvokesSkill(taskPrompt, skill.name || skill.goal),
         );
+        // A skill taught in the browser needs a browser driver to replay; none ships yet, so
+        // it runs from its written playbook until that surface lands.
+        const invokedSurface = invokedSkill ? skillSurface(invokedSkill.surface) : "computer";
+        const browserSurfacePending = Boolean(invokedSkill) && invokedSurface === "browser";
         // User AgentSkills this run leaned on — their retrieval stats get folded from the
         // run's outcome, and a contradicted run queues a proposed revision.
         const invokedAgentSkillIds = invokedUserSkillIds(agentSkills, task.prompt);
@@ -2245,7 +2251,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
         // Replay the recorded inputs deterministically before the model runs; the model then
         // verifies, fills what the recording could not, and recovers from any drift.
         let replayHandoff: string | undefined;
-        if (invokedSkill && !scripted) {
+        if (invokedSkill && !scripted && invokedSurface === "computer") {
           try {
             const replaySteps = compileRecordingToReplay(parseRecording(invokedSkill.recording));
             if (replayInputCount(replaySteps) > 0) {
@@ -2268,15 +2274,19 @@ export function createRunExecutor(deps: ExecutorDeps) {
           }
         }
 
-        const basePrompt = invokedSkill
-          ? `${
+        const skillGuidance = invokedSkill
+          ? [
               replayHandoff ??
-              formatSkillRunPrompt(
-                invokedSkill.name || invokedSkill.goal.slice(0, 80),
-                parsePlaybook(invokedSkill.playbook),
-              )
-            }\n\n${taskPrompt}`
-          : taskPrompt;
+                formatSkillRunPrompt(
+                  invokedSkill.name || invokedSkill.goal.slice(0, 80),
+                  parsePlaybook(invokedSkill.playbook),
+                ),
+              browserSurfacePending ? browserSurfaceUnavailableNote() : "",
+            ]
+              .filter(Boolean)
+              .join("\n\n")
+          : "";
+        const basePrompt = invokedSkill ? `${skillGuidance}\n\n${taskPrompt}` : taskPrompt;
         const approvalContinuation = buildApprovalContinuation(approvedEffects, (request) =>
           redactSecrets(JSON.stringify(request), runSecrets),
         );

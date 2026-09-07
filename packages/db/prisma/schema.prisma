@@ -597,6 +597,7 @@ model TaughtSkill {
   name        String    @default("")
   goal        String
   status      String
+  surface     String    @default("computer")
   playbook    Json      @default("{}")
   recording   Json      @default("{\"events\":[],\"snapshots\":[]}")
   startedAt   DateTime?

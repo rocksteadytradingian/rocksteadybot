@@ -44,6 +44,7 @@ import {
   SkillPlaybookSchema,
   SkillPromotionSuggestionSchema,
   TaughtSkillSchema,
+  TaughtSkillSurfaceSchema,
   TeachRecordingEventSchema,
   ThreadMessagePageSchema,
   ThreadSnapshotSchema,
@@ -375,7 +376,13 @@ export const appContract = {
     list: oc.input(botId).output(z.array(TaughtSkillSchema)),
     get: oc.input(z.object({ skillId: Id })).output(TaughtSkillSchema),
     start: oc
-      .input(z.object({ botId: Id, goal: z.string().min(1).max(4000) }))
+      .input(
+        z.object({
+          botId: Id,
+          goal: z.string().min(1).max(4000),
+          surface: TaughtSkillSurfaceSchema.default("computer"),
+        }),
+      )
       .output(TaughtSkillSchema),
     appendEvent: oc
       .input(z.object({ skillId: Id, event: TeachRecordingEventSchema }))

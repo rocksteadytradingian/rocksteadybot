@@ -29,7 +29,7 @@ import {
   type TeachComputerInput,
   teachingControlLeaseExpiresAt,
 } from "@rakazo/adapters";
-import type { Actor, MessageBlock, TaughtSkill } from "@rakazo/contracts";
+import type { Actor, MessageBlock, TaughtSkill, TaughtSkillSurface } from "@rakazo/contracts";
 import {
   ACTIVE_RUN_STATUSES,
   buildPlaybookFromRecording,
@@ -48,6 +48,7 @@ type TaughtSkillRow = {
   name: string;
   goal: string;
   status: string;
+  surface: string;
   playbook: unknown;
   recording: unknown;
   startedAt: Date | null;
@@ -323,7 +324,12 @@ export function createTaughtSkillsService(deps: TaughtSkillsDeps) {
       return mapTaughtSkill(current);
     },
 
-    async start(actor: Actor, botId: string, goal: string): Promise<TaughtSkill> {
+    async start(
+      actor: Actor,
+      botId: string,
+      goal: string,
+      surface: TaughtSkillSurface = "computer",
+    ): Promise<TaughtSkill> {
       let bot = await deps.prisma.bot.findFirst({
         where: { id: botId, workspaceId: actor.workspaceId, userId: actor.userId },
         include: { thread: true, computer: true },
@@ -357,6 +363,7 @@ export function createTaughtSkillsService(deps: TaughtSkillsDeps) {
               botId,
               userId: actor.userId,
               goal,
+              surface,
               status: "recording",
               startedAt,
               expiresAt,

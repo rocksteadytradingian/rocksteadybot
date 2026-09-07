@@ -245,6 +245,10 @@ export const CreateScratchpadItemInput = z.object({
 export const TaughtSkillStatusSchema = z.enum(["recording", "drafting", "draft", "saved"]);
 export type TaughtSkillStatus = z.infer<typeof TaughtSkillStatusSchema>;
 
+/** Where a taught skill runs: the bot's sandbox computer, or the user's browser. */
+export const TaughtSkillSurfaceSchema = z.enum(["computer", "browser"]);
+export type TaughtSkillSurface = z.infer<typeof TaughtSkillSurfaceSchema>;
+
 export const SkillPlaybookSchema = z.object({
   whenToUse: z.string(),
   inputs: z.array(z.string()),
@@ -289,6 +293,7 @@ export const TaughtSkillSchema = z.object({
   name: z.string(),
   goal: z.string(),
   status: TaughtSkillStatusSchema,
+  surface: TaughtSkillSurfaceSchema.default("computer"),
   playbook: SkillPlaybookSchema,
   recording: TeachRecordingSchema,
   startedAt: z.string().nullable(),
