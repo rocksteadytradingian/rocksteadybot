@@ -768,6 +768,16 @@ export const WorkspaceMemoryConfigSchema = z.object({
 });
 export type WorkspaceMemoryConfig = z.infer<typeof WorkspaceMemoryConfigSchema>;
 
+export const BotFolderSchema = z.object({
+  id: z.string(),
+  botId: z.string(),
+  path: z.string(),
+  label: z.string(),
+  addedByUserId: z.string(),
+  createdAt: z.string(),
+});
+export type BotFolder = z.infer<typeof BotFolderSchema>;
+
 export const ModelCatalogEntrySchema = z.object({
   provider: z.string(),
   providerName: z.string().optional(),

@@ -67,6 +67,8 @@ export interface SandboxProvider {
       homePath: string;
       providerRef?: string;
       providerKind?: ComputerRef["kind"];
+      /** Host directories to bind-mount into the computer (opt-in; Docker only). */
+      folders?: string[];
     },
     context: AdapterContext,
   ): Promise<ComputerRef>;

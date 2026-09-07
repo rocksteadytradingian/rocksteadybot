@@ -67,7 +67,7 @@ export class DockerSandboxProvider implements SandboxProvider {
   }
 
   async provision(
-    request: { botId: string; homePath: string },
+    request: { botId: string; homePath: string; folders?: string[] },
     context: AdapterContext,
   ): Promise<ComputerRef> {
     const res = await fetch(this.url("/computers"), {
@@ -77,6 +77,7 @@ export class DockerSandboxProvider implements SandboxProvider {
         botId: request.botId,
         homePath: request.homePath,
         workspaceId: context.workspaceId,
+        ...(request.folders && request.folders.length > 0 ? { folders: request.folders } : {}),
         ...(context.operationId === "restart" ? { replace: true } : {}),
       }),
       signal: context.signal,

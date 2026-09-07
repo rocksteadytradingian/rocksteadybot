@@ -5,12 +5,18 @@ import http from "node:http";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { serve } from "@hono/node-server";
-import { boundedSandboxCommandTimeoutMs, resolveSupervisorToken } from "@rakazo/core";
+import {
+  botFolderMountsEnabled,
+  botFolderSpecHash,
+  boundedSandboxCommandTimeoutMs,
+  resolveSupervisorToken,
+} from "@rakazo/core";
 import { loadRootEnv } from "@rakazo/core/node/load-root-env";
 import Docker from "dockerode";
 import { Hono } from "hono";
 import { z } from "zod";
 import {
+  BOT_FOLDERS_LABEL,
   COMPUTER_IMAGE,
   computerNetworkNameFor,
   computerNetworkNamesForCleanup,
@@ -94,8 +100,12 @@ app.post("/computers", async (c) => {
       homePath: z.string().min(1),
       workspaceId: z.string().min(1),
       replace: z.boolean().optional(),
+      folders: z.array(z.string().min(1)).max(32).optional(),
     })
     .parse(await c.req.json());
+  // The adapter only sends folders once it has resolved + gated them, but keep
+  // the boundary honest: a supervisor without the flag mounts nothing.
+  const folders = botFolderMountsEnabled() ? (body.folders ?? []) : [];
   try {
     assertRequestIdentity(c.req.header("x-rakazo-bot-id"), c.req.header("x-rakazo-workspace-id"), {
       botId: body.botId,
@@ -116,7 +126,8 @@ app.post("/computers", async (c) => {
         if (
           body.replace ||
           info.Image !== desired.Id ||
-          (networkMode && info.HostConfig.NetworkMode !== networkMode)
+          (networkMode && info.HostConfig.NetworkMode !== networkMode) ||
+          (info.Config.Labels?.[BOT_FOLDERS_LABEL] ?? "none") !== botFolderSpecHash(folders)
         ) {
           await existing.remove({ force: true }).catch(() => undefined);
         } else {
@@ -142,6 +153,7 @@ app.post("/computers", async (c) => {
         workspaceId: body.workspaceId,
         homePath,
         networkMode,
+        folders,
       });
       await container.start();
       const screenUrl = await publishedScreenUrl(container);

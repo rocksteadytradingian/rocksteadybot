@@ -121,6 +121,7 @@ import {
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { ArtifactFileCard } from "../components/ArtifactFileCard";
 import { AskCard } from "../components/AskCard";
+import { BotFoldersSection } from "../components/BotFoldersSection";
 import {
   ActiveBotGlyph,
   CollaborationMarker,
@@ -3083,6 +3084,12 @@ export function ShellPage() {
                         setEditingRoutine(null);
                         setPanel("routine");
                       }}
+                    />
+                  ) : null}
+                  {active ? (
+                    <BotFoldersSection
+                      botId={active.id}
+                      computerMode={computer?.mode ?? active.computerMode}
                     />
                   ) : null}
                 </div>

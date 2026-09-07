@@ -33,6 +33,8 @@ import {
   appendToolCallSegment,
   assertTransition,
   blocksToAgentHistoryText,
+  botFolderMounts,
+  botFolderMountsEnabled,
   clampIdentityFileContent,
   compileRecordingToReplay,
   connectedPluginsInstruction,
@@ -73,6 +75,7 @@ import {
   findDefaultModelCredential,
   findModelCredential,
   findUserProviderModelCredentials,
+  listBotFolders,
   type McpServer,
   type Prisma,
   type PrismaClient,
@@ -966,10 +969,28 @@ export function createRunExecutor(deps: ExecutorDeps) {
           : graphical
             ? `You have a persistent computer filesystem and shell. ${MODEL_CANNOT_SEE_MESSAGE} Desktop observe and act tools are unavailable until a vision-capable model is selected. Use the file tools and shell.`
             : "You have a persistent sandbox filesystem and shell. This backend does not provide model-visible graphical control, so use the file tools and shell.";
-        const workspaceInstruction =
+        const baseWorkspaceInstruction =
           computerMode === "team"
             ? `Your Team Computer home is ${teamBotWorkspaceDirectory(bot.id)}. Relative file paths and shell working directories start there. Put intentionally shared work under shared/. Other bots' folders are visible under bots/; treat them as their working areas.`
             : "This entire computer workspace is your private home. Relative file paths and shell working directories start at its root.";
+        // Folder bind-mounts only exist on a Private computer, and only when the
+        // deployment opted in — mirror the gate the sandbox factory applies.
+        const mountedFolders =
+          computerMode !== "team" && botFolderMountsEnabled()
+            ? await listBotFolders(deps.prisma, bot.id)
+            : [];
+        const folderInstruction =
+          mountedFolders.length > 0
+            ? ` These host folders are mounted read-write: ${botFolderMounts(
+                mountedFolders.map((folder) => folder.path),
+              )
+                .map((mount, index) => {
+                  const label = mountedFolders[index]?.label?.trim();
+                  return `${mount.containerPath}${label ? ` (${label})` : ""}`;
+                })
+                .join(", ")}. Changes there write straight back to the user's machine.`
+            : "";
+        const workspaceInstruction = `${baseWorkspaceInstruction}${folderInstruction}`;
 
         let assembled = "";
         let currentTextSegment = "";

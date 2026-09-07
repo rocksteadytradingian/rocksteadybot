@@ -61,7 +61,15 @@ interface DesktopBox {
 export class DesktopSandboxProvider implements SandboxProvider {
   readonly boxes = new Map<string, DesktopBox>();
 
-  constructor(private readonly opts: { root?: string; hostRoots?: string[] } = {}) {}
+  constructor(
+    private readonly opts: {
+      root?: string;
+      /** Host directories any bot may use, regardless of its own allow-list. */
+      hostRoots?: string[];
+      /** Per-bot allow-list of host directories that bot may run commands in. */
+      resolveBotRoots?: (botId: string) => Promise<string[]>;
+    } = {},
+  ) {}
 
   describe() {
     return {
@@ -127,7 +135,7 @@ export class DesktopSandboxProvider implements SandboxProvider {
       return;
     }
     const cwd = resolveExecuteCwd(request.cwd, box.home);
-    if (!isAllowedDesktopPath(cwd, this.allowedRoots(box.home))) {
+    if (!isAllowedDesktopPath(cwd, await this.allowedRoots(box.home, context.botId))) {
       yield { type: "stderr", data: "path is outside this computer's home" };
       yield { type: "exit", code: 1 };
       return;
@@ -300,8 +308,22 @@ export class DesktopSandboxProvider implements SandboxProvider {
     return box;
   }
 
-  private allowedRoots(home: string) {
-    return [home, ...(this.opts.hostRoots ?? [])];
+  /**
+   * Directories a command may use as its cwd: the computer's own home, the
+   * deployment-wide `hostRoots`, and the folders this bot has explicitly
+   * allow-listed. Bot folders are realpath-resolved and dropped if they no
+   * longer exist, so a stale or dangling entry can never widen scope.
+   */
+  private async allowedRoots(home: string, botId?: string): Promise<string[]> {
+    const roots = [home, ...(this.opts.hostRoots ?? [])];
+    if (botId && this.opts.resolveBotRoots) {
+      const configured = await this.opts.resolveBotRoots(botId).catch(() => []);
+      for (const entry of configured) {
+        const real = await realpath(entry).catch(() => null);
+        if (real) roots.push(real);
+      }
+    }
+    return [...new Set(roots)];
   }
 }
 

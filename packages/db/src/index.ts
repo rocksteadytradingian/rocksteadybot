@@ -1,3 +1,4 @@
+export * from "./bot-folders.js";
 export * from "./client.js";
 export * from "./composio-credentials.js";
 export * from "./computers.js";

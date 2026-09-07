@@ -1,7 +1,9 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
+import { botFolderSpecHash } from "@rakazo/core";
 import { describe, expect, it } from "vitest";
 import {
+  BOT_FOLDERS_LABEL,
   COMPUTER_IMAGE,
   computerNetworkNameFor,
   computerNetworkNamesForCleanup,
@@ -29,6 +31,7 @@ describe("graphical computer spec", () => {
     expect(options).not.toHaveProperty("Entrypoint");
     expect(JSON.stringify(options)).not.toMatch(/sleep/);
     expect(options.HostConfig.Binds).toEqual(["/var/rakazo/homes/abc:/home/rakazo"]);
+    expect(options.Labels[BOT_FOLDERS_LABEL]).toBe("none");
     expect(options.Env).toContain(
       "PATH=/home/rakazo/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
     );
@@ -59,6 +62,25 @@ describe("graphical computer spec", () => {
     expect(options.HostConfig.ShmSize).toBeGreaterThanOrEqual(256 * 1024 * 1024);
     expect(options.HostConfig.ReadonlyPaths).toContain("/usr/share/novnc");
     expect(options.HostConfig.NetworkMode).toBe("rakazo_default");
+  });
+
+  it("bind-mounts allow-listed folders read-write and stamps a spec hash", () => {
+    const folders = ["C:\\Users\\me\\Downloads", "/srv/reports"];
+    const options = containerCreateOptions({
+      name: "rakazo-bot-abc",
+      image: COMPUTER_IMAGE,
+      botId: "abc",
+      workspaceId: "ws",
+      homePath: "/var/rakazo/homes/abc",
+      folders,
+    });
+    expect(options.HostConfig.Binds).toEqual([
+      "/var/rakazo/homes/abc:/home/rakazo",
+      "C:\\Users\\me\\Downloads:/mnt/folders/downloads:rw",
+      "/srv/reports:/mnt/folders/reports:rw",
+    ]);
+    expect(options.Labels[BOT_FOLDERS_LABEL]).toBe(botFolderSpecHash(folders));
+    expect(options.Labels[BOT_FOLDERS_LABEL]).not.toBe("none");
   });
 
   it("still publishes host ports when NetworkMode is a per-bot isolated network", () => {

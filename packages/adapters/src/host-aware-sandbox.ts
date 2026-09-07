@@ -1,4 +1,3 @@
-import { homedir } from "node:os";
 import type {
   AdapterContext,
   CommandRequest,
@@ -11,7 +10,8 @@ import type {
   SandboxProvider,
   ScreenRequest,
 } from "@rakazo/adapter-kit";
-import type { PrismaClient } from "@rakazo/db";
+import { botFolderMountsEnabled } from "@rakazo/core";
+import { listBotFolders, type PrismaClient } from "@rakazo/db";
 import { DesktopSandboxProvider } from "./desktop-sandbox.js";
 import { createSandboxProvider, type SandboxProviderOptions } from "./sandbox-factory.js";
 
@@ -20,14 +20,29 @@ export function sandboxKindForBot(envKind: string, computerHost: string | null |
   return envKind;
 }
 
+/**
+ * A bot reaches the host filesystem only through the folders it has explicitly
+ * allow-listed (see BotFolder) — another bot on the same computer does not
+ * inherit them. With no `prisma` to resolve that list, no host folder is offered.
+ */
+function botRootResolver(prisma: PrismaClient | undefined) {
+  if (!prisma) return undefined;
+  return async (botId: string) => {
+    const folders = await listBotFolders(prisma, botId);
+    return folders.map((folder) => folder.path);
+  };
+}
+
 export function createRunSandbox(
   kind: string,
   opts: SandboxProviderOptions & { prisma?: PrismaClient },
 ): SandboxProvider {
+  const resolveBotRoots = botRootResolver(opts.prisma);
   if (kind === "desktop") {
     return new DesktopSandboxProvider({
       root: opts.dataDir,
-      hostRoots: [homedir()],
+      hostRoots: [],
+      resolveBotRoots,
     });
   }
   const primary = createSandboxProvider(kind, opts);
@@ -36,7 +51,8 @@ export function createRunSandbox(
     primary,
     new DesktopSandboxProvider({
       root: opts.dataDir,
-      hostRoots: [homedir()],
+      hostRoots: [],
+      resolveBotRoots,
     }),
     async () => {
       const settings = await opts.prisma!.deploymentSettings.findUnique({
@@ -44,6 +60,11 @@ export function createRunSandbox(
       });
       return settings?.computerHost === "this-mac";
     },
+    // Bind-mount a bot's folders into its Docker computer only when the
+    // deployment opts in. `botId` is the bot's own id for a Private computer and
+    // `team-<workspaceId>` for a shared one, which has no folder rows — so shared
+    // computers get nothing without any extra check.
+    botFolderMountsEnabled() ? resolveBotRoots : undefined,
   );
 }
 
@@ -52,6 +73,7 @@ export class HostAwareSandbox implements SandboxProvider {
     private readonly isolated: SandboxProvider,
     private readonly host: SandboxProvider,
     private readonly hostEnabled: () => Promise<boolean>,
+    private readonly resolveBotFolders?: (botId: string) => Promise<string[]>,
   ) {}
 
   describe() {
@@ -68,14 +90,22 @@ export class HostAwareSandbox implements SandboxProvider {
       homePath: string;
       providerRef?: string;
       providerKind?: ComputerRef["kind"];
+      folders?: string[];
     },
     context: AdapterContext,
   ) {
     const provider = (await this.hostEnabled()) ? this.host : this.isolated;
     const providerKind = provider.describe().id;
+    // Only the isolated (Docker) provider bind-mounts folders at provision time;
+    // the desktop provider reads the same list itself, per command.
+    const folders =
+      provider === this.isolated && this.resolveBotFolders
+        ? await this.resolveBotFolders(request.botId).catch(() => [])
+        : undefined;
     return provider.provision(
       {
         ...request,
+        folders: folders && folders.length > 0 ? folders : undefined,
         providerRef: request.providerKind === providerKind ? request.providerRef : undefined,
       },
       context,
