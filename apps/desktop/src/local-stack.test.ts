@@ -518,7 +518,7 @@ describe("launcher files", () => {
     expect(cmd).not.toContain('start "" /D');
     expect(cmd).toContain("RAKAZO_REPO_ROOT");
     expect(cmd).toContain("desktop-launch.log");
-    expect(cmd).toContain("git fetch origin");
+    expect(cmd).toContain("git fetch rckbot");
     expect(cmd).not.toContain("git pull");
     expect(cmd).toContain("http://127.0.0.1:5173/sign-in");
     expect(cmd).toContain("install-desktop-shortcut.vbs");
