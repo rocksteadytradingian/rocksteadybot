@@ -10,6 +10,72 @@ export const DELEGATION_TOOL_NAMES = new Set([
   "message_bot",
 ]);
 
+/**
+ * Graphical tools for a `browser`-surface run: the model drives a real browser through the
+ * accessibility tree instead of `computer_observe` / `computer_act`. Swapped in by the
+ * executor only when the run's surface is `browser` and a browser driver is configured.
+ */
+export const browserAgentTools: ConnectorTool[] = [
+  {
+    name: "browser_snapshot",
+    description:
+      "Read the current page as an accessibility tree. Returns the URL, title, and elements tagged with [ref=eN] handles. Snapshot before acting and whenever the page may have changed.",
+    inputSchema: { type: "object", properties: {} },
+  },
+  {
+    name: "browser_navigate",
+    description: "Load a URL in the browser and return the resulting page snapshot.",
+    inputSchema: {
+      type: "object",
+      properties: { url: { type: "string" } },
+      required: ["url"],
+    },
+  },
+  {
+    name: "browser_click",
+    description:
+      "Click the element with this [ref=eN] handle from the latest browser_snapshot. Returns the resulting page.",
+    inputSchema: {
+      type: "object",
+      properties: { ref: { type: "string" } },
+      required: ["ref"],
+    },
+  },
+  {
+    name: "browser_type",
+    description:
+      "Type text into the element with this [ref=eN] handle. Set submit true to press Enter after. Returns the resulting page.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        ref: { type: "string" },
+        text: { type: "string" },
+        submit: { type: "boolean" },
+      },
+      required: ["ref", "text"],
+    },
+  },
+  {
+    name: "browser_select",
+    description:
+      "Choose one or more option values in the <select> element with this [ref=eN] handle. Returns the resulting page.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        ref: { type: "string" },
+        values: { type: "array", items: { type: "string" } },
+      },
+      required: ["ref", "values"],
+    },
+  },
+  {
+    name: "browser_screenshot",
+    description:
+      "Capture a PNG screenshot of the current page. Use only when the accessibility tree is not enough to judge what is on screen.",
+    inputSchema: { type: "object", properties: {} },
+  },
+];
+
 export const builtinAgentTools: ConnectorTool[] = [
   {
     name: "computer_observe",
