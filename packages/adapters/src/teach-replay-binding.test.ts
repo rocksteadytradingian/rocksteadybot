@@ -1,6 +1,7 @@
-import type { ComputerObservation, ComputerRef } from "@rakazo/adapter-kit";
+import type { BrowserSession, ComputerObservation, ComputerRef } from "@rakazo/adapter-kit";
 import { describe, expect, it, vi } from "vitest";
 import {
+  bindBrowserReplayRunner,
   bindReplayRunner,
   hashCheckpointStrategy,
   replayHandoffPrompt,
@@ -70,6 +71,65 @@ describe("bindReplayRunner", () => {
     );
 
     expect(await deps.checkAt({ expect: "e", snapshotHash: "f1" })).toEqual({ onTrack: true });
+  });
+});
+
+describe("bindBrowserReplayRunner", () => {
+  function fakeSession(over: Partial<BrowserSession> = {}): BrowserSession {
+    return {
+      navigate: vi.fn(async () => ({ ok: true, snapshot: undefined })),
+      snapshot: vi.fn(async () => ({ url: "u", title: "t", tree: "-", hash: "h1" })),
+      click: vi.fn(async () => ({ ok: true })),
+      type: vi.fn(async () => ({ ok: true })),
+      select: vi.fn(async () => ({ ok: true })),
+      screenshot: vi.fn(async () => ({ png: new Uint8Array() })),
+      close: vi.fn(async () => undefined),
+      ...over,
+    } as never;
+  }
+
+  it("routes each op to the browser session and reports ok", async () => {
+    const session = fakeSession();
+    const deps = bindBrowserReplayRunner({ browser: session, context });
+    expect(await deps.browserStep!({ op: "navigate", url: "https://x.test" })).toEqual({
+      ok: true,
+      note: undefined,
+    });
+    expect(session.navigate).toHaveBeenCalledWith("https://x.test");
+    await deps.browserStep!({ op: "type", ref: "e2", text: "hi", submit: true });
+    expect(session.type).toHaveBeenCalledWith("e2", "hi", { submit: true });
+  });
+
+  it("surfaces a failed action and a thrown error as not-ok", async () => {
+    const session = fakeSession({
+      click: vi.fn(async () => ({ ok: false, note: "no element e9" })),
+      select: vi.fn(async () => {
+        throw new Error("boom");
+      }),
+    });
+    const deps = bindBrowserReplayRunner({ browser: session, context });
+    expect(await deps.browserStep!({ op: "click", ref: "e9" })).toEqual({
+      ok: false,
+      note: "no element e9",
+    });
+    expect(await deps.browserStep!({ op: "select", ref: "e1", values: ["a"] })).toEqual({
+      ok: false,
+      note: "boom",
+    });
+  });
+
+  it("checkAt compares the live tree hash to the recorded one", async () => {
+    const deps = bindBrowserReplayRunner({ browser: fakeSession(), context });
+    expect(await deps.checkAt({ expect: "e" })).toEqual({ onTrack: true });
+    expect(await deps.checkAt({ expect: "e", snapshotHash: "h1" })).toEqual({ onTrack: true });
+    const drift = await deps.checkAt({ expect: "cart shows the item", snapshotHash: "stale" });
+    expect(drift.onTrack).toBe(false);
+    expect(drift.note).toContain("cart shows the item");
+  });
+
+  it("throws if a raw input step is ever routed to it", async () => {
+    const deps = bindBrowserReplayRunner({ browser: fakeSession(), context });
+    await expect(deps.sendInput({ kind: "clipboard", text: "x" })).rejects.toThrow();
   });
 });
 

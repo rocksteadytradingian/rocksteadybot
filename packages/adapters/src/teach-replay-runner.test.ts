@@ -75,4 +75,63 @@ describe("runReplay", () => {
     const result = await runReplay(steps, d);
     expect(result.status).toBe("aborted");
   });
+
+  describe("browser steps", () => {
+    const browserSteps = compileRecordingToReplay({
+      events: [
+        { at: "b1", kind: "browser", action: "navigate", url: "https://x.test", hash: "h1" },
+        { at: "b2", kind: "browser", action: "click", ref: "e2", hash: "h2" },
+        { at: "b3", kind: "browser", action: "checkpoint", summary: "loaded", hash: "h3" },
+      ],
+    });
+
+    it("drives each browser step and passes the checkpoint", async () => {
+      const ops: string[] = [];
+      const browserStep = vi.fn(async (step: { op: string }) => {
+        ops.push(step.op);
+        return { ok: true };
+      });
+      const d = deps({ browserStep, checkAt: vi.fn(async () => ({ onTrack: true })) });
+      const result = await runReplay(browserSteps, d);
+      expect(result).toMatchObject({ status: "completed", applied: 2, checkpointsPassed: 1 });
+      expect(ops).toEqual(["navigate", "click"]);
+    });
+
+    it("drifts when a browser step fails", async () => {
+      const d = deps({
+        browserStep: vi.fn(async (s: { op: string }) =>
+          s.op === "click" ? { ok: false, note: "no element e2" } : { ok: true },
+        ),
+      });
+      const result = await runReplay(browserSteps, d);
+      expect(result.status).toBe("drifted");
+      expect(result.note).toBe("no element e2");
+    });
+
+    it("drifts when there is no browser binding", async () => {
+      const d = deps({ browserStep: undefined });
+      const result = await runReplay(browserSteps, d);
+      expect(result.status).toBe("drifted");
+      expect(result.note).toContain("no browser session");
+    });
+
+    it("skips a secret-like browser type step", async () => {
+      const secret = compileRecordingToReplay({
+        events: [
+          {
+            at: "s1",
+            kind: "browser",
+            action: "type",
+            ref: "e1",
+            text: "[redacted input]",
+            hash: "h",
+          },
+        ],
+      });
+      const browserStep = vi.fn(async () => ({ ok: true }));
+      const result = await runReplay(secret, deps({ browserStep }));
+      expect(result.skippedSecrets).toBe(1);
+      expect(browserStep).not.toHaveBeenCalled();
+    });
+  });
 });
