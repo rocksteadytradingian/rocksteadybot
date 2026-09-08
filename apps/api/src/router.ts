@@ -2014,7 +2014,7 @@ export function createRouter(deps: RouterDeps) {
       ),
       start: authed.skills.start.handler(async ({ context, input }) => {
         await repos.getBot(context.actor, input.botId);
-        return taughtSkills.start(context.actor, input.botId, input.goal);
+        return taughtSkills.start(context.actor, input.botId, input.goal, input.surface);
       }),
       appendEvent: authed.skills.appendEvent.handler(async ({ context, input }) =>
         taughtSkills.appendEvent(context.actor, input.skillId, input.event),

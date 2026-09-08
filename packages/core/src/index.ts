@@ -35,6 +35,7 @@ export * from "./sentinel.js";
 export * from "./signup-policy.js";
 export * from "./skill-promotion.js";
 export * from "./skill-retrieval.js";
+export * from "./skill-surface.js";
 export * from "./speech-text.js";
 export * from "./teach-playbook.js";
 export * from "./teach-recording.js";

@@ -11,6 +11,7 @@ import {
   buildPlaybookFromRecording,
   computerInputForDomKey,
   type SkillPlaybook,
+  skillSurface,
   type TeachRecordingEvent,
   type TeachSnapshot,
 } from "@rakazo/core";
@@ -33,6 +34,7 @@ export type TaughtSkillRow = {
   name: string;
   goal: string;
   status: string;
+  surface: string;
   playbook: unknown;
   recording: unknown;
   startedAt: Date | null;
@@ -96,6 +98,7 @@ export function mapTaughtSkill(row: TaughtSkillRow): TaughtSkill {
     name: row.name,
     goal: row.goal,
     status: row.status as TaughtSkill["status"],
+    surface: skillSurface(row.surface),
     playbook: parsePlaybook(row.playbook),
     recording: parseRecording(row.recording),
     startedAt: row.startedAt?.toISOString() ?? null,

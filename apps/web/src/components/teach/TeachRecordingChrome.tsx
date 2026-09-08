@@ -33,6 +33,13 @@ export function TeachRecordingChrome({
     return () => window.clearInterval(timer);
   }, [recording.expiresAt]);
 
+  const surfaceLabel =
+    recording.surface === "browser" ? (
+      <Trans>in your browser</Trans>
+    ) : (
+      <Trans>on the bot's computer</Trans>
+    );
+
   if (variant === "overlay") {
     return (
       <div
@@ -42,6 +49,7 @@ export function TeachRecordingChrome({
         <div className="truncate text-[13px] text-[var(--rk-ink)]">
           <Trans>Recording: {recording.goal}</Trans>
         </div>
+        <div className="text-[12px] text-[var(--rk-muted-2)]">{surfaceLabel}</div>
         <div className="text-[12px] text-[var(--rk-muted)]">
           <Trans>{remaining} left · bot is watching, not acting</Trans>
         </div>
@@ -60,6 +68,7 @@ export function TeachRecordingChrome({
       <div className="text-[14px] text-[var(--rk-ink)]">
         <Trans>Recording: {recording.goal}</Trans>
       </div>
+      <div className="mt-1 text-[12px] text-[var(--rk-muted-2)]">{surfaceLabel}</div>
       <div className="mt-1 text-[13px] text-[var(--rk-muted)]">
         <Trans>{remaining} left · bot is watching, not acting</Trans>
       </div>
