@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { browserTeachEvent } from "./browser-teach.js";
+import { browserRecordingOrigins, browserTeachEvent } from "./browser-teach.js";
 import type { TeachRecordingEvent } from "./teach-playbook.js";
 import { buildPlaybookFromRecording, describeBrowserStep } from "./teach-playbook.js";
 
@@ -95,5 +95,28 @@ describe("buildPlaybookFromRecording with browser events", () => {
       'Type "SAVE10" into "Coupon" and submit.',
       "Check: discount applied.",
     ]);
+  });
+});
+
+describe("browserRecordingOrigins", () => {
+  it("returns distinct http(s) origins in first-seen order", () => {
+    const events: TeachRecordingEvent[] = [
+      { at: "1", kind: "browser", action: "navigate", url: "https://mail.example.com/inbox" },
+      { at: "2", kind: "browser", action: "click", url: "https://mail.example.com/thread/1" },
+      { at: "3", kind: "browser", action: "navigate", url: "https://crm.example.com/leads?q=x" },
+      { at: "4", kind: "pointer", type: "click", x: 1, y: 1 },
+      { at: "5", kind: "browser", action: "navigate", url: "about:blank" },
+      { at: "6", kind: "browser", action: "navigate", url: "not a url" },
+    ];
+    expect(browserRecordingOrigins(events)).toEqual([
+      "https://mail.example.com",
+      "https://crm.example.com",
+    ]);
+  });
+
+  it("is empty for a non-browser recording", () => {
+    expect(
+      browserRecordingOrigins([{ at: "1", kind: "pointer", type: "click", x: 1, y: 1 }]),
+    ).toEqual([]);
   });
 });

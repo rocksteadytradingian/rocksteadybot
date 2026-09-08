@@ -12,6 +12,7 @@ import {
   BotMcpServerSchema,
   BotSchema,
   BotSectionSchema,
+  BrowserSignInSchema,
   BrowserTeachActionInputSchema,
   BrowserTeachViewSchema,
   CapabilityInstallSchema,
@@ -396,6 +397,16 @@ export const appContract = {
     browserAction: oc
       .input(z.object({ botId: Id, action: BrowserTeachActionInputSchema }))
       .output(BrowserTeachViewSchema),
+    /** Origins the user has confirmed this bot's browser is signed into. */
+    browserSignIns: oc.input(botId).output(z.array(BrowserSignInSchema)),
+    /** Record that this bot's browser is signed into an origin (so unattended runs may use it). */
+    browserConfirmSignIn: oc
+      .input(z.object({ botId: Id, origin: z.string().url() }))
+      .output(z.array(BrowserSignInSchema)),
+    /** Drop a recorded sign-in for an origin. */
+    browserForgetSignIn: oc
+      .input(z.object({ botId: Id, origin: z.string() }))
+      .output(z.array(BrowserSignInSchema)),
     stop: oc.input(z.object({ skillId: Id })).output(TaughtSkillSchema),
     updateDraft: oc
       .input(

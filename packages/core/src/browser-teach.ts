@@ -46,3 +46,29 @@ export function browserTeachEvent(
   if (input.kind === "checkpoint" && input.expect) base.summary = input.expect.trim();
   return base;
 }
+
+/**
+ * Distinct http(s) origins a browser demonstration visited — the sites a bot must be signed
+ * into for an unattended replay of the skill to work. Non-http(s) and unparseable URLs are
+ * skipped; order follows first appearance.
+ */
+export function browserRecordingOrigins(events: readonly TeachRecordingEvent[]): string[] {
+  const seen = new Set<string>();
+  const origins: string[] = [];
+  for (const event of events) {
+    if (event.kind !== "browser" || !event.url) continue;
+    let origin: string;
+    try {
+      const parsed = new URL(event.url);
+      if (parsed.protocol !== "http:" && parsed.protocol !== "https:") continue;
+      origin = parsed.origin;
+    } catch {
+      continue;
+    }
+    if (!seen.has(origin)) {
+      seen.add(origin);
+      origins.push(origin);
+    }
+  }
+  return origins;
+}

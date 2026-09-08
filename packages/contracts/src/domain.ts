@@ -322,6 +322,13 @@ export const BrowserTeachActionInputSchema = z.object({
 });
 export type BrowserTeachActionInput = z.infer<typeof BrowserTeachActionInputSchema>;
 
+/** An origin the user has confirmed a bot's browser is signed into. */
+export const BrowserSignInSchema = z.object({
+  origin: z.string(),
+  confirmedAt: z.string(),
+});
+export type BrowserSignIn = z.infer<typeof BrowserSignInSchema>;
+
 export const TeachSnapshotSchema = z.object({
   at: z.string(),
   summary: z.string(),
