@@ -36,6 +36,7 @@ import {
   appendToolCallSegment,
   assertTransition,
   blocksToAgentHistoryText,
+  browserRecordingOrigins,
   browserSurfaceUnavailableNote,
   clampIdentityFileContent,
   compileRecordingToReplay,
@@ -79,6 +80,7 @@ import {
   findModelCredential,
   findUserProviderModelCredentials,
   type McpServer,
+  missingBrowserSignIns,
   type Prisma,
   type PrismaClient,
   parseComputerMode,
@@ -2342,6 +2344,48 @@ export function createRunExecutor(deps: ExecutorDeps) {
         // without one it runs from its written playbook.
         const browserSurfacePending =
           Boolean(invokedSkill) && invokedSurface === "browser" && !deps.browser;
+
+        // An unattended browser run cannot pause for a login. If the skill visits an origin
+        // the bot has no confirmed sign-in for, stop now with a clear message instead of
+        // letting the model click into a login wall with nobody watching.
+        if (
+          invokedSkill &&
+          invokedSurface === "browser" &&
+          deps.browser &&
+          (run.trigger === "routine" || run.trigger === "sentinel")
+        ) {
+          const origins = browserRecordingOrigins(parseRecording(invokedSkill.recording).events);
+          const missing = await missingBrowserSignIns(deps.prisma, run.botId, origins);
+          if (missing.length > 0) {
+            const message = `This run needs ${bot.name}'s browser signed in to ${missing.join(
+              ", ",
+            )}. Open the bot's browser, sign in there, then it will run next time.`;
+            const failed = await deps.events.finalizeRun({
+              workspaceId: run.workspaceId,
+              threadId: thread.id,
+              botId: bot.id,
+              runId,
+              taskId: run.taskId,
+              attemptId: attempt.id,
+              leaseOwner: workerId,
+              leaseFence: fence,
+              outcome: "failed",
+              error: message,
+            });
+            if (failed && bot.notifyOnFinish) {
+              await notifyRun(deps, run, {
+                kind: "failure",
+                title: `${bot.name} needs a browser sign-in`,
+                body: message.slice(0, 180),
+                botId: bot.id,
+                threadId: thread.id,
+              });
+            }
+            runAbortController?.abort();
+            return;
+          }
+        }
+
         // User AgentSkills this run leaned on — their retrieval stats get folded from the
         // run's outcome, and a contradicted run queues a proposed revision.
         const invokedAgentSkillIds = invokedUserSkillIds(agentSkills, task.prompt);
