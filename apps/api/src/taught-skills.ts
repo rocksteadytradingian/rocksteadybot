@@ -52,7 +52,14 @@ import {
   type TeachRecordingEvent,
   teachRecordingTtlMs,
 } from "@rakazo/core";
-import { IsolationError, type PrismaClient, type ThreadEvents } from "@rakazo/db";
+import {
+  confirmBrowserSignIn,
+  forgetBrowserSignIn,
+  IsolationError,
+  type PrismaClient,
+  readBrowserSignIns,
+  type ThreadEvents,
+} from "@rakazo/db";
 
 type TaughtSkillRow = {
   id: string;
@@ -138,6 +145,14 @@ async function getOwnedSkill(
   const skill = await deps.prisma.taughtSkill.findFirst({ where: ownedSkillWhere(actor, skillId) });
   if (!skill) throw new IsolationError();
   return skill;
+}
+
+async function getOwnedBot(deps: TaughtSkillsDeps, actor: Actor, botId: string): Promise<void> {
+  const bot = await deps.prisma.bot.findFirst({
+    where: { id: botId, workspaceId: actor.workspaceId, userId: actor.userId },
+    select: { id: true },
+  });
+  if (!bot) throw new IsolationError();
 }
 
 export async function assertTeachingSendAllowed(
@@ -668,6 +683,27 @@ export function createTaughtSkillsService(deps: TaughtSkillsDeps) {
         }
       }
       return after;
+    },
+
+    /** Origins the user has confirmed this bot's browser is signed into. */
+    async browserSignIns(actor: Actor, botId: string) {
+      await getOwnedBot(deps, actor, botId);
+      return readBrowserSignIns(deps.prisma, botId);
+    },
+
+    async confirmBrowserSignIn(actor: Actor, botId: string, origin: string) {
+      await getOwnedBot(deps, actor, botId);
+      return confirmBrowserSignIn(deps.prisma, {
+        workspaceId: actor.workspaceId,
+        botId,
+        userId: actor.userId,
+        origin,
+      });
+    },
+
+    async forgetBrowserSignIn(actor: Actor, botId: string, origin: string) {
+      await getOwnedBot(deps, actor, botId);
+      return forgetBrowserSignIn(deps.prisma, botId, origin);
     },
 
     async updateDraft(
