@@ -6,6 +6,8 @@ import type {
   AgentRuntime,
   ArtifactStore,
   BrowserDriver,
+  BrowserSession,
+  BrowserSnapshot,
   ComputerRef,
   ConnectorProvider,
   JobPublisher,
@@ -98,7 +100,7 @@ import {
   uncertainEffectResult,
 } from "./approval-effect.js";
 import { messageBot } from "./bot-messages.js";
-import { builtinAgentTools } from "./builtin-tools.js";
+import { browserAgentTools, builtinAgentTools } from "./builtin-tools.js";
 import { archiveSpawnedBot, spawnBot } from "./child-bots.js";
 import {
   collectLogIds,
@@ -625,6 +627,8 @@ export function createRunExecutor(deps: ExecutorDeps) {
       let lastLeaseCheckAt = 0;
       let retainComputerLease = false;
       let screenRelease: { computer: ComputerRef; context: AdapterContext } | undefined;
+      // Opened lazily on the first browser_* tool call; closed in this run's finally block.
+      let browserSession: BrowserSession | undefined;
       let runAbortController: AbortController | null = null;
       const heartbeat = setInterval(() => {
         void Promise.all([
@@ -934,13 +938,31 @@ export function createRunExecutor(deps: ExecutorDeps) {
           ? await loadGroupContext(deps.prisma, thread.groupId)
           : undefined;
         const graphicalToolsAllowed = graphical && acceptsImages;
-        const availableBuiltins = filterBuiltinToolsForThread(
-          filterImageReturningComputerTools(builtinAgentTools, graphicalToolsAllowed),
-          thread.groupId,
+        // A run drives a browser when its taught skill (or, failing that, the bot's default)
+        // selects the browser surface and a driver is configured. It keeps its sandbox
+        // computer for files and shell; only the graphical tools change.
+        const surfaceSkill = savedSkills.find((skill) =>
+          promptInvokesSkill(task.prompt, skill.name || skill.goal),
         );
+        const browserRunActive =
+          Boolean(deps.browser) &&
+          skillSurface(surfaceSkill?.surface ?? bot.defaultSurface) === "browser";
+        const graphicalBuiltins = browserRunActive
+          ? [
+              ...builtinAgentTools.filter(
+                (tool) => tool.name !== "computer_observe" && tool.name !== "computer_act",
+              ),
+              ...(acceptsImages
+                ? browserAgentTools
+                : browserAgentTools.filter((tool) => tool.name !== "browser_screenshot")),
+            ]
+          : filterImageReturningComputerTools(builtinAgentTools, graphicalToolsAllowed);
+        const availableBuiltins = filterBuiltinToolsForThread(graphicalBuiltins, thread.groupId);
         const builtins = selectMemoryTools(availableBuiltins, semanticMemoryEnabled);
         const exposedConnectorTools = discovered.filter(
-          (tool) => !builtinAgentTools.some((builtin) => builtin.name === tool.name),
+          (tool) =>
+            !builtinAgentTools.some((builtin) => builtin.name === tool.name) &&
+            !browserAgentTools.some((builtin) => builtin.name === tool.name),
         );
         const connectorRoutes = new Map(
           exposedConnectorTools
@@ -967,11 +989,13 @@ export function createRunExecutor(deps: ExecutorDeps) {
           select: { kind: true, request: true },
         });
         const approvedEffectReplays = createApprovedEffectReplayQueue(approvedEffects);
-        const computerInstruction = graphicalToolsAllowed
-          ? `You have a persistent computer. Use computer_observe and computer_act for its visible desktop, including browsers and installed applications. Use open_path and launch_app to open graphical files, URLs, and applications. Use the file tools and shell for precise filesystem and terminal work. On a Team Computer you have your own screen; other Team bots may run at the same time on theirs. Another user may interact with your screen while you run, so re-observe when it may have changed. ${GOOGLE_CONSUMER_AUTH_INSTRUCTION}`
-          : graphical
-            ? `You have a persistent computer filesystem and shell. ${MODEL_CANNOT_SEE_MESSAGE} Desktop observe and act tools are unavailable until a vision-capable model is selected. Use the file tools and shell.`
-            : "You have a persistent sandbox filesystem and shell. This backend does not provide model-visible graphical control, so use the file tools and shell.";
+        const computerInstruction = browserRunActive
+          ? `You drive a real browser that keeps the user's own logins. Call browser_snapshot to read the page as an accessibility tree with [ref=eN] handles, then browser_navigate / browser_click / browser_type / browser_select to act on those handles; snapshot again after anything that changes the page.${acceptsImages ? " Call browser_screenshot only when the tree is not enough to tell what is on screen." : ""} The file tools and shell still use this bot's separate sandbox computer. Do not buy, send, publish, or delete without explicit user approval.`
+          : graphicalToolsAllowed
+            ? `You have a persistent computer. Use computer_observe and computer_act for its visible desktop, including browsers and installed applications. Use open_path and launch_app to open graphical files, URLs, and applications. Use the file tools and shell for precise filesystem and terminal work. On a Team Computer you have your own screen; other Team bots may run at the same time on theirs. Another user may interact with your screen while you run, so re-observe when it may have changed. ${GOOGLE_CONSUMER_AUTH_INSTRUCTION}`
+            : graphical
+              ? `You have a persistent computer filesystem and shell. ${MODEL_CANNOT_SEE_MESSAGE} Desktop observe and act tools are unavailable until a vision-capable model is selected. Use the file tools and shell.`
+              : "You have a persistent sandbox filesystem and shell. This backend does not provide model-visible graphical control, so use the file tools and shell.";
         const workspaceInstruction =
           computerMode === "team"
             ? `Your Team Computer home is ${teamBotWorkspaceDirectory(bot.id)}. Relative file paths and shell working directories start there. Put intentionally shared work under shared/. Other bots' folders are visible under bots/; treat them as their working areas.`
@@ -1049,6 +1073,24 @@ export function createRunExecutor(deps: ExecutorDeps) {
           const result = observationToolResult(frame, finalNote, lastComputerFrameId);
           lastComputerFrameId = frame.frameId;
           return result;
+        };
+
+        const openBrowserSession = async (): Promise<BrowserSession> => {
+          browserSession ??= await deps.browser!.open(bot.id, context);
+          return browserSession;
+        };
+        const browserToolResult = async (view: BrowserSnapshot, note?: string) => {
+          let tree = view.tree;
+          if (deps.screenRedaction) {
+            redactionPolicy ??= await deps.screenRedaction.policyFor(run.workspaceId);
+            tree = await deps.screenRedaction.redactor.redactText(tree, redactionPolicy, context);
+          }
+          return {
+            url: view.url,
+            title: view.title,
+            elements: tree,
+            ...(note ? { note } : {}),
+          };
         };
 
         const pauseForApproval = () => {
@@ -1258,6 +1300,53 @@ export function createRunExecutor(deps: ExecutorDeps) {
                   )
                 : { ok: true, completed: result.completed };
             }, finish);
+          }
+          if (name.startsWith("browser_")) {
+            if (!deps.browser) return { error: "This deployment has no browser." };
+            if (await getActiveTeachingSession(deps.prisma, run.workspaceId, run.botId)) {
+              return { error: "Teaching is in progress. Stop teaching before using the browser." };
+            }
+            const session = await openBrowserSession();
+            if (name === "browser_snapshot") {
+              return browserToolResult(await session.snapshot());
+            }
+            if (name === "browser_screenshot") {
+              const { png } = await session.screenshot();
+              return {
+                kind: "agent_tool_result" as const,
+                content: [
+                  { type: "text" as const, text: "browser screenshot" },
+                  {
+                    type: "image" as const,
+                    data: Buffer.from(png).toString("base64"),
+                    mimeType: "image/png",
+                  },
+                ],
+              };
+            }
+            if (name === "browser_navigate") {
+              const result = await session.navigate(String(args.url ?? ""));
+              return browserToolResult(result.snapshot ?? (await session.snapshot()), result.note);
+            }
+            if (name === "browser_click") {
+              const result = await session.click(String(args.ref ?? ""));
+              if (!result.ok) return { error: result.note ?? "click failed" };
+              return browserToolResult(result.snapshot ?? (await session.snapshot()), result.note);
+            }
+            if (name === "browser_type") {
+              const result = await session.type(String(args.ref ?? ""), String(args.text ?? ""), {
+                submit: args.submit === true,
+              });
+              if (!result.ok) return { error: result.note ?? "type failed" };
+              return browserToolResult(result.snapshot ?? (await session.snapshot()), result.note);
+            }
+            if (name === "browser_select") {
+              const values = Array.isArray(args.values) ? args.values.map(String) : [];
+              const result = await session.select(String(args.ref ?? ""), values);
+              if (!result.ok) return { error: result.note ?? "select failed" };
+              return browserToolResult(result.snapshot ?? (await session.snapshot()), result.note);
+            }
+            return { error: `unknown browser tool ${name}` };
           }
           if (name === "list_files") {
             const requestedPath = String(args.path ?? "");
@@ -2939,6 +3028,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
         }
       } finally {
         clearInterval(heartbeat);
+        if (browserSession) await browserSession.close().catch(() => undefined);
         if (!retainComputerLease) {
           if (screenRelease) {
             await deps.sandbox
