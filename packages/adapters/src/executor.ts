@@ -224,7 +224,11 @@ import {
   skillUpdateFromTool,
 } from "./skill-tools.js";
 import { type TakeoverResumeCheckpoint, takeoverResumeFromRelease } from "./takeover-resume.js";
-import { bindReplayRunner, replayHandoffPrompt } from "./teach-replay-binding.js";
+import {
+  bindBrowserReplayRunner,
+  bindReplayRunner,
+  replayHandoffPrompt,
+} from "./teach-replay-binding.js";
 import { runReplay } from "./teach-replay-runner.js";
 import { getActiveTeachingSession, parsePlaybook, parseRecording } from "./teaching-session.js";
 import {
@@ -2333,25 +2337,35 @@ export function createRunExecutor(deps: ExecutorDeps) {
         const invokedSkill = savedSkills.find((skill) =>
           promptInvokesSkill(taskPrompt, skill.name || skill.goal),
         );
-        // A skill taught in the browser needs a browser driver to replay; none ships yet, so
-        // it runs from its written playbook until that surface lands.
         const invokedSurface = invokedSkill ? skillSurface(invokedSkill.surface) : "computer";
-        const browserSurfacePending = Boolean(invokedSkill) && invokedSurface === "browser";
+        // A browser-taught skill can only be replayed where a browser driver is configured;
+        // without one it runs from its written playbook.
+        const browserSurfacePending =
+          Boolean(invokedSkill) && invokedSurface === "browser" && !deps.browser;
         // User AgentSkills this run leaned on — their retrieval stats get folded from the
         // run's outcome, and a contradicted run queues a proposed revision.
         const invokedAgentSkillIds = invokedUserSkillIds(agentSkills, task.prompt);
 
-        // Replay the recorded inputs deterministically before the model runs; the model then
+        // Replay the recorded steps deterministically before the model runs; the model then
         // verifies, fills what the recording could not, and recovers from any drift.
         let replayHandoff: string | undefined;
-        if (invokedSkill && !scripted && invokedSurface === "computer") {
+        const replaySurface =
+          invokedSkill && !scripted
+            ? invokedSurface === "browser" && deps.browser
+              ? "browser"
+              : invokedSurface === "computer"
+                ? "computer"
+                : undefined
+            : undefined;
+        if (invokedSkill && replaySurface) {
           try {
             const replaySteps = compileRecordingToReplay(parseRecording(invokedSkill.recording));
             if (replayInputCount(replaySteps) > 0) {
-              const replayResult = await runReplay(
-                replaySteps,
-                bindReplayRunner({ sandbox: deps.sandbox, computer, context }),
-              );
+              const runner =
+                replaySurface === "browser"
+                  ? bindBrowserReplayRunner({ browser: await openBrowserSession(), context })
+                  : bindReplayRunner({ sandbox: deps.sandbox, computer, context });
+              const replayResult = await runReplay(replaySteps, runner);
               replayHandoff = replayHandoffPrompt(
                 invokedSkill.name || invokedSkill.goal.slice(0, 80),
                 invokedSkill.goal,
