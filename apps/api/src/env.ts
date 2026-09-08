@@ -33,6 +33,8 @@ export interface AppEnv {
   defaultProvider: string;
   defaultModel: string;
   wakeupDriver: string;
+  /** Which browser driver to wire for `browser`-surface runs, e.g. "playwright-mcp". */
+  browserSurface: string | undefined;
   mcpStdioEnabled: boolean;
   mcpStdioAllowedCommands: string[];
   port: number;
@@ -76,6 +78,7 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): AppEnv {
     defaultProvider: deploymentModel.provider,
     defaultModel: deploymentModel.model,
     wakeupDriver: source.WAKEUP_DRIVER ?? "graphile",
+    browserSurface: optional(source.RAKAZO_BROWSER_SURFACE),
     mcpStdioEnabled: source.MCP_STDIO_ENABLED === "true",
     mcpStdioAllowedCommands: (source.MCP_STDIO_ALLOWED_COMMANDS ?? "")
       .split(",")

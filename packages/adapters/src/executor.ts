@@ -5,6 +5,7 @@ import type {
   AgentRunRequest,
   AgentRuntime,
   ArtifactStore,
+  BrowserDriver,
   ComputerRef,
   ConnectorProvider,
   JobPublisher,
@@ -273,6 +274,9 @@ export interface ExecutorDeps {
   listConnectedPluginSlugs?: (userId: string, workspaceId: string) => Promise<string[]>;
   /** Opt-in: scrub personal / protected data from computer screenshots before a model sees them. */
   screenRedaction?: ScreenRedaction;
+  /** Opt-in: a real browser on the host for `browser`-surface runs. Wired only when the
+   *  operator provides a driver; consumed by the executor's browser tool path (fast-follow). */
+  browser?: BrowserDriver;
 }
 
 export async function deferFutureRoutine(
