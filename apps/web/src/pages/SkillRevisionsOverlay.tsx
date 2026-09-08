@@ -2,6 +2,7 @@ import { Trans, useLingui } from "@lingui/react/macro";
 import type { AgentSkill } from "@rakazo/contracts";
 import { Button } from "@rakazo/ui-web";
 import { useCallback, useEffect, useState } from "react";
+import { HowItWorks } from "../components/HowItWorks";
 import { rpc } from "../lib/rpc";
 
 export function SkillRevisionsOverlay({ onClose }: { onClose: () => void }) {
@@ -76,6 +77,34 @@ export function SkillRevisionsOverlay({ onClose }: { onClose: () => void }) {
         </div>
 
         <div className="flex-1 overflow-y-auto px-6 py-5 sm:px-8">
+          <HowItWorks>
+            <p>
+              <Trans>
+                When a run that followed a skill fails its own check, the bot drafts a fixed version
+                of that skill and parks it here instead of changing anything.
+              </Trans>
+            </p>
+            <ol>
+              <li>
+                <Trans>
+                  Open an entry and use <strong>Proposed</strong> / <strong>Current</strong> to
+                  compare the draft against the skill in use.
+                </Trans>
+              </li>
+              <li>
+                <Trans>
+                  <strong>Accept</strong> replaces the skill with the draft.{" "}
+                  <strong>Dismiss</strong> discards the draft and keeps the current skill.
+                </Trans>
+              </li>
+              <li>
+                <Trans>
+                  Nothing here runs on its own — an untouched draft never changes the skill.
+                </Trans>
+              </li>
+            </ol>
+          </HowItWorks>
+
           {error ? <div className="mb-4 text-[13px] text-[var(--rk-danger)]">{error}</div> : null}
 
           {skills === null ? (

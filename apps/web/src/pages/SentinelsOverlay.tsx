@@ -2,6 +2,7 @@ import { Trans, useLingui } from "@lingui/react/macro";
 import type { StoredSentinel } from "@rakazo/contracts";
 import { Button } from "@rakazo/ui-web";
 import { useCallback, useEffect, useState } from "react";
+import { HowItWorks } from "../components/HowItWorks";
 import { rpc } from "../lib/rpc";
 
 const TRIGGER_LABEL: Record<StoredSentinel["trigger"], string> = {
@@ -87,6 +88,38 @@ export function SentinelsOverlay({ botId, onClose }: { botId: string; onClose: (
         </div>
 
         <div className="flex-1 overflow-y-auto px-6 py-5 sm:px-8">
+          <HowItWorks>
+            <p>
+              <Trans>
+                A sentinel repeatedly runs one check — an HTTP request or a phrase on the bot's
+                screen — and fires an action when the result meets the trigger you asked for.
+              </Trans>
+            </p>
+            <ol>
+              <li>
+                <Trans>
+                  In the chat, tell the bot what to watch and what to do, e.g. “check this page
+                  hourly and message me when it says back in stock”.
+                </Trans>
+              </li>
+              <li>
+                <Trans>
+                  The bot picks the trigger: <strong>when it first passes</strong>,{" "}
+                  <strong>when the status changes</strong>, or <strong>once it has held</strong> for
+                  a window it sets.
+                </Trans>
+              </li>
+              <li>
+                <Trans>
+                  On fire it either posts you a message or starts a run, as shown after the “→” on
+                  each row here.
+                </Trans>
+              </li>
+              <li>
+                <Trans>Use Cancel to stop a watcher. A paused sentinel is marked “paused”.</Trans>
+              </li>
+            </ol>
+          </HowItWorks>
           {error ? <div className="mb-4 text-[13px] text-[var(--rk-danger)]">{error}</div> : null}
           {sentinels === null ? (
             <div className="text-[13.5px] text-[var(--rk-muted-2)]">

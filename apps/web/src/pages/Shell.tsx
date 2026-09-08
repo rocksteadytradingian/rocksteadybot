@@ -2558,6 +2558,15 @@ export function ShellPage() {
                       </span>
                     </button>
                   ) : null}
+                  {active && !inGroup ? (
+                    <p className="px-3 pb-2 text-[12.5px] leading-[1.5] text-[var(--rk-muted)]">
+                      <Trans>
+                        Reboots this bot's sandbox when it is stuck or unresponsive. The
+                        conversation is kept; unsaved files on the machine are lost. Also picks up
+                        newly added folders.
+                      </Trans>
+                    </p>
+                  ) : null}
                   {canRepairStack ? (
                     <button
                       type="button"
@@ -2572,6 +2581,14 @@ export function ShellPage() {
                         {stackRestartBusy ? <Trans>Restarting…</Trans> : <Trans>Restart API</Trans>}
                       </span>
                     </button>
+                  ) : null}
+                  {canRepairStack ? (
+                    <p className="px-3 pb-2 text-[12.5px] leading-[1.5] text-[var(--rk-muted)]">
+                      <Trans>
+                        Restarts the local API and worker processes for this desktop stack. Use it
+                        when runs stall or the worker will not start. Bots and data are untouched.
+                      </Trans>
+                    </p>
                   ) : null}
                   <button
                     type="button"

@@ -12,6 +12,8 @@ RocksteadyBot is in beta.
 
 ## Features
 
+For a per-feature description and how-to, see the [feature guide](./docs/features.md).
+
 ### Teammates
 
 - Persistent bots, each with its own conversations, memory, routines, and history
@@ -226,6 +228,7 @@ pnpm test:canary       # live OpenRouter / E2B / Box canaries
 COMPUTER_E2E_MODEL=<vision-capable-openrouter-model-id> pnpm test:computer
 ```
 
+- [Feature guide](./docs/features.md)
 - [Self-hosting](./docs/self-host.md)
 - [Computer runtime and isolation](./docs/computer-runtime.md)
 - [Mobile releases](./docs/mobile-release.md)

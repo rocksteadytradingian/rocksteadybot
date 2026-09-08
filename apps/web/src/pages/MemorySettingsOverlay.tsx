@@ -2,6 +2,7 @@ import { Trans, useLingui } from "@lingui/react/macro";
 import type { WorkspaceMemoryConfig } from "@rakazo/contracts";
 import { Button } from "@rakazo/ui-web";
 import { useEffect, useState } from "react";
+import { HowItWorks } from "../components/HowItWorks";
 import { rpc } from "../lib/rpc";
 import {
   defaultMemoryProviderSettings,
@@ -151,6 +152,38 @@ export function MemorySettingsOverlay({
         </div>
 
         <div className="rk-scroll min-h-0 flex-1 overflow-y-auto px-6 py-6 sm:px-8">
+          <HowItWorks>
+            <p>
+              <Trans>
+                Every bot always keeps its own Markdown memory. A provider here adds semantic recall
+                on top — older notes come back by meaning, not just recent turns.
+              </Trans>
+            </p>
+            <ol>
+              <li>
+                <Trans>
+                  Set <strong>Default scope</strong>: <strong>Isolated</strong> keeps each bot's
+                  memories private; <strong>Shared</strong> pools them across the workspace.
+                </Trans>
+              </li>
+              <li>
+                <Trans>
+                  Pick a <strong>Provider</strong> and connect it with its API key to turn on
+                  semantic recall. Without one, recall falls back to the Markdown store.
+                </Trans>
+              </li>
+              <li>
+                <Trans>
+                  Override the scope for a single bot in that bot's Settings → Advanced → Memory
+                  scope.
+                </Trans>
+              </li>
+              <li>
+                <Trans>Disconnect stops semantic recall; written Markdown memories stay.</Trans>
+              </li>
+            </ol>
+          </HowItWorks>
+
           {error ? <p className="mb-4 text-sm text-[var(--rk-danger)]">{error}</p> : null}
 
           {config === undefined ? (

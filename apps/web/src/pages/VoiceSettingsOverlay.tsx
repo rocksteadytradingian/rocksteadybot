@@ -2,6 +2,7 @@ import { Trans, useLingui } from "@lingui/react/macro";
 import type { VoiceCatalogEntry, VoiceCredential, VoiceInfo, VoiceStatus } from "@rakazo/contracts";
 import { Button } from "@rakazo/ui-web";
 import { useEffect, useMemo, useState } from "react";
+import { HowItWorks } from "../components/HowItWorks";
 import { rpc } from "../lib/rpc";
 
 export function VoiceSettingsOverlay({ onClose }: { onClose: () => void }) {
@@ -156,7 +157,9 @@ export function VoiceSettingsOverlay({ onClose }: { onClose: () => void }) {
                 : t`Not configured`}
           </div>
           <div className="mt-1 text-[13px] text-[var(--rk-muted)]">
-            {selected?.name ?? status?.provider ?? (
+            {status?.provider ? (
+              (catalog.find((entry) => entry.id === status.provider)?.name ?? status.provider)
+            ) : (
               <Trans>Connect ElevenLabs, OpenAI, or Cartesia</Trans>
             )}
           </div>
@@ -165,6 +168,41 @@ export function VoiceSettingsOverlay({ onClose }: { onClose: () => void }) {
               <Trans>On-device dictation is available — no key or setup needed.</Trans>
             </div>
           ) : null}
+        </div>
+
+        <div className="mx-6 mt-4 sm:mx-8">
+          <HowItWorks>
+            <p>
+              <Trans>
+                Voice covers three things: reading replies aloud, dictating into the composer, and
+                half-duplex calls. Speech runs server-side, so your key never reaches the browser.
+              </Trans>
+            </p>
+            <ol>
+              <li>
+                <Trans>
+                  Pick a provider (ElevenLabs, OpenAI, or Cartesia), choose{" "}
+                  <strong>Speak + transcribe</strong> or <strong>Speak only</strong>, and paste its
+                  API key.
+                </Trans>
+              </li>
+              <li>
+                <Trans>Choose a voice and use “Hear a sample” to check it.</Trans>
+              </li>
+              <li>
+                <Trans>
+                  Turn on <strong>Read replies aloud</strong> per bot in that bot's Settings →
+                  Advanced. Use the Speak button on any reply for one-off playback.
+                </Trans>
+              </li>
+              <li>
+                <Trans>
+                  Dictation needs no key if the server has a local Whisper binary — the panel says
+                  so when it does.
+                </Trans>
+              </li>
+            </ol>
+          </HowItWorks>
         </div>
 
         <div className="flex min-h-0 flex-1 flex-col gap-6 overflow-hidden px-6 py-6 sm:px-8 md:flex-row">
@@ -197,7 +235,9 @@ export function VoiceSettingsOverlay({ onClose }: { onClose: () => void }) {
                         {entry.name}
                       </span>
                       <span className="mt-0.5 block text-[12px] text-[var(--rk-muted-2)]">
-                        {entry.transcribe ? (
+                        {entry.synthesize === false ? (
+                          <Trans>Transcribe only</Trans>
+                        ) : entry.transcribe ? (
                           <Trans>Speak + transcribe</Trans>
                         ) : (
                           <Trans>Speak only</Trans>
@@ -223,77 +263,119 @@ export function VoiceSettingsOverlay({ onClose }: { onClose: () => void }) {
                 <p className="text-[13.5px] leading-[1.5] text-[var(--rk-muted)]">
                   {selected.description}
                 </p>
-                <div className="mt-5 rounded-[13px] border border-[var(--rk-hairline-strong)] px-4 py-3">
-                  <div className="text-[12.5px] uppercase tracking-[0.08em] text-[var(--rk-muted-2)]">
-                    <Trans>Personal credential</Trans>
-                  </div>
-                  <div className="mt-1 text-[15px] text-[var(--rk-ink)]">
-                    {credential ? (
-                      <Trans>Connected · {selected.name}</Trans>
-                    ) : (
-                      <Trans>Not connected</Trans>
-                    )}
-                  </div>
-                  <div className="mt-1 text-[13px] text-[var(--rk-muted)]">
-                    <Trans>
-                      Keys stay on the server. The app only learns whether a provider is configured.
-                    </Trans>
-                  </div>
-                </div>
 
-                <label className="mt-5 block text-[13.5px] text-[var(--rk-muted)]">
-                  <Trans>API key</Trans>
-                  <input
-                    type="password"
-                    autoComplete="new-password"
-                    value={apiKey}
-                    onChange={(event) => setApiKey(event.target.value)}
-                    placeholder={credential ? t`Paste a replacement key` : t`Paste your API key`}
-                    className="mt-2 w-full rounded-[11px] border border-[var(--rk-hairline-strong)] bg-[var(--rk-input)] px-3.5 py-2.5 text-[14px] text-[var(--rk-ink)] outline-none"
-                  />
-                </label>
-                <Button
-                  type="button"
-                  className="mt-3"
-                  disabled={busy || apiKey.trim().length < 8}
-                  onClick={() => void connectKey()}
-                >
-                  {pending === "connect" ? (
-                    <Trans>Connecting…</Trans>
-                  ) : credential ? (
-                    <Trans>Replace key</Trans>
-                  ) : (
-                    <Trans>Connect</Trans>
-                  )}
-                </Button>
-
-                {credential ? (
+                {selected.keyless ? (
+                  <div className="mt-5 rounded-[13px] border border-[var(--rk-hairline-strong)] px-4 py-3">
+                    <div className="text-[12.5px] uppercase tracking-[0.08em] text-[var(--rk-muted-2)]">
+                      <Trans>Availability</Trans>
+                    </div>
+                    <div className="mt-1 text-[15px] text-[var(--rk-ink)]">
+                      {status?.localDictation ? (
+                        <Trans>Ready — no setup needed</Trans>
+                      ) : (
+                        <Trans>Not detected on this server</Trans>
+                      )}
+                    </div>
+                    <div className="mt-1 text-[13px] leading-[1.6] text-[var(--rk-muted)]">
+                      {status?.localDictation ? (
+                        <Trans>
+                          There is nothing to connect. This runs on the server and is used for
+                          dictation automatically whenever no speak-capable provider is connected.
+                        </Trans>
+                      ) : (
+                        <Trans>
+                          The server needs a whisper.cpp binary (<code>whisper-cli</code>,{" "}
+                          <code>whisper</code>, or <code>main</code>) on its PATH and a{" "}
+                          <code>ggml-*.bin</code> model in <code>&lt;data dir&gt;/whisper/</code>,
+                          plus <code>ffmpeg</code>. Set <code>RAKAZO_WHISPER_BIN</code> /{" "}
+                          <code>RAKAZO_WHISPER_MODEL</code> to point at them explicitly. Restart the
+                          API after installing. The bundled desktop app ships these already.
+                        </Trans>
+                      )}
+                    </div>
+                  </div>
+                ) : (
                   <>
-                    <label className="mt-6 block text-[13.5px] text-[var(--rk-muted)]">
-                      <Trans>Voice</Trans>
-                      <select
-                        value={voiceId}
-                        onChange={(event) => void chooseVoice(event.target.value)}
+                    <div className="mt-5 rounded-[13px] border border-[var(--rk-hairline-strong)] px-4 py-3">
+                      <div className="text-[12.5px] uppercase tracking-[0.08em] text-[var(--rk-muted-2)]">
+                        <Trans>Personal credential</Trans>
+                      </div>
+                      <div className="mt-1 text-[15px] text-[var(--rk-ink)]">
+                        {credential ? (
+                          <Trans>Connected · {selected.name}</Trans>
+                        ) : (
+                          <Trans>Not connected</Trans>
+                        )}
+                      </div>
+                      <div className="mt-1 text-[13px] text-[var(--rk-muted)]">
+                        <Trans>
+                          Keys stay on the server. The app only learns whether a provider is
+                          configured.
+                        </Trans>
+                      </div>
+                    </div>
+
+                    <label className="mt-5 block text-[13.5px] text-[var(--rk-muted)]">
+                      <Trans>API key</Trans>
+                      <input
+                        type="password"
+                        autoComplete="new-password"
+                        value={apiKey}
+                        onChange={(event) => setApiKey(event.target.value)}
+                        placeholder={
+                          credential ? t`Paste a replacement key` : t`Paste your API key`
+                        }
                         className="mt-2 w-full rounded-[11px] border border-[var(--rk-hairline-strong)] bg-[var(--rk-input)] px-3.5 py-2.5 text-[14px] text-[var(--rk-ink)] outline-none"
-                      >
-                        {voiceOptions.map((voice) => (
-                          <option key={voice.id} value={voice.id}>
-                            {voice.label}
-                            {voice.description ? ` · ${voice.description}` : ""}
-                          </option>
-                        ))}
-                      </select>
+                      />
                     </label>
-                    <button
+                    <Button
                       type="button"
-                      disabled={busy || !status?.ready}
-                      onClick={() => void testVoice()}
-                      className="mt-4 text-[14px] text-[var(--rk-body)] disabled:opacity-40"
+                      className="mt-3"
+                      disabled={busy || apiKey.trim().length < 8}
+                      onClick={() => void connectKey()}
                     >
-                      {pending === "test" ? <Trans>Playing…</Trans> : <Trans>Hear a sample</Trans>}
-                    </button>
+                      {pending === "connect" ? (
+                        <Trans>Connecting…</Trans>
+                      ) : credential ? (
+                        <Trans>Replace key</Trans>
+                      ) : (
+                        <Trans>Connect</Trans>
+                      )}
+                    </Button>
+
+                    {credential ? (
+                      <>
+                        <label className="mt-6 block text-[13.5px] text-[var(--rk-muted)]">
+                          <Trans>Voice</Trans>
+                          <select
+                            value={voiceId}
+                            onChange={(event) => void chooseVoice(event.target.value)}
+                            className="mt-2 w-full rounded-[11px] border border-[var(--rk-hairline-strong)] bg-[var(--rk-input)] px-3.5 py-2.5 text-[14px] text-[var(--rk-ink)] outline-none"
+                          >
+                            {voiceOptions.map((voice) => (
+                              <option key={voice.id} value={voice.id}>
+                                {voice.label}
+                                {voice.description ? ` · ${voice.description}` : ""}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                        <button
+                          type="button"
+                          disabled={busy || !status?.ready}
+                          onClick={() => void testVoice()}
+                          className="mt-4 text-[14px] text-[var(--rk-body)] disabled:opacity-40"
+                        >
+                          {pending === "test" ? (
+                            <Trans>Playing…</Trans>
+                          ) : (
+                            <Trans>Hear a sample</Trans>
+                          )}
+                        </button>
+                      </>
+                    ) : null}
                   </>
-                ) : null}
+                )}
               </>
             ) : null}
           </div>
