@@ -23,6 +23,10 @@ export const ThinkingLevelSchema = z.enum([
 ]);
 export type ThinkingLevel = z.infer<typeof ThinkingLevelSchema>;
 
+/** Where a bot or a taught skill runs: the bot's sandbox computer, or the user's browser. */
+export const ExecutionSurfaceSchema = z.enum(["computer", "browser"]);
+export type ExecutionSurface = z.infer<typeof ExecutionSurfaceSchema>;
+
 export const BotSchema = z.object({
   id: Id,
   workspaceId: Id,
@@ -49,6 +53,7 @@ export const BotSchema = z.object({
   modelProvider: z.string().nullable(),
   modelId: z.string().nullable(),
   thinkingLevel: ThinkingLevelSchema.nullable(),
+  defaultSurface: ExecutionSurfaceSchema.default("computer"),
 });
 export type Bot = z.infer<typeof BotSchema>;
 
@@ -170,6 +175,7 @@ export const UpdateBotInput = z
     modelProvider: z.string().trim().min(1).max(80).nullable().optional(),
     modelId: z.string().trim().min(1).max(200).nullable().optional(),
     thinkingLevel: ThinkingLevelSchema.nullable().optional(),
+    defaultSurface: ExecutionSurfaceSchema.optional(),
   })
   .superRefine((value, ctx) => {
     const providerProvided = value.modelProvider !== undefined;
@@ -245,9 +251,9 @@ export const CreateScratchpadItemInput = z.object({
 export const TaughtSkillStatusSchema = z.enum(["recording", "drafting", "draft", "saved"]);
 export type TaughtSkillStatus = z.infer<typeof TaughtSkillStatusSchema>;
 
-/** Where a taught skill runs: the bot's sandbox computer, or the user's browser. */
-export const TaughtSkillSurfaceSchema = z.enum(["computer", "browser"]);
-export type TaughtSkillSurface = z.infer<typeof TaughtSkillSurfaceSchema>;
+/** @deprecated Use {@link ExecutionSurfaceSchema} — a taught skill and a bot share one surface type. */
+export const TaughtSkillSurfaceSchema = ExecutionSurfaceSchema;
+export type TaughtSkillSurface = ExecutionSurface;
 
 export const SkillPlaybookSchema = z.object({
   whenToUse: z.string(),

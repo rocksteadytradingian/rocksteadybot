@@ -13,6 +13,7 @@ import {
   createConnectorStack,
   createHttpSentinelCheckRunner,
   createJobReconciler,
+  createPlaywrightMcpBrowser,
   createRunExecutor,
   createRunSandbox,
   createRunSecretWriter,
@@ -41,6 +42,7 @@ import {
   pushTokenPath,
   type RemoteConnectorDependencies,
   repairWorkerStack,
+  resolvePlaywrightMcp,
   resolveWhisperSetup,
   ScriptedAgentRuntime,
   setWhisperEngine,
@@ -134,6 +136,11 @@ export async function createApp(
   const mcpOAuth = new McpOAuthBroker(prisma, secrets, remoteConnectors);
   const whisperSetup = await resolveWhisperSetup({ dataDir: env.dataDir });
   if (whisperSetup) setWhisperEngine(createWhisperCliEngine(whisperSetup));
+  const browserSetup =
+    env.browserSurface === "playwright-mcp"
+      ? await resolvePlaywrightMcp({ dataDir: env.dataDir })
+      : null;
+  const browser = browserSetup ? createPlaywrightMcpBrowser(browserSetup) : undefined;
   const memoryProviders = new WorkspaceMemoryProviderResolver(prisma, secrets);
   const oauthLogins = new PiOAuthLogins();
   const home = new LocalAgentHomeStore(env.dataDir);
@@ -234,6 +241,7 @@ export async function createApp(
     screenRedaction: createScreenRedaction(prisma, {
       ocr: process.env.RAKAZO_SCREEN_OCR === "tesseract" ? tesseractOcrEngine : undefined,
     }),
+    browser,
   });
 
   const httpSentinelCheck = createHttpSentinelCheckRunner();

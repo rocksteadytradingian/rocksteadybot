@@ -154,6 +154,22 @@ Override any part explicitly with `RAKAZO_WHISPER_BIN`, `RAKAZO_WHISPER_MODEL`,
 `RAKAZO_FFMPEG_BIN`. In a Docker deployment, bake the two binaries into the API image and mount
 a model into `DATA_DIR/whisper/`.
 
+## Browser skills (experimental)
+
+A bot can run a task in a real browser that keeps your logins, instead of on its sandbox
+computer. This needs a browser driver on the API/worker host — it runs **outside** the sandbox.
+
+1. Install [`@playwright/mcp`](https://github.com/microsoft/playwright-mcp) so its CLI is on
+   `PATH` (`mcp-server-playwright` or `playwright-mcp`), or point `RAKAZO_PLAYWRIGHT_MCP_BIN`
+   at it.
+2. Set `RAKAZO_BROWSER_SURFACE=playwright-mcp` on the API and worker.
+
+Persistent Chromium profiles (one per bot) live in `DATA_DIR/browser-profiles/` by default;
+override with `RAKAZO_BROWSER_PROFILE_DIR`. Extra CLI args go in `RAKAZO_PLAYWRIGHT_MCP_ARGS`;
+`RAKAZO_BROWSER_HEADLESS=1` runs with no window (a first sign-in to a site needs the window).
+With no driver configured, the browser surface stays off and browser-taught skills fall back
+to their written playbook.
+
 ## Backup
 
 ```bash

@@ -248,6 +248,7 @@ model Bot {
   color          String
   notifyOnFinish Boolean  @default(true)
   pinned         Boolean  @default(false)
+  defaultSurface String   @default("computer")
   sectionId      String?
   section        BotSection? @relation(fields: [sectionId], references: [id], onDelete: SetNull)
   archivedAt     DateTime?
