@@ -123,6 +123,41 @@ describe("Docker sandbox", () => {
     });
   });
 
+  it("reports a pruned container as a screen-unavailable error from setScreenControl", async () => {
+    const fetchMock = vi.fn(async () =>
+      Response.json(
+        { error: "(HTTP code 404) no such container - No such container: abc123 " },
+        { status: 400 },
+      ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const provider = new DockerSandboxProvider("http://supervisor.test", "test-token");
+
+    await expect(
+      provider.setScreenControl(
+        { id: "computer", botId: "home-bot", kind: "docker", providerRef: "computer" },
+        false,
+        context,
+        "lease-1",
+      ),
+    ).rejects.toMatchObject({ name: "ComputerScreenUnavailableError" });
+  });
+
+  it("still throws a generic error from setScreenControl on an unrelated failure", async () => {
+    const fetchMock = vi.fn(async () => new Response(null, { status: 503 }));
+    vi.stubGlobal("fetch", fetchMock);
+    const provider = new DockerSandboxProvider("http://supervisor.test", "test-token");
+
+    await expect(
+      provider.setScreenControl(
+        { id: "computer", botId: "home-bot", kind: "docker", providerRef: "computer" },
+        false,
+        context,
+        "lease-1",
+      ),
+    ).rejects.toThrow("sandbox screen mode failed: 503");
+  });
+
   it("asks the supervisor to replace a leftover container on restart", async () => {
     const fetchMock = vi.fn(async (_input: string | URL | Request, _init?: RequestInit) =>
       Response.json({ id: "computer", resumed: false }, { status: 200 }),
