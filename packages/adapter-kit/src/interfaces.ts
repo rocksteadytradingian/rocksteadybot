@@ -7,6 +7,9 @@ import type {
   ArtifactPut,
   BackgroundJob,
   BackgroundJobHandlers,
+  BrowserActionResult,
+  BrowserDriverCapabilities,
+  BrowserSnapshot,
   CommandRequest,
   ComputerActionRequest,
   ComputerActionResult,
@@ -296,4 +299,29 @@ export interface ScreenRedactor {
     context: AdapterContext,
   ): Promise<RedactedFrame>;
   redactText(value: string, policy: RedactionPolicy, context: AdapterContext): Promise<string>;
+}
+
+/**
+ * One browser context for a single profile. Acting methods target `[ref=eN]` handles from the
+ * most recent {@link BrowserSnapshot} and return the resulting view so callers need not
+ * snapshot again; `close()` is idempotent.
+ */
+export interface BrowserSession {
+  navigate(url: string): Promise<BrowserActionResult>;
+  snapshot(): Promise<BrowserSnapshot>;
+  click(ref: string): Promise<BrowserActionResult>;
+  type(ref: string, text: string, options?: { submit?: boolean }): Promise<BrowserActionResult>;
+  select(ref: string, values: readonly string[]): Promise<BrowserActionResult>;
+  screenshot(): Promise<{ png: Uint8Array }>;
+  close(): Promise<void>;
+}
+
+/**
+ * A real browser on the host, outside the sandbox, holding the user's own logins. The default
+ * deployment has none; a driver is wired only when the operator provides one. `open` returns a
+ * session bound to a persistent profile, reattaching if that profile is already live.
+ */
+export interface BrowserDriver {
+  describe(): AdapterDescriptor<BrowserDriverCapabilities>;
+  open(profileId: string, context: AdapterContext): Promise<BrowserSession>;
 }
