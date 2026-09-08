@@ -171,7 +171,17 @@ export class DockerSandboxProvider implements SandboxProvider {
       body: JSON.stringify({ interactive, controlToken }),
       signal: context.signal,
     });
-    if (!res.ok) throw new Error(`sandbox screen mode failed: ${res.status}`);
+    if (!res.ok) {
+      const detail = await res.text().catch(() => "");
+      const message = supervisorErrorMessage(detail);
+      // The supervisor collapses a missing container (dockerode 404) into a 400.
+      // A screen that isn't there holds nothing, so surface it as "unavailable"
+      // rather than a generic failure the caller will retry forever.
+      if (/no such container|not found|computer not found/i.test(message)) {
+        throw new ComputerScreenUnavailableError(message);
+      }
+      throw new Error(`sandbox screen mode failed: ${res.status}`);
+    }
   }
 
   async sendInput(

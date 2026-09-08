@@ -6,6 +6,7 @@ import {
   type SandboxProvider,
 } from "@rakazo/adapter-kit";
 import type { PrismaClient, ThreadEvents } from "@rakazo/db";
+import { isComputerScreenUnavailable } from "./computer-screens.js";
 import { toComputerRef } from "./computer-support.js";
 
 export const DEFAULT_TAKEOVER_LEASE_MS = 15 * 60 * 1000;
@@ -139,7 +140,17 @@ export async function expireComputerControl(
       botId,
       signal: new AbortController().signal,
     };
-    await deps.sandbox.setScreenControl?.(toComputerRef(computer), false, context, leaseId);
+    try {
+      await deps.sandbox.setScreenControl?.(toComputerRef(computer), false, context, leaseId);
+    } catch (error) {
+      // A gone computer (its container was pruned) has no interactive screen to
+      // revoke, so finish the lease release instead of retrying this job forever.
+      // Any other provider error still bubbles up to keep the lease recoverable.
+      if (!isComputerScreenUnavailable(error)) throw error;
+      console.warn(
+        `computer.control-expire: screen already gone for ${computer.id}; releasing lease anyway`,
+      );
+    }
   }
 
   const released = await deps.events.finalizeComputerControlRelease({

@@ -9,6 +9,7 @@ import {
   takeoverLeaseMs,
   teachingControlLeaseExpiresAt,
 } from "./computer-control.js";
+import { ComputerScreenUnavailableError } from "./computer-screens.js";
 
 describe("computer control leases", () => {
   it("defaults to fifteen minutes and rejects unsafe configuration", () => {
@@ -141,6 +142,17 @@ describe("computer control leases", () => {
       data: { controlHolder: "none" },
     });
     expect(harness.events.finalizeComputerControlRelease).not.toHaveBeenCalled();
+  });
+
+  it("releases the lease when the computer's screen is already gone", async () => {
+    const harness = controlHarness({
+      revokeError: new ComputerScreenUnavailableError("no such container"),
+    });
+
+    await expect(expireComputerControl(harness.deps, "computer-id", "lease-1")).resolves.toBe(true);
+
+    expect(harness.setScreenControl).toHaveBeenCalledTimes(1);
+    expect(harness.events.finalizeComputerControlRelease).toHaveBeenCalledTimes(1);
   });
 
   it("retries atomic lease cleanup when release-event persistence fails", async () => {
