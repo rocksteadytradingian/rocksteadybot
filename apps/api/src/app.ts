@@ -293,6 +293,7 @@ export async function createApp(
     connectors: stack.connector,
     remoteConnectors,
     artifacts,
+    browser,
     dataDir: env.dataDir,
     inspectWorkerStall: (workspaceId) =>
       inspectWorkerStall(prisma, {

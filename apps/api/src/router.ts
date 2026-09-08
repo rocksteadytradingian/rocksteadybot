@@ -4,6 +4,7 @@ import {
   type AdapterContext,
   type AgentHomeStore,
   type ArtifactStore,
+  type BrowserDriver,
   type ConnectorCatalogItem,
   computerControlExpireJobKey,
   type JobPublisher,
@@ -332,6 +333,8 @@ export interface RouterDeps {
   connectors: ConnectorRegistry;
   remoteConnectors?: RemoteConnectorDependencies;
   artifacts: ArtifactStore;
+  /** A real browser on the host for `browser`-surface teaching / runs. Absent → surface off. */
+  browser?: BrowserDriver;
   dataDir: string;
   inspectWorkerStall?: (workspaceId: string) => Promise<WorkerStall | null>;
   repairWorkerStack?: (input?: { restartApi?: boolean }) => Promise<StackRepairResult>;
@@ -363,6 +366,7 @@ export function createRouter(deps: RouterDeps) {
     sandbox: deps.sandbox,
     home: deps.home,
     dataDir: deps.dataDir,
+    browser: deps.browser,
   });
   const agentSkills = createAgentSkillsService(deps.prisma);
   const skillPromotion = createSkillPromotionService(deps.prisma);
@@ -2023,6 +2027,12 @@ export function createRouter(deps: RouterDeps) {
       snapshot: authed.skills.snapshot.handler(async ({ context, input }) =>
         taughtSkills.snapshot(context.actor, input.skillId),
       ),
+      browserView: authed.skills.browserView.handler(async ({ context, input }) =>
+        taughtSkills.browserTeachView(context.actor, input.botId),
+      ),
+      browserAction: authed.skills.browserAction.handler(async ({ context, input }) =>
+        taughtSkills.browserTeachAction(context.actor, input.botId, input.action),
+      ),
       stop: authed.skills.stop.handler(async ({ context, input }) =>
         taughtSkills.stop(context.actor, input.skillId),
       ),
@@ -3221,6 +3231,7 @@ async function meDto(deps: RouterDeps, actor: Actor): Promise<Me> {
     computerHost: computerHostFor(settings?.computerHost, deps.env.sandboxProvider),
     canChooseHostComputer: actor.isDeploymentOwner && deps.env.sandboxProvider === "docker",
     avatarStyle: user.avatarStyle === "organic" ? "organic" : "robot",
+    browserSurfaceAvailable: Boolean(deps.browser),
   };
 }
 
