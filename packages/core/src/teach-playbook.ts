@@ -1,6 +1,8 @@
+export type BrowserTeachAction = "navigate" | "click" | "type" | "select" | "checkpoint";
+
 export type TeachRecordingEvent = {
   at: string;
-  kind: "pointer" | "key" | "clipboard" | "snapshot" | "scroll";
+  kind: "pointer" | "key" | "clipboard" | "snapshot" | "scroll" | "browser";
   x?: number;
   y?: number;
   button?: string;
@@ -8,6 +10,15 @@ export type TeachRecordingEvent = {
   key?: string;
   text?: string;
   summary?: string;
+  // kind: "browser"
+  action?: BrowserTeachAction;
+  ref?: string;
+  role?: string;
+  name?: string;
+  url?: string;
+  submit?: boolean;
+  values?: string[];
+  hash?: string;
 };
 
 export type TeachSnapshot = {
@@ -54,7 +65,32 @@ function describeScroll(event: TeachRecordingEvent): string {
     : `Scroll ${direction}.`;
 }
 
-function redactSensitiveText(text: string): string {
+/** One prose playbook line for a `kind: "browser"` teach event. */
+export function describeBrowserStep(event: TeachRecordingEvent): string {
+  const target = event.name
+    ? `${event.role ? `${event.role} ` : ""}"${event.name}"`
+    : event.ref
+      ? `element ${event.ref}`
+      : "the element";
+  switch (event.action) {
+    case "navigate":
+      return `Go to ${event.url ?? "the page"}.`;
+    case "click":
+      return `Click ${target}.`;
+    case "type": {
+      const text = event.text ? ` ${JSON.stringify(event.text)}` : "";
+      return `Type${text} into ${target}${event.submit ? " and submit" : ""}.`;
+    }
+    case "select":
+      return `Choose ${(event.values ?? []).map((v) => JSON.stringify(v)).join(", ")} in ${target}.`;
+    case "checkpoint":
+      return `Check: ${event.summary || "the page matches the demonstration"}.`;
+    default:
+      return `Browser step at ${event.url ?? "the page"}.`;
+  }
+}
+
+export function redactSensitiveText(text: string): string {
   const trimmed = text.trim();
   if (/password|secret|token|api[_-]?key/i.test(trimmed)) return "[redacted input]";
   return trimmed;
@@ -140,6 +176,9 @@ export function buildPlaybookFromRecording(
     } else if (event.kind === "scroll") {
       flushDrag();
       steps.push(describeScroll(event));
+    } else if (event.kind === "browser") {
+      flushDrag();
+      steps.push(describeBrowserStep(event));
     } else {
       flushDrag();
     }

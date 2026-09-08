@@ -13,6 +13,7 @@ export function TeachComputerSection({
   onOpenComputer,
   onStopTeaching,
   onAddRoutine,
+  browserAvailable = false,
 }: {
   botId: string;
   computer: ComputerStatus | null;
@@ -22,6 +23,8 @@ export function TeachComputerSection({
   onOpenComputer: () => Promise<void>;
   onStopTeaching?: () => Promise<void>;
   onAddRoutine: (skill: TaughtSkill) => void;
+  /** A browser driver is configured on this deployment. */
+  browserAvailable?: boolean;
 }) {
   const { t } = useLingui();
   const [goalOpen, setGoalOpen] = useState(false);
@@ -116,11 +119,22 @@ export function TeachComputerSection({
               type="button"
               aria-pressed={surface === "browser"}
               data-testid="teach-surface-browser"
-              disabled
-              title={t`Browser skills arrive in a later update`}
-              className="flex-1 cursor-not-allowed rounded-[11px] border border-[var(--rk-hairline-strong)] px-3.5 py-2.5 text-[14px] text-[var(--rk-muted-2)] opacity-60"
+              disabled={!browserAvailable}
+              onClick={() => browserAvailable && setSurface("browser")}
+              title={browserAvailable ? undefined : t`No browser is configured on this deployment`}
+              className={`flex-1 rounded-[11px] border px-3.5 py-2.5 text-[14px] ${
+                !browserAvailable
+                  ? "cursor-not-allowed border-[var(--rk-hairline-strong)] text-[var(--rk-muted-2)] opacity-60"
+                  : surface === "browser"
+                    ? "border-[var(--rk-hairline-strong)] bg-[var(--rk-surface-2)] text-[var(--rk-ink)]"
+                    : "border-[var(--rk-hairline)] text-[var(--rk-muted)]"
+              }`}
             >
-              <Trans>My browser (soon)</Trans>
+              {browserAvailable ? (
+                <Trans>My browser</Trans>
+              ) : (
+                <Trans>My browser (unavailable)</Trans>
+              )}
             </button>
           </div>
           <label htmlFor="teach-goal-input" className="text-[13px] text-[var(--rk-muted)]">
