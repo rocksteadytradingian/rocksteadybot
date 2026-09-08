@@ -21,7 +21,19 @@ export type ReplayStep =
   /** Let the previous action land before the next one. */
   | { kind: "settle"; ms: number }
   /** Confirm the screen matches the demo here; on drift the runner hands off to the model. */
-  | { kind: "checkpoint"; expect: string; snapshotHash?: string };
+  | { kind: "checkpoint"; expect: string; snapshotHash?: string }
+  /** One recorded browser action, replayed against a live browser session. `secretLike`
+   *  marks a typed step the runner should not replay blindly. */
+  | {
+      kind: "browser";
+      op: "navigate" | "click" | "type" | "select";
+      url?: string;
+      ref?: string;
+      text?: string;
+      submit?: boolean;
+      values?: string[];
+      secretLike?: boolean;
+    };
 
 export const REPLAY_SETTLE_MS = 150;
 const DRAG_THRESHOLD_PX = 8;
@@ -164,6 +176,35 @@ export function compileRecordingToReplay(recording: TeachReplayRecording): Repla
         snapshotHash: snap?.hash,
       });
     }
+
+    if (event.kind === "browser") {
+      if (event.action === "checkpoint") {
+        push({
+          kind: "checkpoint",
+          expect: event.summary ?? "the page matches the demo at this point",
+          snapshotHash: event.hash,
+        });
+        continue;
+      }
+      if (event.action === "navigate") {
+        push({ kind: "browser", op: "navigate", url: event.url });
+      } else if (event.action === "click") {
+        push({ kind: "browser", op: "click", ref: event.ref });
+      } else if (event.action === "type") {
+        const text = event.text ?? "";
+        push({
+          kind: "browser",
+          op: "type",
+          ref: event.ref,
+          text,
+          submit: event.submit,
+          secretLike: text === "[redacted input]" || SECRET_LIKE.test(text),
+        });
+      } else if (event.action === "select") {
+        push({ kind: "browser", op: "select", ref: event.ref, values: event.values ?? [] });
+      }
+      settle();
+    }
   }
 
   flushTyped();
@@ -183,5 +224,7 @@ function clampAmount(value: number): number {
 
 /** Count the inputs a replay will actually send — the metric for "did it run without the model". */
 export function replayInputCount(steps: readonly ReplayStep[]): number {
-  return steps.filter((step) => step.kind === "input" || step.kind === "scroll").length;
+  return steps.filter(
+    (step) => step.kind === "input" || step.kind === "scroll" || step.kind === "browser",
+  ).length;
 }

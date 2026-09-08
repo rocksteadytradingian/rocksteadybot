@@ -1,10 +1,25 @@
 import type {
   AdapterContext,
+  BrowserSession,
   ComputerAction,
   ComputerRef,
   SandboxProvider,
 } from "@rakazo/adapter-kit";
 import type { ReplayRunnerDeps, ReplayRunResult } from "./teach-replay-runner.js";
+
+function abortableSleep(ms: number, signal: AbortSignal): Promise<void> {
+  return new Promise<void>((resolve) => {
+    const timer = setTimeout(resolve, ms);
+    signal.addEventListener(
+      "abort",
+      () => {
+        clearTimeout(timer);
+        resolve();
+      },
+      { once: true },
+    );
+  });
+}
 
 export interface ReplayCheckpointStrategy {
   check(
@@ -50,24 +65,67 @@ export function bindReplayRunner(args: {
     scroll: async (direction, amount) => {
       await act({ kind: "scroll", direction, amount });
     },
-    sleep: (ms) =>
-      new Promise<void>((resolve) => {
-        const timer = setTimeout(resolve, ms);
-        args.context.signal.addEventListener(
-          "abort",
-          () => {
-            clearTimeout(timer);
-            resolve();
-          },
-          { once: true },
-        );
-      }),
+    sleep: (ms) => abortableSleep(ms, args.context.signal),
     checkAt: async (step) => {
       const observation = await args.sandbox.observe(args.computer, args.context);
       return strategy.check(
         { frameId: observation.frameId, activeWindowTitle: observation.activeWindow?.title },
         step,
       );
+    },
+  };
+}
+
+/**
+ * Wire {@link ReplayRunnerDeps} to a live browser session for a `browser`-surface replay.
+ * Browser recordings never carry raw pointer / key steps, so `sendInput` and `scroll` are
+ * unreachable and throw. A checkpoint compares the live page's accessibility-tree hash to the
+ * one recorded in the demo; a mismatch drifts the replay back to the model.
+ */
+export function bindBrowserReplayRunner(args: {
+  browser: BrowserSession;
+  context: AdapterContext;
+}): ReplayRunnerDeps {
+  return {
+    signal: args.context.signal,
+    sendInput: async () => {
+      throw new Error("browser replay does not send raw inputs");
+    },
+    scroll: async () => {
+      throw new Error("browser replay does not scroll");
+    },
+    sleep: (ms) => abortableSleep(ms, args.context.signal),
+    browserStep: async (step) => {
+      try {
+        if (step.op === "navigate") {
+          const r = await args.browser.navigate(step.url ?? "");
+          return { ok: r.ok, note: r.note };
+        }
+        if (step.op === "click") {
+          const r = await args.browser.click(step.ref ?? "");
+          return { ok: r.ok, note: r.note };
+        }
+        if (step.op === "type") {
+          const r = await args.browser.type(step.ref ?? "", step.text ?? "", {
+            submit: step.submit,
+          });
+          return { ok: r.ok, note: r.note };
+        }
+        const r = await args.browser.select(step.ref ?? "", step.values ?? []);
+        return { ok: r.ok, note: r.note };
+      } catch (error) {
+        return { ok: false, note: error instanceof Error ? error.message : String(error) };
+      }
+    },
+    checkAt: async (step) => {
+      if (!step.snapshotHash) return { onTrack: true };
+      const snap = await args.browser.snapshot();
+      return snap.hash === step.snapshotHash
+        ? { onTrack: true }
+        : {
+            onTrack: false,
+            note: `the page no longer matches the demo (expected: ${step.expect})`,
+          };
     },
   };
 }
