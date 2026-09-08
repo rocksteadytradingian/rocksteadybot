@@ -129,6 +129,7 @@ import {
 import { BuiButton, BuiCard, SuccessPop } from "../components/beautiful-ui/primitives";
 import { ComputerMaintenanceActions } from "../components/ComputerMaintenanceActions";
 import { IdentityMarkdownField, identityDocumentByPath } from "../components/IdentityFilesEditor";
+import { BrowserTeachPane } from "../components/teach/BrowserTeachPane";
 import { SkillDraftCard } from "../components/teach/SkillDraftCard";
 import { TeachCaptureOverlay } from "../components/teach/TeachCaptureOverlay";
 import { TeachComputerSection } from "../components/teach/TeachComputerSection";
@@ -3071,6 +3072,7 @@ export function ShellPage() {
                       botId={active.id}
                       computer={computer}
                       skills={activeTaughtSkills}
+                      browserAvailable={Boolean(bootstrapMe?.browserSurfaceAvailable)}
                       busy={teachBusy}
                       onRefresh={refreshActiveThread}
                       onOpenComputer={openComputer}
@@ -3657,7 +3659,9 @@ export function ShellPage() {
             </div>
           ) : null}
           <div className="relative min-h-0 flex-1 bg-[var(--rk-main)]">
-            {computer?.kind === "desktop" ? (
+            {active && recordingSkill?.surface === "browser" ? (
+              <BrowserTeachPane botId={active.id} />
+            ) : computer?.kind === "desktop" ? (
               <div className="grid h-full place-items-center px-8 text-center text-sm text-[var(--rk-muted-2)]">
                 <Trans>
                   This bot runs on this computer. There is no separate Linux desktop. Ask it to use
