@@ -70,6 +70,27 @@ describe("parsePlaywrightSnapshot", () => {
   it("returns undefined for empty output", () => {
     expect(parsePlaywrightSnapshot(textOut(""))).toBeUndefined();
   });
+
+  it("parses the @playwright/mcp 0.0.80 snapshot shape (### Snapshot heading)", () => {
+    const snap = parsePlaywrightSnapshot(
+      textOut(
+        `### Page\n- Page URL: https://example.test/\n- Page Title: Example Domain\n### Snapshot\n\`\`\`yaml\n- heading "Example Domain" [level=1] [ref=e3]\n\`\`\``,
+      ),
+    );
+    expect(snap?.url).toBe("https://example.test/");
+    expect(snap?.title).toBe("Example Domain");
+    expect(snap?.tree).toContain('heading "Example Domain" [level=1] [ref=e3]');
+  });
+
+  it("treats a blank page's empty snapshot as a valid state, not a failure", () => {
+    const snap = parsePlaywrightSnapshot(
+      textOut("### Page\n- Page URL: about:blank\n### Snapshot\n```yaml\n\n```"),
+    );
+    expect(snap).toBeDefined();
+    expect(snap?.url).toBe("about:blank");
+    expect(snap?.tree).toBe("");
+    expect(snap?.hash).toHaveLength(16);
+  });
 });
 
 describe("parsePlaywrightActionResult", () => {

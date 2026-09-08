@@ -37,6 +37,25 @@ const DEFAULT_IDLE_MS = 5 * 60_000;
 const DEFAULT_CONNECT_TIMEOUT_MS = 30_000;
 const DEFAULT_CALL_TIMEOUT_MS = 60_000;
 
+/** Host env `@playwright/mcp` needs to locate node, a temp dir, and the browsers. */
+const FORWARDED_ENV = [
+  "PATH",
+  "HOME",
+  "TMPDIR",
+  "PLAYWRIGHT_BROWSERS_PATH",
+  "PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH",
+  "PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD",
+] as const;
+
+function hostBrowserEnv(): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const key of FORWARDED_ENV) {
+    const value = process.env[key];
+    if (value) out[key] = value;
+  }
+  return out;
+}
+
 /**
  * A {@link BrowserDriver} backed by a local `@playwright/mcp` process, one per profile id,
  * driving a persistent Chromium profile. The process runs on the host, outside the sandbox —
@@ -60,17 +79,31 @@ export function createPlaywrightMcpBrowser(options: PlaywrightMcpOptions): Brows
         return existing;
       }
       const mcp = new McpSession({ name: `rakazo-browser-${profileId}` });
+      // `--user-data-dir` already makes the profile persistent (the browser's
+      // real logins live here); `@playwright/mcp`'s `--isolated` is a bare
+      // boolean opt-in to an in-memory profile, and passing `--isolated=false`
+      // is rejected as an unknown option, so just omit it.
+      const extraArgs = options.args ?? [];
+      // `@playwright/mcp` defaults to the branded `chrome` channel, which isn't
+      // present in a headless container; fall back to Playwright's bundled
+      // Chromium unless the operator picked a browser explicitly.
+      const browserOverride = extraArgs.some(
+        (a) => a === "--browser" || a.startsWith("--browser="),
+      );
       const args = [
         "--user-data-dir",
         options.profileDir(profileId),
-        "--isolated=false",
+        ...(browserOverride ? [] : ["--browser", "chromium"]),
         ...(options.headless ? ["--headless"] : []),
-        ...(options.args ?? []),
+        ...extraArgs,
       ];
       await mcp.connectStdio({
         command: options.command,
         args,
-        env: options.env ?? {},
+        // The stdio transport starts the child with only this env, so forward
+        // the few host vars `@playwright/mcp` needs to find its runtime and the
+        // installed browsers (`PLAYWRIGHT_BROWSERS_PATH` in a container image).
+        env: { ...hostBrowserEnv(), ...(options.env ?? {}) },
         allowedCommands: [options.command],
         signal: context.signal,
         timeoutMs: options.connectTimeoutMs ?? DEFAULT_CONNECT_TIMEOUT_MS,
