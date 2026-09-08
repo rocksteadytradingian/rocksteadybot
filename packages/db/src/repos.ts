@@ -35,6 +35,7 @@ function mapBot(
     modelProvider?: string | null;
     modelId?: string | null;
     thinkingLevel?: string | null;
+    defaultSurface?: string | null;
   },
   preview = "",
   status = "idle",
@@ -68,6 +69,7 @@ function mapBot(
     modelProvider: bot.modelProvider ?? null,
     modelId: bot.modelId ?? null,
     thinkingLevel: (bot.thinkingLevel as Bot["thinkingLevel"]) ?? null,
+    defaultSurface: bot.defaultSurface === "browser" ? "browser" : "computer",
   };
 }
 

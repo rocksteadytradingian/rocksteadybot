@@ -1,6 +1,12 @@
 import { randomUUID } from "node:crypto";
 import { ORPCError } from "@orpc/server";
-import type { AgentHomeStore, JobPublisher, SandboxProvider } from "@rakazo/adapter-kit";
+import type {
+  AgentHomeStore,
+  BrowserDriver,
+  BrowserSession,
+  JobPublisher,
+  SandboxProvider,
+} from "@rakazo/adapter-kit";
 import {
   type AdapterContext,
   runContinueJob,
@@ -29,16 +35,31 @@ import {
   type TeachComputerInput,
   teachingControlLeaseExpiresAt,
 } from "@rakazo/adapters";
-import type { Actor, MessageBlock, TaughtSkill } from "@rakazo/contracts";
+import type {
+  Actor,
+  BrowserTeachActionInput,
+  BrowserTeachView,
+  MessageBlock,
+  TaughtSkill,
+  TaughtSkillSurface,
+} from "@rakazo/contracts";
 import {
   ACTIVE_RUN_STATUSES,
+  browserTeachEvent,
   buildPlaybookFromRecording,
   formatSkillRunPrompt,
   type SkillPlaybook,
   type TeachRecordingEvent,
   teachRecordingTtlMs,
 } from "@rakazo/core";
-import { IsolationError, type PrismaClient, type ThreadEvents } from "@rakazo/db";
+import {
+  confirmBrowserSignIn,
+  forgetBrowserSignIn,
+  IsolationError,
+  type PrismaClient,
+  readBrowserSignIns,
+  type ThreadEvents,
+} from "@rakazo/db";
 
 type TaughtSkillRow = {
   id: string;
@@ -48,6 +69,7 @@ type TaughtSkillRow = {
   name: string;
   goal: string;
   status: string;
+  surface: string;
   playbook: unknown;
   recording: unknown;
   startedAt: Date | null;
@@ -64,6 +86,40 @@ export interface TaughtSkillsDeps {
   sandbox: SandboxProvider;
   home: AgentHomeStore;
   dataDir: string;
+  /** A real browser on the host for `surface: "browser"` teaching. Absent → browser skills off. */
+  browser?: BrowserDriver;
+}
+
+/** Role + accessible name of the `[ref=<ref>]` element in a playwright-mcp a11y tree. */
+export function refFacts(tree: string, ref?: string): { role?: string; name?: string } {
+  if (!ref) return {};
+  const line = tree.split("\n").find((row) => row.includes(`[ref=${ref}]`));
+  if (!line) return {};
+  const match = line.match(/-\s*([a-zA-Z]+)\s+"([^"]*)"/);
+  return match ? { role: match[1], name: match[2] } : {};
+}
+
+export async function browserView(session: BrowserSession): Promise<BrowserTeachView> {
+  const snap = await session.snapshot();
+  let screenshot: string | null = null;
+  try {
+    const { png } = await session.screenshot();
+    screenshot = `data:image/png;base64,${Buffer.from(png).toString("base64")}`;
+  } catch {
+    screenshot = null;
+  }
+  return { url: snap.url, title: snap.title, tree: snap.tree, hash: snap.hash, screenshot };
+}
+
+function browserContext(actor: Actor, botId: string, signal?: AbortSignal): AdapterContext {
+  return {
+    operationId: `browser-teach:${randomUUID()}`,
+    traceId: `browser-teach:${botId}`,
+    workspaceId: actor.workspaceId,
+    userId: actor.userId,
+    botId,
+    signal: signal ?? new AbortController().signal,
+  };
 }
 
 function computerContext(actor: Actor, botId: string, operationId: string): AdapterContext {
@@ -89,6 +145,14 @@ async function getOwnedSkill(
   const skill = await deps.prisma.taughtSkill.findFirst({ where: ownedSkillWhere(actor, skillId) });
   if (!skill) throw new IsolationError();
   return skill;
+}
+
+async function getOwnedBot(deps: TaughtSkillsDeps, actor: Actor, botId: string): Promise<void> {
+  const bot = await deps.prisma.bot.findFirst({
+    where: { id: botId, workspaceId: actor.workspaceId, userId: actor.userId },
+    select: { id: true },
+  });
+  if (!bot) throw new IsolationError();
 }
 
 export async function assertTeachingSendAllowed(
@@ -307,6 +371,55 @@ export async function stopTeachingSession(
 }
 
 export function createTaughtSkillsService(deps: TaughtSkillsDeps) {
+  // Live browser teaching sessions, keyed by bot. Opened on start(surface:"browser"),
+  // closed on stop / remove; an expired session is reaped by the driver's own idle timeout.
+  const browserSessions = new Map<string, { session: BrowserSession; skillId: string }>();
+
+  async function closeBrowserTeach(botId: string): Promise<void> {
+    const entry = browserSessions.get(botId);
+    if (!entry) return;
+    browserSessions.delete(botId);
+    await entry.session.close().catch(() => undefined);
+  }
+
+  async function openBrowserTeach(
+    actor: Actor,
+    botId: string,
+    skillId: string,
+    signal?: AbortSignal,
+  ): Promise<void> {
+    if (!deps.browser) {
+      throw new ORPCError("BAD_REQUEST", {
+        message: "Browser skills aren't available on this deployment",
+      });
+    }
+    await closeBrowserTeach(botId);
+    const session = await deps.browser.open(botId, browserContext(actor, botId, signal));
+    browserSessions.set(botId, { session, skillId });
+  }
+
+  async function requireActiveBrowserSession(actor: Actor, botId: string): Promise<BrowserSession> {
+    const skill = await getActiveTeachingSession(
+      deps.prisma,
+      actor.workspaceId,
+      botId,
+      actor.userId,
+    );
+    if (skill?.surface !== "browser") {
+      throw new ORPCError("CONFLICT", { message: "No active browser teaching session" });
+    }
+    if (skill.expiresAt && skill.expiresAt.getTime() <= Date.now()) {
+      await expireTeachingSessionIfNeeded(deps, skill.id);
+      await closeBrowserTeach(botId);
+      throw new ORPCError("CONFLICT", { message: "The teaching session has expired" });
+    }
+    const entry = browserSessions.get(botId);
+    if (!entry || entry.skillId !== skill.id) {
+      throw new ORPCError("CONFLICT", { message: "No active browser teaching session" });
+    }
+    return entry.session;
+  }
+
   return {
     async list(actor: Actor, botId: string): Promise<TaughtSkill[]> {
       const rows = await deps.prisma.taughtSkill.findMany({
@@ -323,7 +436,12 @@ export function createTaughtSkillsService(deps: TaughtSkillsDeps) {
       return mapTaughtSkill(current);
     },
 
-    async start(actor: Actor, botId: string, goal: string): Promise<TaughtSkill> {
+    async start(
+      actor: Actor,
+      botId: string,
+      goal: string,
+      surface: TaughtSkillSurface = "computer",
+    ): Promise<TaughtSkill> {
       let bot = await deps.prisma.bot.findFirst({
         where: { id: botId, workspaceId: actor.workspaceId, userId: actor.userId },
         include: { thread: true, computer: true },
@@ -337,6 +455,65 @@ export function createTaughtSkillsService(deps: TaughtSkillsDeps) {
         throw new ORPCError("CONFLICT", { message: "A teaching session is already active" });
       }
       await cancelActiveRuns(deps, actor, botId);
+
+      if (surface === "browser") {
+        if (!deps.browser) {
+          throw new ORPCError("BAD_REQUEST", {
+            message: "Browser skills aren't available on this deployment",
+          });
+        }
+        const startedAt = new Date();
+        const expiresAt = new Date(startedAt.getTime() + teachRecordingTtlMs());
+        let row: TaughtSkillRow;
+        try {
+          row = await deps.prisma.$transaction(async (tx) => {
+            await tx.$executeRaw`SELECT id FROM bots WHERE id = ${botId} FOR UPDATE`;
+            const existing = await tx.taughtSkill.findFirst({
+              where: { botId, status: "recording" },
+            });
+            if (existing) {
+              throw new ORPCError("CONFLICT", { message: "A teaching session is already active" });
+            }
+            return tx.taughtSkill.create({
+              data: {
+                workspaceId: actor.workspaceId,
+                botId,
+                userId: actor.userId,
+                goal,
+                surface,
+                status: "recording",
+                startedAt,
+                expiresAt,
+                recording: emptyRecording() as never,
+                playbook: buildPlaybookFromRecording(goal, []) as never,
+              },
+            });
+          });
+        } catch (error) {
+          if (error instanceof ORPCError) throw error;
+          if (
+            error instanceof Error &&
+            "code" in error &&
+            (error as { code?: string }).code === "P2002"
+          ) {
+            throw new ORPCError("CONFLICT", { message: "A teaching session is already active" });
+          }
+          throw error;
+        }
+        await openBrowserTeach(actor, botId, row.id);
+        await deps.jobs.enqueue(skillTeachingExpireJob(row.id, expiresAt));
+        if (bot.thread) {
+          await deps.events.append({
+            workspaceId: actor.workspaceId,
+            threadId: bot.thread.id,
+            botId: bot.id,
+            type: "skill.teaching.started",
+            payload: { skillId: row.id, goal },
+          });
+        }
+        return mapTaughtSkill(row);
+      }
+
       bot = await ensureGraphicalComputer(deps, actor, bot);
       const startedAt = new Date();
       const expiresAt = new Date(startedAt.getTime() + teachRecordingTtlMs());
@@ -357,6 +534,7 @@ export function createTaughtSkillsService(deps: TaughtSkillsDeps) {
               botId,
               userId: actor.userId,
               goal,
+              surface,
               status: "recording",
               startedAt,
               expiresAt,
@@ -424,7 +602,109 @@ export function createTaughtSkillsService(deps: TaughtSkillsDeps) {
       return mapTaughtSkill(updated);
     },
 
-    stop: (actor: Actor, skillId: string) => stopTeachingSession(deps, actor, skillId),
+    async stop(actor: Actor, skillId: string): Promise<TaughtSkill> {
+      const result = await stopTeachingSession(deps, actor, skillId);
+      await closeBrowserTeach(result.botId);
+      return result;
+    },
+
+    /** Current view of the bot's browser, or null when no browser teaching is active. */
+    async browserTeachView(actor: Actor, botId: string): Promise<BrowserTeachView | null> {
+      const skill = await getActiveTeachingSession(
+        deps.prisma,
+        actor.workspaceId,
+        botId,
+        actor.userId,
+      );
+      if (skill?.surface !== "browser") return null;
+      const entry = browserSessions.get(botId);
+      if (!entry || entry.skillId !== skill.id) return null;
+      return browserView(entry.session);
+    },
+
+    /** Drive the bot's browser one step during teaching and record it. */
+    async browserTeachAction(
+      actor: Actor,
+      botId: string,
+      action: BrowserTeachActionInput,
+    ): Promise<BrowserTeachView> {
+      const session = await requireActiveBrowserSession(actor, botId);
+      const before = await session.snapshot();
+      const { role, name } = refFacts(before.tree, action.ref);
+
+      switch (action.kind) {
+        case "navigate":
+          if (!action.url) throw new ORPCError("BAD_REQUEST", { message: "navigate needs a url" });
+          await session.navigate(action.url);
+          break;
+        case "click":
+          if (!action.ref) throw new ORPCError("BAD_REQUEST", { message: "click needs a ref" });
+          await session.click(action.ref);
+          break;
+        case "type":
+          if (!action.ref) throw new ORPCError("BAD_REQUEST", { message: "type needs a ref" });
+          await session.type(action.ref, action.text ?? "", { submit: action.submit });
+          break;
+        case "select":
+          if (!action.ref || !action.values?.length) {
+            throw new ORPCError("BAD_REQUEST", { message: "select needs a ref and values" });
+          }
+          await session.select(action.ref, action.values);
+          break;
+        case "checkpoint":
+          break;
+      }
+
+      const after = await browserView(session);
+      const event = browserTeachEvent(
+        {
+          kind: action.kind,
+          ref: action.ref,
+          text: action.text,
+          url: action.url,
+          values: action.values,
+          submit: action.submit,
+          expect: action.expect,
+        },
+        { role, name, url: after.url, hash: after.hash },
+      );
+      const skill = await getActiveTeachingSession(
+        deps.prisma,
+        actor.workspaceId,
+        botId,
+        actor.userId,
+      );
+      if (skill) {
+        const updated = await appendRecordingEvent(deps, skill.id, event, {
+          requireRecording: true,
+        });
+        if (updated.status !== "recording") {
+          throw new ORPCError("BAD_REQUEST", { message: "Teaching session is not recording" });
+        }
+      }
+      return after;
+    },
+
+    /** Origins the user has confirmed this bot's browser is signed into. */
+    async browserSignIns(actor: Actor, botId: string) {
+      await getOwnedBot(deps, actor, botId);
+      return readBrowserSignIns(deps.prisma, botId);
+    },
+
+    async confirmBrowserSignIn(actor: Actor, botId: string, origin: string) {
+      await getOwnedBot(deps, actor, botId);
+      return confirmBrowserSignIn(deps.prisma, {
+        workspaceId: actor.workspaceId,
+        botId,
+        userId: actor.userId,
+        origin,
+      });
+    },
+
+    async forgetBrowserSignIn(actor: Actor, botId: string, origin: string) {
+      await getOwnedBot(deps, actor, botId);
+      return forgetBrowserSignIn(deps.prisma, botId, origin);
+    },
 
     async updateDraft(
       actor: Actor,
@@ -526,12 +806,16 @@ export function createTaughtSkillsService(deps: TaughtSkillsDeps) {
       const skill = await getOwnedSkill(deps, actor, skillId);
       if (skill.status === "recording") {
         await deps.jobs.cancel(skillTeachingExpireJobKey(skill.id));
-        await releaseTeachingComputerControlForBot(
-          deps,
-          actor,
-          skill.botId,
-          parseRecording(skill.recording).controlLeaseId,
-        );
+        if (skill.surface === "browser") {
+          await closeBrowserTeach(skill.botId);
+        } else {
+          await releaseTeachingComputerControlForBot(
+            deps,
+            actor,
+            skill.botId,
+            parseRecording(skill.recording).controlLeaseId,
+          );
+        }
       }
       await deps.prisma.taughtSkill.delete({ where: { id: skill.id } });
       return { ok: true as const };

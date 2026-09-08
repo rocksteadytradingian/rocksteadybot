@@ -35,4 +35,5 @@ export const slots = {
   voice: "voice",
   outcomeVerifier: "outcome-verifier",
   screenRedactor: "screen-redactor",
+  browser: "browser",
 } as const;

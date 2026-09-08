@@ -13,6 +13,9 @@ import {
   BotMcpServerSchema,
   BotSchema,
   BotSectionSchema,
+  BrowserSignInSchema,
+  BrowserTeachActionInputSchema,
+  BrowserTeachViewSchema,
   CapabilityInstallSchema,
   ComposioProjectKeyStatusSchema,
   ComputerModeSchema,
@@ -45,6 +48,7 @@ import {
   SkillPlaybookSchema,
   SkillPromotionSuggestionSchema,
   TaughtSkillSchema,
+  TaughtSkillSurfaceSchema,
   TeachRecordingEventSchema,
   ThreadMessagePageSchema,
   ThreadSnapshotSchema,
@@ -389,12 +393,34 @@ export const appContract = {
     list: oc.input(botId).output(z.array(TaughtSkillSchema)),
     get: oc.input(z.object({ skillId: Id })).output(TaughtSkillSchema),
     start: oc
-      .input(z.object({ botId: Id, goal: z.string().min(1).max(4000) }))
+      .input(
+        z.object({
+          botId: Id,
+          goal: z.string().min(1).max(4000),
+          surface: TaughtSkillSurfaceSchema.default("computer"),
+        }),
+      )
       .output(TaughtSkillSchema),
     appendEvent: oc
       .input(z.object({ skillId: Id, event: TeachRecordingEventSchema }))
       .output(TaughtSkillSchema),
     snapshot: oc.input(z.object({ skillId: Id })).output(TaughtSkillSchema),
+    /** Current view of the bot's browser during a `surface: "browser"` teaching session. */
+    browserView: oc.input(botId).output(BrowserTeachViewSchema.nullable()),
+    /** Drive the bot's browser one step during teaching; the step is recorded. */
+    browserAction: oc
+      .input(z.object({ botId: Id, action: BrowserTeachActionInputSchema }))
+      .output(BrowserTeachViewSchema),
+    /** Origins the user has confirmed this bot's browser is signed into. */
+    browserSignIns: oc.input(botId).output(z.array(BrowserSignInSchema)),
+    /** Record that this bot's browser is signed into an origin (so unattended runs may use it). */
+    browserConfirmSignIn: oc
+      .input(z.object({ botId: Id, origin: z.string().url() }))
+      .output(z.array(BrowserSignInSchema)),
+    /** Drop a recorded sign-in for an origin. */
+    browserForgetSignIn: oc
+      .input(z.object({ botId: Id, origin: z.string() }))
+      .output(z.array(BrowserSignInSchema)),
     stop: oc.input(z.object({ skillId: Id })).output(TaughtSkillSchema),
     updateDraft: oc
       .input(

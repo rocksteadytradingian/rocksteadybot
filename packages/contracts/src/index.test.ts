@@ -28,6 +28,15 @@ describe("contracts", () => {
     expect(parsed.notifyOnFinish).toBe(true);
   });
 
+  it("takes a bot default surface on update and rejects unknown surfaces", () => {
+    expect(UpdateBotInput.parse({ botId: "bot-1", defaultSurface: "browser" }).defaultSurface).toBe(
+      "browser",
+    );
+    expect(UpdateBotInput.safeParse({ botId: "bot-1", defaultSurface: "desktop" }).success).toBe(
+      false,
+    );
+  });
+
   it("normalizes bot creation fields without losing the longer instruction copy", () => {
     const profile = normalizeCreateBotProfile({
       name: `  ${"N".repeat(100)}  `,

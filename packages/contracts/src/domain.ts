@@ -23,6 +23,10 @@ export const ThinkingLevelSchema = z.enum([
 ]);
 export type ThinkingLevel = z.infer<typeof ThinkingLevelSchema>;
 
+/** Where a bot or a taught skill runs: the bot's sandbox computer, or the user's browser. */
+export const ExecutionSurfaceSchema = z.enum(["computer", "browser"]);
+export type ExecutionSurface = z.infer<typeof ExecutionSurfaceSchema>;
+
 export const BotSchema = z.object({
   id: Id,
   workspaceId: Id,
@@ -49,6 +53,7 @@ export const BotSchema = z.object({
   modelProvider: z.string().nullable(),
   modelId: z.string().nullable(),
   thinkingLevel: ThinkingLevelSchema.nullable(),
+  defaultSurface: ExecutionSurfaceSchema.default("computer"),
 });
 export type Bot = z.infer<typeof BotSchema>;
 
@@ -170,6 +175,7 @@ export const UpdateBotInput = z
     modelProvider: z.string().trim().min(1).max(80).nullable().optional(),
     modelId: z.string().trim().min(1).max(200).nullable().optional(),
     thinkingLevel: ThinkingLevelSchema.nullable().optional(),
+    defaultSurface: ExecutionSurfaceSchema.optional(),
   })
   .superRefine((value, ctx) => {
     const providerProvided = value.modelProvider !== undefined;
@@ -245,6 +251,10 @@ export const CreateScratchpadItemInput = z.object({
 export const TaughtSkillStatusSchema = z.enum(["recording", "drafting", "draft", "saved"]);
 export type TaughtSkillStatus = z.infer<typeof TaughtSkillStatusSchema>;
 
+/** @deprecated Use {@link ExecutionSurfaceSchema} — a taught skill and a bot share one surface type. */
+export const TaughtSkillSurfaceSchema = ExecutionSurfaceSchema;
+export type TaughtSkillSurface = ExecutionSurface;
+
 export const SkillPlaybookSchema = z.object({
   whenToUse: z.string(),
   inputs: z.array(z.string()),
@@ -256,9 +266,19 @@ export const SkillPlaybookSchema = z.object({
 });
 export type SkillPlaybook = z.infer<typeof SkillPlaybookSchema>;
 
+/** What a `kind: "browser"` teach event did. */
+export const BrowserTeachActionSchema = z.enum([
+  "navigate",
+  "click",
+  "type",
+  "select",
+  "checkpoint",
+]);
+export type BrowserTeachAction = z.infer<typeof BrowserTeachActionSchema>;
+
 export const TeachRecordingEventSchema = z.object({
   at: z.string(),
-  kind: z.enum(["pointer", "key", "clipboard", "snapshot", "scroll"]),
+  kind: z.enum(["pointer", "key", "clipboard", "snapshot", "scroll", "browser"]),
   x: z.number().optional(),
   y: z.number().optional(),
   button: z.string().optional(),
@@ -266,8 +286,48 @@ export const TeachRecordingEventSchema = z.object({
   key: z.string().optional(),
   text: z.string().optional(),
   summary: z.string().optional(),
+  // kind: "browser"
+  action: BrowserTeachActionSchema.optional(),
+  ref: z.string().optional(),
+  role: z.string().optional(),
+  name: z.string().optional(),
+  url: z.string().optional(),
+  submit: z.boolean().optional(),
+  values: z.array(z.string()).optional(),
+  hash: z.string().optional(),
 });
 export type TeachRecordingEvent = z.infer<typeof TeachRecordingEventSchema>;
+
+/** One view of the bot's browser during a browser teaching session. */
+export const BrowserTeachViewSchema = z.object({
+  url: z.string(),
+  title: z.string(),
+  /** Accessibility-tree text with `[ref=eN]` handles. */
+  tree: z.string(),
+  hash: z.string(),
+  /** PNG screenshot as a data URL, when available. */
+  screenshot: z.string().nullable(),
+});
+export type BrowserTeachView = z.infer<typeof BrowserTeachViewSchema>;
+
+export const BrowserTeachActionInputSchema = z.object({
+  kind: BrowserTeachActionSchema,
+  ref: z.string().optional(),
+  text: z.string().optional(),
+  url: z.string().optional(),
+  values: z.array(z.string()).optional(),
+  submit: z.boolean().optional(),
+  /** For `checkpoint`: what the user expects to be true here. */
+  expect: z.string().optional(),
+});
+export type BrowserTeachActionInput = z.infer<typeof BrowserTeachActionInputSchema>;
+
+/** An origin the user has confirmed a bot's browser is signed into. */
+export const BrowserSignInSchema = z.object({
+  origin: z.string(),
+  confirmedAt: z.string(),
+});
+export type BrowserSignIn = z.infer<typeof BrowserSignInSchema>;
 
 export const TeachSnapshotSchema = z.object({
   at: z.string(),
@@ -289,6 +349,7 @@ export const TaughtSkillSchema = z.object({
   name: z.string(),
   goal: z.string(),
   status: TaughtSkillStatusSchema,
+  surface: TaughtSkillSurfaceSchema.default("computer"),
   playbook: SkillPlaybookSchema,
   recording: TeachRecordingSchema,
   startedAt: z.string().nullable(),
@@ -948,6 +1009,8 @@ export const MeSchema = z.object({
   computerHost: z.enum(["docker", "this-mac"]).nullable(),
   canChooseHostComputer: z.boolean(),
   avatarStyle: AvatarStyleSchema,
+  /** A browser driver is configured on this deployment, so `browser`-surface skills work. */
+  browserSurfaceAvailable: z.boolean(),
 });
 export type Me = z.infer<typeof MeSchema>;
 

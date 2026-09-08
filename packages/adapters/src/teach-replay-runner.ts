@@ -14,6 +14,18 @@ export interface ReplayRunnerDeps {
     expect: string;
     snapshotHash?: string;
   }): Promise<{ onTrack: boolean; note?: string }>;
+  /**
+   * Apply one recorded browser action against a live browser session. Present only for a
+   * browser-surface replay; `ok: false` stops the replay and hands back to the model.
+   */
+  browserStep?(step: {
+    op: "navigate" | "click" | "type" | "select";
+    url?: string;
+    ref?: string;
+    text?: string;
+    submit?: boolean;
+    values?: string[];
+  }): Promise<{ ok: boolean; note?: string }>;
   signal?: AbortSignal;
 }
 
@@ -78,6 +90,29 @@ export async function runReplay(
 
     if (step.kind === "scroll") {
       await deps.scroll(step.direction, step.amount);
+      applied += 1;
+      continue;
+    }
+
+    if (step.kind === "browser") {
+      if (step.secretLike || (options.safeTest && step.op === "type")) {
+        if (step.secretLike) skippedSecrets += 1;
+        continue;
+      }
+      const outcome = (await deps.browserStep?.(step)) ?? {
+        ok: false,
+        note: "no browser session for this replay",
+      };
+      if (!outcome.ok) {
+        return {
+          status: "drifted",
+          applied,
+          checkpointsPassed,
+          driftAt: i,
+          note: outcome.note ?? `browser ${step.op} failed`,
+          skippedSecrets,
+        };
+      }
       applied += 1;
       continue;
     }

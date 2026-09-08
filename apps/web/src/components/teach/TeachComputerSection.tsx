@@ -1,5 +1,5 @@
 import { Trans, useLingui } from "@lingui/react/macro";
-import type { ComputerStatus, TaughtSkill } from "@rakazo/contracts";
+import type { ComputerStatus, TaughtSkill, TaughtSkillSurface } from "@rakazo/contracts";
 import { useMemo, useState } from "react";
 import { rpc } from "../../lib/rpc";
 import { TeachRecordingChrome } from "./TeachRecordingChrome";
@@ -13,6 +13,7 @@ export function TeachComputerSection({
   onOpenComputer,
   onStopTeaching,
   onAddRoutine,
+  browserAvailable = false,
 }: {
   botId: string;
   computer: ComputerStatus | null;
@@ -22,10 +23,13 @@ export function TeachComputerSection({
   onOpenComputer: () => Promise<void>;
   onStopTeaching?: () => Promise<void>;
   onAddRoutine: (skill: TaughtSkill) => void;
+  /** A browser driver is configured on this deployment. */
+  browserAvailable?: boolean;
 }) {
   const { t } = useLingui();
   const [goalOpen, setGoalOpen] = useState(false);
   const [goal, setGoal] = useState("");
+  const [surface, setSurface] = useState<TaughtSkillSurface>("computer");
   const [localBusy, setLocalBusy] = useState(false);
   const busy = Boolean(busyProp) || localBusy;
   const recording = useMemo(
@@ -43,9 +47,10 @@ export function TeachComputerSection({
     setLocalBusy(true);
     try {
       await rpc.computer.boot({ botId });
-      await rpc.skills.start({ botId, goal: goal.trim() });
+      await rpc.skills.start({ botId, goal: goal.trim(), surface });
       setGoalOpen(false);
       setGoal("");
+      setSurface("computer");
       await onOpenComputer();
       await onRefresh();
     } finally {
@@ -93,6 +98,45 @@ export function TeachComputerSection({
         />
       ) : goalOpen ? (
         <div className="rounded-[11px] border border-[var(--rk-hairline-strong)] bg-[var(--rk-surface)] px-3 py-3">
+          <div className="mb-2 text-[13px] text-[var(--rk-muted)]">
+            <Trans>Where does this run?</Trans>
+          </div>
+          <div className="mb-3 flex gap-2">
+            <button
+              type="button"
+              aria-pressed={surface === "computer"}
+              data-testid="teach-surface-computer"
+              onClick={() => setSurface("computer")}
+              className={`flex-1 rounded-[11px] border px-3.5 py-2.5 text-[14px] ${
+                surface === "computer"
+                  ? "border-[var(--rk-hairline-strong)] bg-[var(--rk-surface-2)] text-[var(--rk-ink)]"
+                  : "border-[var(--rk-hairline)] text-[var(--rk-muted)]"
+              }`}
+            >
+              <Trans>Bot's computer</Trans>
+            </button>
+            <button
+              type="button"
+              aria-pressed={surface === "browser"}
+              data-testid="teach-surface-browser"
+              disabled={!browserAvailable}
+              onClick={() => browserAvailable && setSurface("browser")}
+              title={browserAvailable ? undefined : t`No browser is configured on this deployment`}
+              className={`flex-1 rounded-[11px] border px-3.5 py-2.5 text-[14px] ${
+                !browserAvailable
+                  ? "cursor-not-allowed border-[var(--rk-hairline-strong)] text-[var(--rk-muted-2)] opacity-60"
+                  : surface === "browser"
+                    ? "border-[var(--rk-hairline-strong)] bg-[var(--rk-surface-2)] text-[var(--rk-ink)]"
+                    : "border-[var(--rk-hairline)] text-[var(--rk-muted)]"
+              }`}
+            >
+              {browserAvailable ? (
+                <Trans>My browser</Trans>
+              ) : (
+                <Trans>My browser (unavailable)</Trans>
+              )}
+            </button>
+          </div>
           <label htmlFor="teach-goal-input" className="text-[13px] text-[var(--rk-muted)]">
             <Trans>What result will you demonstrate?</Trans>
           </label>

@@ -9,6 +9,7 @@ import {
   createConnectorStack,
   createHttpSentinelCheckRunner,
   createJobReconciler,
+  createPlaywrightMcpBrowser,
   createPostgresReconciliationLeadership,
   createRunExecutor,
   createRunSandbox,
@@ -33,6 +34,7 @@ import {
   PostgresRealtimeFanout,
   pipedreamConfigFromEnv,
   resolveDeploymentModel,
+  resolvePlaywrightMcp,
   resolveWhisperSetup,
   ScriptedAgentRuntime,
   setWhisperEngine,
@@ -110,6 +112,11 @@ async function main() {
   await connector.start();
   const whisperSetup = await resolveWhisperSetup({ dataDir });
   if (whisperSetup) setWhisperEngine(createWhisperCliEngine(whisperSetup));
+  const browserSetup =
+    process.env.RAKAZO_BROWSER_SURFACE === "playwright-mcp"
+      ? await resolvePlaywrightMcp({ dataDir })
+      : null;
+  const browser = browserSetup ? createPlaywrightMcpBrowser(browserSetup) : undefined;
   const memoryProviders = new WorkspaceMemoryProviderResolver(prisma, secrets);
   const home = new LocalAgentHomeStore(dataDir);
   const artifacts = new LocalArtifactStore(dataDir);
@@ -137,6 +144,7 @@ async function main() {
     screenRedaction: createScreenRedaction(prisma, {
       ocr: process.env.RAKAZO_SCREEN_OCR === "tesseract" ? tesseractOcrEngine : undefined,
     }),
+    browser,
   });
 
   const httpSentinelCheck = createHttpSentinelCheckRunner();

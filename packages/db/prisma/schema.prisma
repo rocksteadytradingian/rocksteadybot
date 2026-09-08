@@ -249,6 +249,7 @@ model Bot {
   color          String
   notifyOnFinish Boolean  @default(true)
   pinned         Boolean  @default(false)
+  defaultSurface String   @default("computer")
   sectionId      String?
   section        BotSection? @relation(fields: [sectionId], references: [id], onDelete: SetNull)
   archivedAt     DateTime?
@@ -599,6 +600,7 @@ model TaughtSkill {
   name        String    @default("")
   goal        String
   status      String
+  surface     String    @default("computer")
   playbook    Json      @default("{}")
   recording   Json      @default("{\"events\":[],\"snapshots\":[]}")
   startedAt   DateTime?
@@ -735,6 +737,8 @@ model BrowserProfile {
   bot         Bot      @relation(fields: [botId], references: [id], onDelete: Cascade)
   userId      String
   secretId    String?
+  /// Origins the user has confirmed this bot is signed into: [{ origin, confirmedAt }].
+  signedInOrigins Json @default("[]")
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 

@@ -508,3 +508,32 @@ export interface RedactedFrame {
   image: Uint8Array;
   regions: RedactionRegion[];
 }
+
+export interface BrowserDriverCapabilities {
+  /** Returns an accessibility-tree snapshot with actionable element refs. */
+  snapshot: boolean;
+  /** Can return a PNG screenshot of the page. */
+  screenshot: boolean;
+  /** Logins persist across sessions for the same profile id. */
+  persistentProfile: boolean;
+}
+
+/**
+ * One view of a browser page. `tree` is accessibility-tree text carrying `[ref=eN]` handles
+ * that {@link BrowserSession} actions target; `hash` is a stable digest of `tree` used as a
+ * replay checkpoint.
+ */
+export interface BrowserSnapshot {
+  url: string;
+  title: string;
+  tree: string;
+  hash: string;
+}
+
+export interface BrowserActionResult {
+  ok: boolean;
+  /** The view produced by the action, when it changed. */
+  snapshot?: BrowserSnapshot;
+  /** Human-readable detail: an error message, a redirect target, a download name. */
+  note?: string;
+}

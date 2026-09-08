@@ -10,6 +10,7 @@ import type {
   ComputerStatus,
   Connection,
   ConnectionCatalogItem,
+  ExecutionSurface,
   Group,
   Me,
   MemoryDocument,
@@ -129,6 +130,7 @@ import {
 import { BuiButton, BuiCard, SuccessPop } from "../components/beautiful-ui/primitives";
 import { ComputerMaintenanceActions } from "../components/ComputerMaintenanceActions";
 import { IdentityMarkdownField, identityDocumentByPath } from "../components/IdentityFilesEditor";
+import { BrowserTeachPane } from "../components/teach/BrowserTeachPane";
 import { SkillDraftCard } from "../components/teach/SkillDraftCard";
 import { TeachCaptureOverlay } from "../components/teach/TeachCaptureOverlay";
 import { TeachComputerSection } from "../components/teach/TeachComputerSection";
@@ -3088,6 +3090,7 @@ export function ShellPage() {
                       botId={active.id}
                       computer={computer}
                       skills={activeTaughtSkills}
+                      browserAvailable={Boolean(bootstrapMe?.browserSurfaceAvailable)}
                       busy={teachBusy}
                       onRefresh={refreshActiveThread}
                       onOpenComputer={openComputer}
@@ -3680,7 +3683,9 @@ export function ShellPage() {
             </div>
           ) : null}
           <div className="relative min-h-0 flex-1 bg-[var(--rk-main)]">
-            {computer?.kind === "desktop" ? (
+            {active && recordingSkill?.surface === "browser" ? (
+              <BrowserTeachPane botId={active.id} />
+            ) : computer?.kind === "desktop" ? (
               <div className="grid h-full place-items-center px-8 text-center text-sm text-[var(--rk-muted-2)]">
                 <Trans>
                   This bot runs on this computer. There is no separate Linux desktop. Ask it to use
@@ -5308,6 +5313,7 @@ function BotSettings({
     modelProvider?: string | null;
     modelId?: string | null;
     thinkingLevel?: ThinkingLevel | null;
+    defaultSurface?: ExecutionSurface;
   }) => Promise<void>;
   onExport: () => Promise<void>;
   onClear: () => void;
@@ -5320,6 +5326,7 @@ function BotSettings({
   const [computerMode, setComputerMode] = useState(bot.computerMode);
   const [memoryScope, setMemoryScope] = useState(bot.memoryScope);
   const [autoSpeak, setAutoSpeak] = useState(bot.autoSpeak);
+  const [defaultSurface, setDefaultSurface] = useState<ExecutionSurface>(bot.defaultSurface);
   const [voiceId, setVoiceId] = useState(bot.voiceId ?? "");
   const [voices, setVoices] = useState<VoiceInfo[]>([]);
   const [modelKey, setModelKey] = useState(
@@ -5559,6 +5566,39 @@ function BotSettings({
             </div>
           </div>
         ) : null}
+        <div className="mt-5">
+          <div className="mb-2 text-[13px] text-[var(--rk-muted)]">
+            <Trans>Where this bot works</Trans>
+          </div>
+          <div className="flex gap-2">
+            {(
+              [
+                { value: "computer", label: t`Bot's computer` },
+                { value: "browser", label: t`My browser` },
+              ] as const
+            ).map((option) => (
+              <button
+                key={option.value}
+                type="button"
+                aria-pressed={defaultSurface === option.value}
+                onClick={() => setDefaultSurface(option.value)}
+                className={`flex-1 rounded-[11px] border px-3 py-2 text-[13px] ${
+                  defaultSurface === option.value
+                    ? "border-[var(--rk-hairline-strong)] bg-[var(--rk-surface-2)] text-[var(--rk-ink)]"
+                    : "border-[var(--rk-hairline-strong)] text-[var(--rk-muted)]"
+                }`}
+              >
+                {option.label}
+              </button>
+            ))}
+          </div>
+          <div className="mt-1.5 text-[12px] text-[var(--rk-muted-2)]">
+            <Trans>
+              My browser needs the browser driver enabled on this deployment; otherwise the bot
+              falls back to its computer.
+            </Trans>
+          </div>
+        </div>
         <label className="mt-5 flex cursor-pointer items-center gap-3 text-[14px] text-[var(--rk-body)]">
           <input
             type="checkbox"
@@ -5628,6 +5668,7 @@ function BotSettings({
                 computerMode,
                 memoryScope,
                 autoSpeak,
+                defaultSurface,
                 voiceId: voiceId || null,
                 modelProvider: selected?.provider ?? null,
                 modelId: selected?.modelId ?? null,

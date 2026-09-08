@@ -59,6 +59,7 @@ export function ModelSettingsOverlay({ onClose }: { onClose: () => void }) {
   const selectedLabelRef = useRef<string | undefined>(undefined);
   const routerDraftRef = useRef({ fast: "", smart: "", heavy: "" });
   const routerSaveSeqRef = useRef(0);
+  const routerSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const {
     oauth,
@@ -125,6 +126,7 @@ export function ModelSettingsOverlay({ onClose }: { onClose: () => void }) {
     return () => {
       refreshRevisionRef.current += 1;
       probeRequestIdRef.current += 1;
+      if (routerSaveTimerRef.current) clearTimeout(routerSaveTimerRef.current);
     };
   }, []);
 
@@ -244,7 +246,14 @@ export function ModelSettingsOverlay({ onClose }: { onClose: () => void }) {
     setRouterFast(draft.fast);
     setRouterSmart(draft.smart);
     setRouterHeavy(draft.heavy);
-    void saveRouter(draft);
+    // Coalesce a quick run of slot changes (fast → smart → heavy) into one save. Overlapping
+    // saves race on the server's blind three-column overwrite and an out-of-order one can
+    // wipe a slot the user just set.
+    if (routerSaveTimerRef.current) clearTimeout(routerSaveTimerRef.current);
+    routerSaveTimerRef.current = setTimeout(() => {
+      routerSaveTimerRef.current = null;
+      void saveRouter(routerDraftRef.current);
+    }, 250);
   }
 
   async function saveRouter(next: { fast: string; smart: string; heavy: string }) {

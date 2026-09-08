@@ -5,6 +5,9 @@ import type {
   AgentRunRequest,
   AgentRuntime,
   ArtifactStore,
+  BrowserDriver,
+  BrowserSession,
+  BrowserSnapshot,
   ComputerRef,
   ConnectorProvider,
   JobPublisher,
@@ -35,6 +38,8 @@ import {
   blocksToAgentHistoryText,
   botFolderMounts,
   botFolderMountsEnabled,
+  browserRecordingOrigins,
+  browserSurfaceUnavailableNote,
   clampIdentityFileContent,
   compileRecordingToReplay,
   connectedPluginsInstruction,
@@ -62,6 +67,7 @@ import {
   resolveActionApproval,
   resolveComplexityRouterModelId,
   sandboxCommandTimeoutMs,
+  skillSurface,
   type ToolCallStreak,
   toolRequiresApproval,
   userTurnBlocksForRun,
@@ -77,6 +83,7 @@ import {
   findUserProviderModelCredentials,
   listBotFolders,
   type McpServer,
+  missingBrowserSignIns,
   type Prisma,
   type PrismaClient,
   parseComputerMode,
@@ -98,7 +105,7 @@ import {
   uncertainEffectResult,
 } from "./approval-effect.js";
 import { messageBot } from "./bot-messages.js";
-import { builtinAgentTools } from "./builtin-tools.js";
+import { browserAgentTools, builtinAgentTools } from "./builtin-tools.js";
 import { archiveSpawnedBot, spawnBot } from "./child-bots.js";
 import {
   collectLogIds,
@@ -222,7 +229,11 @@ import {
   skillUpdateFromTool,
 } from "./skill-tools.js";
 import { type TakeoverResumeCheckpoint, takeoverResumeFromRelease } from "./takeover-resume.js";
-import { bindReplayRunner, replayHandoffPrompt } from "./teach-replay-binding.js";
+import {
+  bindBrowserReplayRunner,
+  bindReplayRunner,
+  replayHandoffPrompt,
+} from "./teach-replay-binding.js";
 import { runReplay } from "./teach-replay-runner.js";
 import { getActiveTeachingSession, parsePlaybook, parseRecording } from "./teaching-session.js";
 import {
@@ -274,6 +285,9 @@ export interface ExecutorDeps {
   listConnectedPluginSlugs?: (userId: string, workspaceId: string) => Promise<string[]>;
   /** Opt-in: scrub personal / protected data from computer screenshots before a model sees them. */
   screenRedaction?: ScreenRedaction;
+  /** Opt-in: a real browser on the host for `browser`-surface runs. Wired only when the
+   *  operator provides a driver; consumed by the executor's browser tool path (fast-follow). */
+  browser?: BrowserDriver;
 }
 
 export async function deferFutureRoutine(
@@ -622,6 +636,8 @@ export function createRunExecutor(deps: ExecutorDeps) {
       let lastLeaseCheckAt = 0;
       let retainComputerLease = false;
       let screenRelease: { computer: ComputerRef; context: AdapterContext } | undefined;
+      // Opened lazily on the first browser_* tool call; closed in this run's finally block.
+      let browserSession: BrowserSession | undefined;
       let runAbortController: AbortController | null = null;
       const heartbeat = setInterval(() => {
         void Promise.all([
@@ -931,13 +947,31 @@ export function createRunExecutor(deps: ExecutorDeps) {
           ? await loadGroupContext(deps.prisma, thread.groupId)
           : undefined;
         const graphicalToolsAllowed = graphical && acceptsImages;
-        const availableBuiltins = filterBuiltinToolsForThread(
-          filterImageReturningComputerTools(builtinAgentTools, graphicalToolsAllowed),
-          thread.groupId,
+        // A run drives a browser when its taught skill (or, failing that, the bot's default)
+        // selects the browser surface and a driver is configured. It keeps its sandbox
+        // computer for files and shell; only the graphical tools change.
+        const surfaceSkill = savedSkills.find((skill) =>
+          promptInvokesSkill(task.prompt, skill.name || skill.goal),
         );
+        const browserRunActive =
+          Boolean(deps.browser) &&
+          skillSurface(surfaceSkill?.surface ?? bot.defaultSurface) === "browser";
+        const graphicalBuiltins = browserRunActive
+          ? [
+              ...builtinAgentTools.filter(
+                (tool) => tool.name !== "computer_observe" && tool.name !== "computer_act",
+              ),
+              ...(acceptsImages
+                ? browserAgentTools
+                : browserAgentTools.filter((tool) => tool.name !== "browser_screenshot")),
+            ]
+          : filterImageReturningComputerTools(builtinAgentTools, graphicalToolsAllowed);
+        const availableBuiltins = filterBuiltinToolsForThread(graphicalBuiltins, thread.groupId);
         const builtins = selectMemoryTools(availableBuiltins, semanticMemoryEnabled);
         const exposedConnectorTools = discovered.filter(
-          (tool) => !builtinAgentTools.some((builtin) => builtin.name === tool.name),
+          (tool) =>
+            !builtinAgentTools.some((builtin) => builtin.name === tool.name) &&
+            !browserAgentTools.some((builtin) => builtin.name === tool.name),
         );
         const connectorRoutes = new Map(
           exposedConnectorTools
@@ -964,11 +998,13 @@ export function createRunExecutor(deps: ExecutorDeps) {
           select: { kind: true, request: true },
         });
         const approvedEffectReplays = createApprovedEffectReplayQueue(approvedEffects);
-        const computerInstruction = graphicalToolsAllowed
-          ? `You have a persistent computer. Use computer_observe and computer_act for its visible desktop, including browsers and installed applications. Use open_path and launch_app to open graphical files, URLs, and applications. Use the file tools and shell for precise filesystem and terminal work. On a Team Computer you have your own screen; other Team bots may run at the same time on theirs. Another user may interact with your screen while you run, so re-observe when it may have changed. ${GOOGLE_CONSUMER_AUTH_INSTRUCTION}`
-          : graphical
-            ? `You have a persistent computer filesystem and shell. ${MODEL_CANNOT_SEE_MESSAGE} Desktop observe and act tools are unavailable until a vision-capable model is selected. Use the file tools and shell.`
-            : "You have a persistent sandbox filesystem and shell. This backend does not provide model-visible graphical control, so use the file tools and shell.";
+        const computerInstruction = browserRunActive
+          ? `You drive a real browser that keeps the user's own logins. Call browser_snapshot to read the page as an accessibility tree with [ref=eN] handles, then browser_navigate / browser_click / browser_type / browser_select to act on those handles; snapshot again after anything that changes the page.${acceptsImages ? " Call browser_screenshot only when the tree is not enough to tell what is on screen." : ""} The file tools and shell still use this bot's separate sandbox computer. Do not buy, send, publish, or delete without explicit user approval.`
+          : graphicalToolsAllowed
+            ? `You have a persistent computer. Use computer_observe and computer_act for its visible desktop, including browsers and installed applications. Use open_path and launch_app to open graphical files, URLs, and applications. Use the file tools and shell for precise filesystem and terminal work. On a Team Computer you have your own screen; other Team bots may run at the same time on theirs. Another user may interact with your screen while you run, so re-observe when it may have changed. ${GOOGLE_CONSUMER_AUTH_INSTRUCTION}`
+            : graphical
+              ? `You have a persistent computer filesystem and shell. ${MODEL_CANNOT_SEE_MESSAGE} Desktop observe and act tools are unavailable until a vision-capable model is selected. Use the file tools and shell.`
+              : "You have a persistent sandbox filesystem and shell. This backend does not provide model-visible graphical control, so use the file tools and shell.";
         const baseWorkspaceInstruction =
           computerMode === "team"
             ? `Your Team Computer home is ${teamBotWorkspaceDirectory(bot.id)}. Relative file paths and shell working directories start there. Put intentionally shared work under shared/. Other bots' folders are visible under bots/; treat them as their working areas.`
@@ -1064,6 +1100,24 @@ export function createRunExecutor(deps: ExecutorDeps) {
           const result = observationToolResult(frame, finalNote, lastComputerFrameId);
           lastComputerFrameId = frame.frameId;
           return result;
+        };
+
+        const openBrowserSession = async (): Promise<BrowserSession> => {
+          browserSession ??= await deps.browser!.open(bot.id, context);
+          return browserSession;
+        };
+        const browserToolResult = async (view: BrowserSnapshot, note?: string) => {
+          let tree = view.tree;
+          if (deps.screenRedaction) {
+            redactionPolicy ??= await deps.screenRedaction.policyFor(run.workspaceId);
+            tree = await deps.screenRedaction.redactor.redactText(tree, redactionPolicy, context);
+          }
+          return {
+            url: view.url,
+            title: view.title,
+            elements: tree,
+            ...(note ? { note } : {}),
+          };
         };
 
         const pauseForApproval = () => {
@@ -1273,6 +1327,53 @@ export function createRunExecutor(deps: ExecutorDeps) {
                   )
                 : { ok: true, completed: result.completed };
             }, finish);
+          }
+          if (name.startsWith("browser_")) {
+            if (!deps.browser) return { error: "This deployment has no browser." };
+            if (await getActiveTeachingSession(deps.prisma, run.workspaceId, run.botId)) {
+              return { error: "Teaching is in progress. Stop teaching before using the browser." };
+            }
+            const session = await openBrowserSession();
+            if (name === "browser_snapshot") {
+              return browserToolResult(await session.snapshot());
+            }
+            if (name === "browser_screenshot") {
+              const { png } = await session.screenshot();
+              return {
+                kind: "agent_tool_result" as const,
+                content: [
+                  { type: "text" as const, text: "browser screenshot" },
+                  {
+                    type: "image" as const,
+                    data: Buffer.from(png).toString("base64"),
+                    mimeType: "image/png",
+                  },
+                ],
+              };
+            }
+            if (name === "browser_navigate") {
+              const result = await session.navigate(String(args.url ?? ""));
+              return browserToolResult(result.snapshot ?? (await session.snapshot()), result.note);
+            }
+            if (name === "browser_click") {
+              const result = await session.click(String(args.ref ?? ""));
+              if (!result.ok) return { error: result.note ?? "click failed" };
+              return browserToolResult(result.snapshot ?? (await session.snapshot()), result.note);
+            }
+            if (name === "browser_type") {
+              const result = await session.type(String(args.ref ?? ""), String(args.text ?? ""), {
+                submit: args.submit === true,
+              });
+              if (!result.ok) return { error: result.note ?? "type failed" };
+              return browserToolResult(result.snapshot ?? (await session.snapshot()), result.note);
+            }
+            if (name === "browser_select") {
+              const values = Array.isArray(args.values) ? args.values.map(String) : [];
+              const result = await session.select(String(args.ref ?? ""), values);
+              if (!result.ok) return { error: result.note ?? "select failed" };
+              return browserToolResult(result.snapshot ?? (await session.snapshot()), result.note);
+            }
+            return { error: `unknown browser tool ${name}` };
           }
           if (name === "list_files") {
             const requestedPath = String(args.path ?? "");
@@ -2259,21 +2360,77 @@ export function createRunExecutor(deps: ExecutorDeps) {
         const invokedSkill = savedSkills.find((skill) =>
           promptInvokesSkill(taskPrompt, skill.name || skill.goal),
         );
+        const invokedSurface = invokedSkill ? skillSurface(invokedSkill.surface) : "computer";
+        // A browser-taught skill can only be replayed where a browser driver is configured;
+        // without one it runs from its written playbook.
+        const browserSurfacePending =
+          Boolean(invokedSkill) && invokedSurface === "browser" && !deps.browser;
+
+        // An unattended browser run cannot pause for a login. If the skill visits an origin
+        // the bot has no confirmed sign-in for, stop now with a clear message instead of
+        // letting the model click into a login wall with nobody watching.
+        if (
+          invokedSkill &&
+          invokedSurface === "browser" &&
+          deps.browser &&
+          (run.trigger === "routine" || run.trigger === "sentinel")
+        ) {
+          const origins = browserRecordingOrigins(parseRecording(invokedSkill.recording).events);
+          const missing = await missingBrowserSignIns(deps.prisma, run.botId, origins);
+          if (missing.length > 0) {
+            const message = `This run needs ${bot.name}'s browser signed in to ${missing.join(
+              ", ",
+            )}. Open the bot's browser, sign in there, then it will run next time.`;
+            const failed = await deps.events.finalizeRun({
+              workspaceId: run.workspaceId,
+              threadId: thread.id,
+              botId: bot.id,
+              runId,
+              taskId: run.taskId,
+              attemptId: attempt.id,
+              leaseOwner: workerId,
+              leaseFence: fence,
+              outcome: "failed",
+              error: message,
+            });
+            if (failed && bot.notifyOnFinish) {
+              await notifyRun(deps, run, {
+                kind: "failure",
+                title: `${bot.name} needs a browser sign-in`,
+                body: message.slice(0, 180),
+                botId: bot.id,
+                threadId: thread.id,
+              });
+            }
+            runAbortController?.abort();
+            return;
+          }
+        }
+
         // User AgentSkills this run leaned on — their retrieval stats get folded from the
         // run's outcome, and a contradicted run queues a proposed revision.
         const invokedAgentSkillIds = invokedUserSkillIds(agentSkills, task.prompt);
 
-        // Replay the recorded inputs deterministically before the model runs; the model then
+        // Replay the recorded steps deterministically before the model runs; the model then
         // verifies, fills what the recording could not, and recovers from any drift.
         let replayHandoff: string | undefined;
-        if (invokedSkill && !scripted) {
+        const replaySurface =
+          invokedSkill && !scripted
+            ? invokedSurface === "browser" && deps.browser
+              ? "browser"
+              : invokedSurface === "computer"
+                ? "computer"
+                : undefined
+            : undefined;
+        if (invokedSkill && replaySurface) {
           try {
             const replaySteps = compileRecordingToReplay(parseRecording(invokedSkill.recording));
             if (replayInputCount(replaySteps) > 0) {
-              const replayResult = await runReplay(
-                replaySteps,
-                bindReplayRunner({ sandbox: deps.sandbox, computer, context }),
-              );
+              const runner =
+                replaySurface === "browser"
+                  ? bindBrowserReplayRunner({ browser: await openBrowserSession(), context })
+                  : bindReplayRunner({ sandbox: deps.sandbox, computer, context });
+              const replayResult = await runReplay(replaySteps, runner);
               replayHandoff = replayHandoffPrompt(
                 invokedSkill.name || invokedSkill.goal.slice(0, 80),
                 invokedSkill.goal,
@@ -2289,15 +2446,19 @@ export function createRunExecutor(deps: ExecutorDeps) {
           }
         }
 
-        const basePrompt = invokedSkill
-          ? `${
+        const skillGuidance = invokedSkill
+          ? [
               replayHandoff ??
-              formatSkillRunPrompt(
-                invokedSkill.name || invokedSkill.goal.slice(0, 80),
-                parsePlaybook(invokedSkill.playbook),
-              )
-            }\n\n${taskPrompt}`
-          : taskPrompt;
+                formatSkillRunPrompt(
+                  invokedSkill.name || invokedSkill.goal.slice(0, 80),
+                  parsePlaybook(invokedSkill.playbook),
+                ),
+              browserSurfacePending ? browserSurfaceUnavailableNote() : "",
+            ]
+              .filter(Boolean)
+              .join("\n\n")
+          : "";
+        const basePrompt = invokedSkill ? `${skillGuidance}\n\n${taskPrompt}` : taskPrompt;
         const approvalContinuation = buildApprovalContinuation(approvedEffects, (request) =>
           redactSecrets(JSON.stringify(request), runSecrets),
         );
@@ -2946,6 +3107,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
         }
       } finally {
         clearInterval(heartbeat);
+        if (browserSession) await browserSession.close().catch(() => undefined);
         if (!retainComputerLease) {
           if (screenRelease) {
             await deps.sandbox

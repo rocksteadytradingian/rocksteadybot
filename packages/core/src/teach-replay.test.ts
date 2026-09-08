@@ -93,4 +93,53 @@ describe("compileRecordingToReplay", () => {
     });
     expect(replayInputCount(steps)).toBe(3);
   });
+
+  it("compiles a browser recording into browser steps and a checkpoint", () => {
+    const steps = compileRecordingToReplay({
+      events: [
+        { at: at(1), kind: "browser", action: "navigate", url: "https://shop.test", hash: "h1" },
+        { at: at(2), kind: "browser", action: "click", ref: "e3", name: "Cart", hash: "h2" },
+        {
+          at: at(3),
+          kind: "browser",
+          action: "type",
+          ref: "e5",
+          name: "Coupon",
+          text: "SAVE10",
+          submit: true,
+          hash: "h3",
+        },
+        { at: at(4), kind: "browser", action: "select", ref: "e7", values: ["L"], hash: "h4" },
+        { at: at(5), kind: "browser", action: "checkpoint", summary: "discount shown", hash: "h5" },
+      ],
+    });
+    expect(steps).toEqual([
+      { kind: "browser", op: "navigate", url: "https://shop.test" },
+      { kind: "settle", ms: 150 },
+      { kind: "browser", op: "click", ref: "e3" },
+      { kind: "settle", ms: 150 },
+      { kind: "browser", op: "type", ref: "e5", text: "SAVE10", submit: true, secretLike: false },
+      { kind: "settle", ms: 150 },
+      { kind: "browser", op: "select", ref: "e7", values: ["L"] },
+      { kind: "settle", ms: 150 },
+      { kind: "checkpoint", expect: "discount shown", snapshotHash: "h5" },
+    ]);
+    expect(replayInputCount(steps)).toBe(4);
+  });
+
+  it("flags a redacted browser type step as secret-like", () => {
+    const steps = compileRecordingToReplay({
+      events: [
+        {
+          at: at(1),
+          kind: "browser",
+          action: "type",
+          ref: "e1",
+          text: "[redacted input]",
+          hash: "h",
+        },
+      ],
+    });
+    expect(steps[0]).toMatchObject({ kind: "browser", op: "type", secretLike: true });
+  });
 });
