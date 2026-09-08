@@ -266,9 +266,19 @@ export const SkillPlaybookSchema = z.object({
 });
 export type SkillPlaybook = z.infer<typeof SkillPlaybookSchema>;
 
+/** What a `kind: "browser"` teach event did. */
+export const BrowserTeachActionSchema = z.enum([
+  "navigate",
+  "click",
+  "type",
+  "select",
+  "checkpoint",
+]);
+export type BrowserTeachAction = z.infer<typeof BrowserTeachActionSchema>;
+
 export const TeachRecordingEventSchema = z.object({
   at: z.string(),
-  kind: z.enum(["pointer", "key", "clipboard", "snapshot", "scroll"]),
+  kind: z.enum(["pointer", "key", "clipboard", "snapshot", "scroll", "browser"]),
   x: z.number().optional(),
   y: z.number().optional(),
   button: z.string().optional(),
@@ -276,8 +286,41 @@ export const TeachRecordingEventSchema = z.object({
   key: z.string().optional(),
   text: z.string().optional(),
   summary: z.string().optional(),
+  // kind: "browser"
+  action: BrowserTeachActionSchema.optional(),
+  ref: z.string().optional(),
+  role: z.string().optional(),
+  name: z.string().optional(),
+  url: z.string().optional(),
+  submit: z.boolean().optional(),
+  values: z.array(z.string()).optional(),
+  hash: z.string().optional(),
 });
 export type TeachRecordingEvent = z.infer<typeof TeachRecordingEventSchema>;
+
+/** One view of the bot's browser during a browser teaching session. */
+export const BrowserTeachViewSchema = z.object({
+  url: z.string(),
+  title: z.string(),
+  /** Accessibility-tree text with `[ref=eN]` handles. */
+  tree: z.string(),
+  hash: z.string(),
+  /** PNG screenshot as a data URL, when available. */
+  screenshot: z.string().nullable(),
+});
+export type BrowserTeachView = z.infer<typeof BrowserTeachViewSchema>;
+
+export const BrowserTeachActionInputSchema = z.object({
+  kind: BrowserTeachActionSchema,
+  ref: z.string().optional(),
+  text: z.string().optional(),
+  url: z.string().optional(),
+  values: z.array(z.string()).optional(),
+  submit: z.boolean().optional(),
+  /** For `checkpoint`: what the user expects to be true here. */
+  expect: z.string().optional(),
+});
+export type BrowserTeachActionInput = z.infer<typeof BrowserTeachActionInputSchema>;
 
 export const TeachSnapshotSchema = z.object({
   at: z.string(),
@@ -949,6 +992,8 @@ export const MeSchema = z.object({
   computerHost: z.enum(["docker", "this-mac"]).nullable(),
   canChooseHostComputer: z.boolean(),
   avatarStyle: AvatarStyleSchema,
+  /** A browser driver is configured on this deployment, so `browser`-surface skills work. */
+  browserSurfaceAvailable: z.boolean(),
 });
 export type Me = z.infer<typeof MeSchema>;
 

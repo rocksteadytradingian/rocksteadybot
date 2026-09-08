@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { TaughtSkillSchema, TaughtSkillSurfaceSchema } from "./domain.js";
+import {
+  BrowserTeachActionInputSchema,
+  TaughtSkillSchema,
+  TaughtSkillSurfaceSchema,
+  TeachRecordingEventSchema,
+} from "./domain.js";
 
 const baseSkill = {
   id: "skill_1",
@@ -44,5 +49,28 @@ describe("TaughtSkillSchema.surface", () => {
   it("keeps an explicit browser surface", () => {
     const parsed = TaughtSkillSchema.parse({ ...baseSkill, surface: "browser" });
     expect(parsed.surface).toBe("browser");
+  });
+});
+
+describe("browser teach events", () => {
+  it("parses a kind:browser recording event", () => {
+    const parsed = TeachRecordingEventSchema.parse({
+      at: "2026-09-08T00:00:00.000Z",
+      kind: "browser",
+      action: "click",
+      ref: "e4",
+      role: "link",
+      name: "Checkout",
+      url: "https://shop.test/cart",
+      hash: "deadbeef",
+    });
+    expect(parsed.action).toBe("click");
+  });
+
+  it("rejects an unknown browser action on the action input", () => {
+    expect(BrowserTeachActionInputSchema.safeParse({ kind: "click", ref: "e1" }).success).toBe(
+      true,
+    );
+    expect(BrowserTeachActionInputSchema.safeParse({ kind: "scroll" }).success).toBe(false);
   });
 });

@@ -12,6 +12,8 @@ import {
   BotMcpServerSchema,
   BotSchema,
   BotSectionSchema,
+  BrowserTeachActionInputSchema,
+  BrowserTeachViewSchema,
   CapabilityInstallSchema,
   ComposioProjectKeyStatusSchema,
   ComputerModeSchema,
@@ -388,6 +390,12 @@ export const appContract = {
       .input(z.object({ skillId: Id, event: TeachRecordingEventSchema }))
       .output(TaughtSkillSchema),
     snapshot: oc.input(z.object({ skillId: Id })).output(TaughtSkillSchema),
+    /** Current view of the bot's browser during a `surface: "browser"` teaching session. */
+    browserView: oc.input(botId).output(BrowserTeachViewSchema.nullable()),
+    /** Drive the bot's browser one step during teaching; the step is recorded. */
+    browserAction: oc
+      .input(z.object({ botId: Id, action: BrowserTeachActionInputSchema }))
+      .output(BrowserTeachViewSchema),
     stop: oc.input(z.object({ skillId: Id })).output(TaughtSkillSchema),
     updateDraft: oc
       .input(
