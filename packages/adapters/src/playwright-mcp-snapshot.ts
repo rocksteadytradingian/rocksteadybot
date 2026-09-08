@@ -81,8 +81,13 @@ export function parsePlaywrightSnapshot(output: McpToolOutput): BrowserSnapshot 
     /(?:Page Snapshot|Page state|Accessibility snapshot):\s*\n([\s\S]*?)(?:\n```|\n*$)/i,
   )?.[1];
   const lastFence = [...text.matchAll(/```[a-z]*\s*\n([\s\S]*?)\n```/gi)].at(-1)?.[1];
-  const tree = (yamlFence ?? afterMarker ?? lastFence ?? text).trim();
-  if (!tree) return undefined;
+  // A blank page (`about:blank`, before the first navigate) reports a real
+  // snapshot with an empty a11y tree — a labelled fence with nothing in it.
+  // That is a valid state, not a parse failure, so only bail when the tool
+  // returned no page section at all.
+  const treeSource = yamlFence ?? afterMarker ?? lastFence;
+  if (treeSource === undefined && !/(?:^|\n)\s*#{0,3}\s*Page\b/i.test(text)) return undefined;
+  const tree = (treeSource ?? "").trim();
 
   return { url, title, tree, hash: hashSnapshotTree(tree) };
 }
