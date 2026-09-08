@@ -2033,6 +2033,15 @@ export function createRouter(deps: RouterDeps) {
       browserAction: authed.skills.browserAction.handler(async ({ context, input }) =>
         taughtSkills.browserTeachAction(context.actor, input.botId, input.action),
       ),
+      browserSignIns: authed.skills.browserSignIns.handler(async ({ context, input }) =>
+        taughtSkills.browserSignIns(context.actor, input.botId),
+      ),
+      browserConfirmSignIn: authed.skills.browserConfirmSignIn.handler(async ({ context, input }) =>
+        taughtSkills.confirmBrowserSignIn(context.actor, input.botId, input.origin),
+      ),
+      browserForgetSignIn: authed.skills.browserForgetSignIn.handler(async ({ context, input }) =>
+        taughtSkills.forgetBrowserSignIn(context.actor, input.botId, input.origin),
+      ),
       stop: authed.skills.stop.handler(async ({ context, input }) =>
         taughtSkills.stop(context.actor, input.skillId),
       ),
