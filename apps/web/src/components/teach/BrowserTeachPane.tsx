@@ -1,7 +1,16 @@
 import { Trans, useLingui } from "@lingui/react/macro";
-import type { BrowserTeachActionInput, BrowserTeachView } from "@rakazo/contracts";
+import type { BrowserSignIn, BrowserTeachActionInput, BrowserTeachView } from "@rakazo/contracts";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { rpc } from "../../lib/rpc";
+
+function originOf(url: string): string | null {
+  try {
+    const parsed = new URL(url);
+    return parsed.protocol === "http:" || parsed.protocol === "https:" ? parsed.origin : null;
+  } catch {
+    return null;
+  }
+}
 
 interface TreeElement {
   ref: string;
@@ -42,7 +51,16 @@ export function BrowserTeachPane({ botId }: { botId: string }) {
   const [selectedRef, setSelectedRef] = useState<string | null>(null);
   const [typeDraft, setTypeDraft] = useState("");
   const [submitAfter, setSubmitAfter] = useState(false);
+  const [signIns, setSignIns] = useState<BrowserSignIn[]>([]);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const loadSignIns = useCallback(async () => {
+    try {
+      setSignIns(await rpc.skills.browserSignIns({ botId }));
+    } catch {
+      // leave the last list
+    }
+  }, [botId]);
 
   const refresh = useCallback(async () => {
     try {
@@ -55,13 +73,14 @@ export function BrowserTeachPane({ botId }: { botId: string }) {
 
   useEffect(() => {
     void refresh();
+    void loadSignIns();
     pollRef.current = setInterval(() => {
       if (!busy) void refresh();
     }, 1500);
     return () => {
       if (pollRef.current) clearInterval(pollRef.current);
     };
-  }, [refresh, busy]);
+  }, [refresh, loadSignIns, busy]);
 
   async function run(action: BrowserTeachActionInput) {
     setBusy(true);
@@ -78,11 +97,31 @@ export function BrowserTeachPane({ botId }: { botId: string }) {
     }
   }
 
+  async function confirmSignIn(origin: string) {
+    try {
+      setSignIns(await rpc.skills.browserConfirmSignIn({ botId, origin }));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : t`Could not save the sign-in`);
+    }
+  }
+
+  async function forgetSignIn(origin: string) {
+    try {
+      setSignIns(await rpc.skills.browserForgetSignIn({ botId, origin }));
+    } catch {
+      // ignore
+    }
+  }
+
   const elements = view ? parseElements(view.tree) : [];
   const actionable = elements.filter((element) => ACTIONABLE.has(element.role));
   const selected = actionable.find((element) => element.ref === selectedRef) ?? null;
   const selectedIsTextField =
     selected?.role === "textbox" || selected?.role === "searchbox" || selected?.role === "combobox";
+  const currentOrigin = view ? originOf(view.url) : null;
+  const currentSignedIn = currentOrigin
+    ? signIns.some((entry) => entry.origin === currentOrigin)
+    : false;
 
   return (
     <div className="flex h-full min-h-0 flex-col bg-[var(--rk-main)]">
@@ -113,6 +152,40 @@ export function BrowserTeachPane({ botId }: { botId: string }) {
           {error}
         </div>
       ) : null}
+
+      <div className="flex flex-wrap items-center gap-2 border-b border-[var(--rk-hairline-strong)] px-3 py-1.5 text-[12px]">
+        {currentOrigin ? (
+          currentSignedIn ? (
+            <span className="text-[var(--rk-muted)]">
+              <Trans>Signed in to {currentOrigin}</Trans>{" "}
+              <button
+                type="button"
+                onClick={() => void forgetSignIn(currentOrigin)}
+                className="underline"
+              >
+                <Trans>remove</Trans>
+              </button>
+            </span>
+          ) : (
+            <button
+              type="button"
+              onClick={() => void confirmSignIn(currentOrigin)}
+              className="rounded-[8px] border border-[var(--rk-hairline-strong)] px-2.5 py-1 text-[var(--rk-ink)]"
+            >
+              <Trans>Mark this bot signed in to {currentOrigin}</Trans>
+            </button>
+          )
+        ) : (
+          <span className="text-[var(--rk-muted-2)]">
+            <Trans>Navigate to a site and sign in there so scheduled runs can use it.</Trans>
+          </span>
+        )}
+        {signIns.length > 0 ? (
+          <span className="text-[var(--rk-muted-2)]">
+            · {signIns.map((entry) => entry.origin.replace(/^https?:\/\//, "")).join(", ")}
+          </span>
+        ) : null}
+      </div>
 
       <div className="flex min-h-0 flex-1">
         <div className="min-h-0 flex-1 overflow-auto bg-black p-2">

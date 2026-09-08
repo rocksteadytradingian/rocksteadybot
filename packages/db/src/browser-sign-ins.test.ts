@@ -44,7 +44,7 @@ describe("confirmBrowserSignIn", () => {
       origin: "https://a.test/inbox?x=1",
     });
     expect(next.map((entry) => entry.origin)).toEqual(["https://a.test"]);
-    expect(next[0].confirmedAt).not.toBe("old");
+    expect(next[0]?.confirmedAt).not.toBe("old");
     expect(upsert).toHaveBeenCalledOnce();
   });
 });
