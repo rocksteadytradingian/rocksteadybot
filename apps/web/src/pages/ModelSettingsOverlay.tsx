@@ -26,6 +26,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { HowItWorks } from "../components/HowItWorks";
 import { localizedProviderHint } from "../lib/localized-provider-hint";
 import type { ModelCatalogEntry, ModelCredential } from "../lib/model-auth";
 import { rpc } from "../lib/rpc";
@@ -497,6 +498,41 @@ export function ModelSettingsOverlay({ onClose }: { onClose: () => void }) {
           {routerSummary ? (
             <div className="mt-1 text-[13px] text-[var(--rk-muted)]">{routerSummary}</div>
           ) : null}
+        </div>
+
+        <div className="mx-6 mt-4 sm:mx-8">
+          <HowItWorks>
+            <p>
+              <Trans>
+                Connect one or more model providers with your own credentials. The bots use
+                whichever model is set as active; each turn's cost is billed by your provider.
+              </Trans>
+            </p>
+            <ol>
+              <li>
+                <Trans>
+                  Pick a provider, then either paste an <strong>API key</strong> or run its sign-in.
+                  For an OpenAI-compatible server, set the <strong>Server URL</strong>, press{" "}
+                  <strong>Find models</strong>, and choose one.
+                </Trans>
+              </li>
+              <li>
+                <Trans>Press “Use this model” to make it the active model.</Trans>
+              </li>
+              <li>
+                <Trans>
+                  On a router-capable provider, fill the <strong>Fast</strong>,{" "}
+                  <strong>Smart</strong>, and <strong>Heavy</strong> slots and set the active model
+                  to <strong>Auto</strong> to route each turn by task difficulty.
+                </Trans>
+              </li>
+              <li>
+                <Trans>
+                  Give one bot a different model in that bot's Settings → Advanced → Model.
+                </Trans>
+              </li>
+            </ol>
+          </HowItWorks>
         </div>
 
         <div className="flex min-h-0 flex-1 flex-col gap-6 overflow-hidden px-6 py-6 sm:px-8 md:flex-row">

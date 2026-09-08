@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { botFolderMounts, botFolderSpecHash } from "@rakazo/core";
 
 export const COMPUTER_IMAGE = process.env.RAKAZO_COMPUTER_IMAGE ?? "rakazo/computer:local";
 export const TEAM_SCREEN_LIMIT = 8;
@@ -40,7 +41,15 @@ export interface ComputerCreateInput {
   workspaceId: string;
   homePath: string;
   networkMode?: string;
+  /**
+   * Host directories to bind-mount read-write under /mnt/folders (opt-in, see
+   * botFolderMountsEnabled). Already gated + resolved by the caller; empty when
+   * the feature is off or the computer is shared (Team).
+   */
+  folders?: string[];
 }
+
+export const BOT_FOLDERS_LABEL = "rakazo.botFolders";
 
 interface PointerInput {
   kind: "pointer";
@@ -57,6 +66,10 @@ export type SandboxInput =
 
 export function containerCreateOptions(input: ComputerCreateInput) {
   const ports = computerPortBindings();
+  const folders = input.folders ?? [];
+  const folderBinds = botFolderMounts(folders).map(
+    (mount) => `${mount.hostPath}:${mount.containerPath}:rw`,
+  );
   return {
     Image: input.image,
     name: input.name,
@@ -72,10 +85,11 @@ export function containerCreateOptions(input: ComputerCreateInput) {
       "rakazo.managed": "true",
       "rakazo.botId": input.botId,
       "rakazo.workspaceId": input.workspaceId,
+      [BOT_FOLDERS_LABEL]: botFolderSpecHash(folders),
     },
     ExposedPorts: ports.ExposedPorts,
     HostConfig: {
-      Binds: [`${input.homePath}:/home/rakazo`],
+      Binds: [`${input.homePath}:/home/rakazo`, ...folderBinds],
       PortBindings: ports.PortBindings,
       ShmSize: 256 * 1024 * 1024,
       ReadonlyPaths: ["/usr/share/novnc"],

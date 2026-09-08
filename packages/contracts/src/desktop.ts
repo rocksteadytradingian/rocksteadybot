@@ -53,6 +53,12 @@ export interface RakazoDesktop {
      */
     onCallback: (listener: (callback: RakazoDesktopOAuthCallback) => void) => () => void;
   };
+  /**
+   * Opens the OS folder picker and resolves the chosen absolute paths (empty if
+   * cancelled). Present only in the desktop app, so the web build can fall back
+   * to a plain path field.
+   */
+  pickFolders?: () => Promise<string[]>;
 }
 
 /** How the desktop app was pointed at a Rakazo server during first-run setup. */

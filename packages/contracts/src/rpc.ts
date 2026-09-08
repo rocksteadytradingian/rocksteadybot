@@ -9,6 +9,7 @@ import {
   ArtifactSchema,
   ArtifactWithContentSchema,
   AvatarStyleSchema,
+  BotFolderSchema,
   BotMcpServerSchema,
   BotSchema,
   BotSectionSchema,
@@ -325,6 +326,19 @@ export const appContract = {
       .input(z.object({ defaultMemoryScope: MemoryScopeSchema }))
       .output(WorkspaceMemoryConfigSchema),
     disconnectProvider: oc.output(z.object({ ok: z.literal(true) })),
+  },
+  botFolders: {
+    list: oc.input(z.object({ botId: Id })).output(z.array(BotFolderSchema)),
+    add: oc
+      .input(
+        z.object({
+          botId: Id,
+          path: z.string().min(1),
+          label: z.string().max(120).optional(),
+        }),
+      )
+      .output(BotFolderSchema),
+    remove: oc.input(z.object({ botId: Id, id: Id })).output(z.object({ ok: z.literal(true) })),
   },
   routines: {
     list: oc.input(botId).output(z.array(RoutineSchema)),

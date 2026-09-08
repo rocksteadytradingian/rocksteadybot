@@ -24,4 +24,5 @@ contextBridge.exposeInMainWorld("rakazoDesktop", {
       return () => ipcRenderer.off("desktop.oauth.callback", handler);
     },
   },
+  pickFolders: () => ipcRenderer.invoke("desktop.pickFolders"),
 });

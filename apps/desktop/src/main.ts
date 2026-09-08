@@ -2,7 +2,17 @@ import { existsSync } from "node:fs";
 import { readFile, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type { DesktopReachability, DesktopSetup } from "@rakazo/contracts";
-import { app, BrowserWindow, ipcMain, Menu, net, type Session, session, shell } from "electron";
+import {
+  app,
+  BrowserWindow,
+  dialog,
+  ipcMain,
+  Menu,
+  net,
+  type Session,
+  session,
+  shell,
+} from "electron";
 import { shouldQuitWhenAllWindowsClosed } from "./app-lifecycle.js";
 import {
   DesktopUpdateController,
@@ -941,6 +951,13 @@ app.whenReady().then(async () => {
     if (process.platform === "darwin" && icon) app.dock?.setIcon(icon);
     installApplicationMenu();
     ipcMain.handle("desktop.platform", () => process.platform);
+    ipcMain.handle("desktop.pickFolders", async (event) => {
+      const win = windowFrom(event);
+      const result = await (win
+        ? dialog.showOpenDialog(win, { properties: ["openDirectory", "multiSelections"] })
+        : dialog.showOpenDialog({ properties: ["openDirectory", "multiSelections"] }));
+      return result.canceled ? [] : result.filePaths;
+    });
     ipcMain.handle("desktop.window.close", (event) => {
       windowFrom(event)?.close();
     });

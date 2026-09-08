@@ -7,6 +7,7 @@ import {
 } from "@rakazo/contracts";
 import { Button } from "@rakazo/ui-web";
 import { useEffect, useState } from "react";
+import { HowItWorks } from "../components/HowItWorks";
 import { rpc } from "../lib/rpc";
 
 const ENTITY_LABELS: Record<RedactionEntity, string> = {
@@ -108,6 +109,41 @@ export function RedactionSettingsOverlay({ onClose }: { onClose: () => void }) {
         </div>
 
         <div className="flex-1 overflow-y-auto px-6 py-5 sm:px-8">
+          <HowItWorks>
+            <p>
+              <Trans>
+                The policy runs on every screenshot a bot takes in this workspace, before the image
+                reaches the model. Matched values are covered so the model never sees them.
+              </Trans>
+            </p>
+            <ol>
+              <li>
+                <Trans>Turn on “Scrub screenshots for this workspace”.</Trans>
+              </li>
+              <li>
+                <Trans>
+                  Pick <strong>Black box</strong> (solid) or <strong>Blur</strong>, then tick the
+                  data types to cover under <strong>What to redact</strong>.
+                </Trans>
+              </li>
+              <li>
+                <Trans>
+                  Raise <strong>Minimum confidence</strong> to redact less and risk more leakage;
+                  lower it to redact more aggressively.
+                </Trans>
+              </li>
+              <li>
+                <Trans>
+                  Add exact strings to <strong>Never redact these</strong> — one per line — to keep
+                  known-safe values (e.g. a test email) visible.
+                </Trans>
+              </li>
+              <li>
+                <Trans>Press Save. Only a workspace owner can change this.</Trans>
+              </li>
+            </ol>
+          </HowItWorks>
+
           {!policy ? (
             <div className="text-[13.5px] text-[var(--rk-muted-2)]">
               <Trans>Loading…</Trans>

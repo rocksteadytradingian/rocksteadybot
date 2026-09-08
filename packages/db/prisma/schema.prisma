@@ -118,6 +118,7 @@ model Organization {
   mcpServers   McpServer[]
   actionApprovalRules ActionApprovalRule[]
   workspaceMemoryConfig WorkspaceMemoryConfig?
+  botFolders  BotFolder[]
   chatGroups  ChatGroup[]
 
   @@unique([slug])
@@ -282,6 +283,7 @@ model Bot {
   mcpServers     BotMcpServer[]
   groupMembers   ChatGroupMember[]
   defaultForGroups ChatGroup[] @relation("GroupDefaultBot")
+  folders        BotFolder[]
 
   @@index([workspaceId, userId, archivedAt, pinned, updatedAt])
   @@index([sectionId])
@@ -844,6 +846,23 @@ model NotificationPreference {
 
   @@unique([workspaceId, userId])
   @@map("notification_preferences")
+}
+
+model BotFolder {
+  id            String       @id @default(cuid())
+  botId         String
+  bot           Bot          @relation(fields: [botId], references: [id], onDelete: Cascade)
+  workspaceId   String
+  workspace     Organization @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  path          String
+  label         String       @default("")
+  addedByUserId String
+  createdAt     DateTime     @default(now())
+
+  @@unique([botId, path])
+  @@index([botId])
+  @@index([workspaceId])
+  @@map("bot_folders")
 }
 
 model WorkspaceMemoryConfig {

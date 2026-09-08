@@ -1,4 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
+import path from "node:path";
 import { implement, ORPCError } from "@orpc/server";
 import {
   type AdapterContext,
@@ -95,6 +96,7 @@ import {
   type WorkerStall,
 } from "@rakazo/core";
 import {
+  addBotFolder,
   appendEventInTransaction,
   createGroupRepos,
   createRepos,
@@ -106,6 +108,7 @@ import {
   findDefaultVoiceCredential,
   findWorkspaceMemoryConfig,
   IsolationError,
+  listBotFolders,
   listWorkspaces,
   lockOwnedGroup,
   newestModelCredentialOrder,
@@ -114,6 +117,7 @@ import {
   type PrismaClient,
   parseComputerMode,
   readWorkspaceRedactionPolicy,
+  removeBotFolder,
   renameWorkspace,
   requireMembership,
   restoreLastWorkingModel,
@@ -1730,6 +1734,31 @@ export function createRouter(deps: RouterDeps) {
             { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
           ),
         );
+        return { ok: true as const };
+      }),
+    },
+    botFolders: {
+      list: authed.botFolders.list.handler(async ({ context, input }) => {
+        await repos.getBot(context.actor, input.botId);
+        const folders = await listBotFolders(deps.prisma, input.botId);
+        return folders.map(serializeBotFolder);
+      }),
+      add: authed.botFolders.add.handler(async ({ context, input }) => {
+        await repos.getBot(context.actor, input.botId);
+        const folderPath = normalizeHostFolderPath(input.path);
+        const label = (input.label ?? "").trim();
+        const folder = await addBotFolder(deps.prisma, {
+          botId: input.botId,
+          workspaceId: context.actor.workspaceId,
+          path: folderPath,
+          label,
+          addedByUserId: context.actor.userId,
+        });
+        return serializeBotFolder(folder);
+      }),
+      remove: authed.botFolders.remove.handler(async ({ context, input }) => {
+        await repos.getBot(context.actor, input.botId);
+        await removeBotFolder(deps.prisma, { botId: input.botId, id: input.id });
         return { ok: true as const };
       }),
     },
@@ -3537,6 +3566,58 @@ async function persistModelCredential(
     ),
   );
   return modelCredentialDto(cred, input.plaintext);
+}
+
+function serializeBotFolder(folder: {
+  id: string;
+  botId: string;
+  path: string;
+  label: string;
+  addedByUserId: string;
+  createdAt: Date;
+}) {
+  return {
+    id: folder.id,
+    botId: folder.botId,
+    path: folder.path,
+    label: folder.label,
+    addedByUserId: folder.addedByUserId,
+    createdAt: folder.createdAt.toISOString(),
+  };
+}
+
+/**
+ * Validate and canonicalize a host folder path before it enters a bot's
+ * allow-list. Real existence and symlink resolution happen later, on the machine
+ * that runs the sandbox; here we only reject paths that are relative, traverse
+ * upward, or point at a filesystem root (which would grant a whole disk).
+ */
+export function normalizeHostFolderPath(raw: string): string {
+  const trimmed = raw.trim();
+  if (!trimmed) throw new ORPCError("BAD_REQUEST", { message: "Folder path is required" });
+  // A leading "/" is absolute under both flavors, so decide by shape: only a
+  // drive letter or a UNC prefix means Windows; anything else absolute is POSIX.
+  const looksWindows = /^[a-zA-Z]:[\\/]/.test(trimmed) || /^\\\\/.test(trimmed);
+  const flavor = looksWindows
+    ? path.win32
+    : path.posix.isAbsolute(trimmed)
+      ? path.posix
+      : path.win32.isAbsolute(trimmed)
+        ? path.win32
+        : null;
+  if (!flavor) {
+    throw new ORPCError("BAD_REQUEST", { message: "Folder path must be absolute" });
+  }
+  // Reject `..` on the raw input: `normalize` would silently collapse it and
+  // change which directory is being allow-listed.
+  if (trimmed.split(/[\\/]+/).includes("..")) {
+    throw new ORPCError("BAD_REQUEST", { message: "Folder path must not contain '..'" });
+  }
+  const normalized = flavor.normalize(trimmed).replace(/[\\/]+$/, "") || flavor.sep;
+  if (normalized === flavor.parse(normalized).root) {
+    throw new ORPCError("BAD_REQUEST", { message: "Pick a folder, not a filesystem root" });
+  }
+  return normalized;
 }
 
 async function requireWorkspaceOwner(prisma: PrismaClient, actor: Actor): Promise<void> {
