@@ -30,6 +30,10 @@ services:
   # without rebuilding the image.
   web:
     user: "0:0"
+    # Loopback-only desktop dev stack: the real auth/encryption secrets in .env are
+    # blank, so let the vite config accept dev defaults for both build and preview.
+    environment:
+      RAKAZO_ALLOW_DEV_SECRETS: "1"
     ports: !override
       - "127.0.0.1:5173:5173"
     volumes:
