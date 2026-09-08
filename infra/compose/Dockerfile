@@ -24,6 +24,14 @@ RUN pnpm --filter @rakazo/db generate
 RUN RAKAZO_ALLOW_DEV_SECRETS=1 pnpm --filter @rakazo/web build
 RUN install -d -m 750 -o node -g node /data /app/apps/web/node_modules/.vite-temp
 RUN chown -R node:node /app/apps/web/dist /app/apps/web/node_modules/.vite-temp
+
+# --- @playwright/mcp: optional `browser` execution surface (RAKAZO_BROWSER_SURFACE) ---
+ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
+RUN npm i -g @playwright/mcp@0.0.80 \
+    && npx --yes playwright@1.63.0-alpha-2026-08-31 install --with-deps chromium \
+    && chown -R node:node /ms-playwright \
+    && rm -rf /var/lib/apt/lists/* /root/.npm
+
 ARG GIT_SHA
 ENV NODE_ENV=production
 ENV GIT_SHA=$GIT_SHA

@@ -83,7 +83,7 @@ export function SkillPromotionCard({
   }
 
   return (
-    <div className="mx-6 mb-2 rounded-[14px] border border-[#2A2A2E] bg-[#151517] px-4 py-3">
+    <div className="mx-6 mb-2 rounded-[14px] border border-[var(--rk-hairline-strong)] bg-[var(--rk-surface-2)] px-4 py-3">
       <div className="flex items-start justify-between gap-3">
         <div>
           <div className="text-[13.5px] text-[var(--rk-ink)]">
