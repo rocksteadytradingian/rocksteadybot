@@ -8,11 +8,14 @@ type Action = "recover" | "reset" | "update" | "restart";
 
 export function ComputerMaintenanceActions({
   botId,
+  target,
   computer,
   onChanged,
   compact = false,
 }: {
   botId: string;
+  /** Overrides `botId` — a group drives the shared workspace team computer. */
+  target?: { botId: string } | { groupId: string };
   computer: ComputerStatus | null;
   onChanged: () => Promise<void>;
   compact?: boolean;
@@ -39,11 +42,12 @@ export function ComputerMaintenanceActions({
     setPending(action);
     setError(null);
     try {
+      const rpcTarget = target ?? { botId };
       if (action === "restart" || (action === "recover" && stuckBooting)) {
-        await rpc.computer.restart({ botId });
-      } else if (action === "recover") await rpc.computer.recover({ botId });
-      else if (action === "reset") await rpc.computer.reset({ botId });
-      else await rpc.computer.update({ botId });
+        await rpc.computer.restart(rpcTarget);
+      } else if (action === "recover") await rpc.computer.recover(rpcTarget);
+      else if (action === "reset") await rpc.computer.reset(rpcTarget);
+      else await rpc.computer.update(rpcTarget);
       setConfirmReset(false);
       await onChanged();
     } catch (err) {

@@ -146,6 +146,7 @@ const groupTargetInclude = {
           name: true,
           color: true,
           runs: activeRunSelection,
+          computer: { select: { id: true, kind: true, scope: true } },
         },
       },
     },

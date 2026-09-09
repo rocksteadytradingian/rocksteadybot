@@ -73,6 +73,7 @@ import {
   type Actor,
   appContract,
   COMPLEXITY_ROUTER_MODEL_ID,
+  type ComputerMode,
   type ComputerStatus,
   isAllowedComplexityRouterSlot,
   isComplexityRouterProvider,
@@ -104,6 +105,7 @@ import {
   createWorkspace,
   deleteWorkspace,
   ensureIdentityDocuments,
+  ensureTeamComputer,
   findDefaultModelCredential,
   findDefaultVoiceCredential,
   findWorkspaceMemoryConfig,
@@ -1170,14 +1172,15 @@ export function createRouter(deps: RouterDeps) {
     },
     computer: {
       status: authed.computer.status.handler(async ({ context, input }) =>
-        computerStatus(deps, context.actor, input.botId),
+        computerStatus(deps, context.actor, input),
       ),
       boot: authed.computer.boot.handler(async ({ context, input }) => {
-        const bot = await repos.getBot(context.actor, input.botId);
+        const subject = await resolveComputerSubject(deps, context.actor, input);
+        const bot = { id: subject.botId, computer: subject.computer };
         if (!bot.computer) throw new IsolationError();
         if (bot.computer.state === "running" && bot.computer.providerRef) {
           scheduleComputerSleep(deps.jobs, bot.computer.id);
-          return computerStatus(deps, context.actor, input.botId);
+          return computerStatus(deps, context.actor, input);
         }
         const ctx = computerContext(context.actor, bot.id, "boot");
         const manualRunId = `boot:${randomUUID()}`;
@@ -1203,10 +1206,11 @@ export function createRouter(deps: RouterDeps) {
         } finally {
           await releaseComputerExecutionLease(deps.prisma, lease);
         }
-        return computerStatus(deps, context.actor, input.botId);
+        return computerStatus(deps, context.actor, input);
       }),
       stop: authed.computer.stop.handler(async ({ context, input }) => {
-        const bot = await repos.getBot(context.actor, input.botId);
+        const subject = await resolveComputerSubject(deps, context.actor, input);
+        const bot = { id: subject.botId, computer: subject.computer };
         if (!bot.computer) throw new IsolationError();
         const controlLeaseId = bot.computer.controlLeaseId;
         const now = new Date();
@@ -1275,22 +1279,26 @@ export function createRouter(deps: RouterDeps) {
         await deps.jobs.cancel(
           computerControlExpireJobKey(bot.computer.id, controlLeaseId ?? undefined),
         );
-        return computerStatus(deps, context.actor, input.botId);
+        return computerStatus(deps, context.actor, input);
       }),
       recover: authed.computer.recover.handler(async ({ context, input }) =>
-        runComputerReplace(deps, context, input.botId, "recover", "recover"),
+        runComputerReplace(deps, context, input, "recover", "recover"),
       ),
       reset: authed.computer.reset.handler(async ({ context, input }) =>
-        runComputerReplace(deps, context, input.botId, "reset", "reset"),
+        runComputerReplace(deps, context, input, "reset", "reset"),
       ),
       update: authed.computer.update.handler(async ({ context, input }) =>
-        runComputerReplace(deps, context, input.botId, "update", "update"),
+        runComputerReplace(deps, context, input, "update", "update"),
       ),
       restart: authed.computer.restart.handler(async ({ context, input }) =>
-        runComputerReplace(deps, context, input.botId, "recover", "restart", { force: true }),
+        runComputerReplace(deps, context, input, "recover", "restart", { force: true }),
       ),
       takeover: authed.computer.takeover.handler(async ({ context, input }) => {
-        let bot = await repos.getBot(context.actor, input.botId);
+        let subject = await resolveComputerSubject(deps, context.actor, input);
+        const reload = async () => {
+          subject = await resolveComputerSubject(deps, context.actor, input);
+        };
+        let bot = { id: subject.botId, computer: subject.computer };
         if (!bot.computer?.providerRef || bot.computer.state !== "running") {
           throw new ORPCError("BAD_REQUEST", { message: "computer must be running" });
         }
@@ -1324,12 +1332,14 @@ export function createRouter(deps: RouterDeps) {
               controlRunId: null,
             },
           });
-          bot = await repos.getBot(context.actor, input.botId);
+          await reload();
+          bot = { id: subject.botId, computer: subject.computer };
           if (!bot.computer) throw new IsolationError();
         }
         if (bot.computer.controlLeaseId) {
           await expireComputerControl(deps, bot.computer.id, bot.computer.controlLeaseId);
-          bot = await repos.getBot(context.actor, input.botId);
+          await reload();
+          bot = { id: subject.botId, computer: subject.computer };
         }
         if (!bot.computer) throw new IsolationError();
 
@@ -1414,10 +1424,10 @@ export function createRouter(deps: RouterDeps) {
           });
           throw error;
         }
-        if (bot.thread) {
+        if (subject.threadId) {
           await deps.events.append({
             workspaceId: context.actor.workspaceId,
-            threadId: bot.thread.id,
+            threadId: subject.threadId,
             botId: bot.id,
             type: "computer.takeover.granted",
             payload: { leaseId, takeoverRequested: waitingForTakeover },
@@ -1427,7 +1437,8 @@ export function createRouter(deps: RouterDeps) {
         return { leaseId, expiresAt: expiresAt.toISOString() };
       }),
       release: authed.computer.release.handler(async ({ context, input }) => {
-        const bot = await repos.getBot(context.actor, input.botId);
+        const subject = await resolveComputerSubject(deps, context.actor, input);
+        const bot = { id: subject.botId, computer: subject.computer };
         if (!bot.computer) throw new IsolationError();
         const controlBotId = bot.computer.controlBotId;
         const controlLeaseId = bot.computer.controlLeaseId;
@@ -1457,6 +1468,7 @@ export function createRouter(deps: RouterDeps) {
           leaseId: controlLeaseId,
           holder: "bot",
           reason: input.reason ?? "released",
+          threadId: subject.threadId ?? undefined,
         });
         if (!released) return { ok: true as const };
         // The lease-specific key makes this cancellation safe after a replacement takeover.
@@ -1473,8 +1485,9 @@ export function createRouter(deps: RouterDeps) {
         return { ok: true as const };
       }),
       input: authed.computer.input.handler(async ({ context, input }) => {
-        const bot = await repos.getBot(context.actor, input.botId);
-        const computer = bot.computer;
+        const subject = await resolveComputerSubject(deps, context.actor, input);
+        const bot = { id: subject.botId };
+        const computer = subject.computer;
         if (!computer || !hasActiveComputerControl(computer) || computer.controlBotId !== bot.id) {
           await expireStaleComputerControl(deps, computer);
           throw new ORPCError("FORBIDDEN");
@@ -1519,10 +1532,11 @@ export function createRouter(deps: RouterDeps) {
         return { ok: true as const };
       }),
       files: authed.computer.files.handler(async ({ context, input }) => {
-        const bot = await repos.getBot(context.actor, input.botId);
+        const subject = await resolveComputerSubject(deps, context.actor, input);
+        const bot = { id: subject.botId, computer: subject.computer };
         if (!bot.computer) throw new IsolationError();
         const computer = bot.computer;
-        const computerMode = parseComputerMode(computer.scope);
+        const computerMode = subject.computerMode;
         const ctx = computerContext(context.actor, bot.id, "files");
         const storedPath = resolveBotWorkspacePath(computerMode, bot.id, input.path);
         let entries: Awaited<ReturnType<SandboxProvider["listFiles"]>>;
@@ -1542,9 +1556,10 @@ export function createRouter(deps: RouterDeps) {
         }));
       }),
       readFile: authed.computer.readFile.handler(async ({ context, input }) => {
-        const bot = await repos.getBot(context.actor, input.botId);
+        const subject = await resolveComputerSubject(deps, context.actor, input);
+        const bot = { id: subject.botId, computer: subject.computer };
         if (!bot.computer) throw new IsolationError();
-        const computerMode = parseComputerMode(bot.computer.scope);
+        const computerMode = subject.computerMode;
         const ctx = computerContext(context.actor, bot.id, "read");
         const storedPath = resolveBotWorkspacePath(computerMode, bot.id, input.path);
         let content: string;
@@ -1573,10 +1588,11 @@ export function createRouter(deps: RouterDeps) {
         return { path: input.path, content };
       }),
       screenUrl: authed.computer.screenUrl.handler(async ({ context, input }) => {
-        let bot = await repos.getBot(context.actor, input.botId);
-        if (await expireStaleComputerControl(deps, bot.computer)) {
-          bot = await repos.getBot(context.actor, input.botId);
+        let subject = await resolveComputerSubject(deps, context.actor, input);
+        if (await expireStaleComputerControl(deps, subject.computer)) {
+          subject = await resolveComputerSubject(deps, context.actor, input);
         }
+        const bot = { id: subject.botId, computer: subject.computer };
         if (
           !bot.computer?.providerRef ||
           (bot.computer.state !== "running" && bot.computer.state !== "booting")
@@ -1619,7 +1635,8 @@ export function createRouter(deps: RouterDeps) {
         };
       }),
       heartbeat: authed.computer.heartbeat.handler(async ({ context, input }) => {
-        const bot = await repos.getBot(context.actor, input.botId);
+        const subject = await resolveComputerSubject(deps, context.actor, input);
+        const bot = { computer: subject.computer };
         if (bot.computer?.state === "running" && bot.computer.providerRef) {
           await deps.prisma.computer.updateMany({
             where: { id: bot.computer.id, state: "running" },
@@ -3287,34 +3304,97 @@ function rethrowWorkspaceError(error: unknown): never {
   throw error;
 }
 
+/** A single bot, or a group (its members share the workspace team computer). */
+export type ComputerTargetInput = { botId?: string; groupId?: string };
+
+type ComputerSubjectComputer = NonNullable<
+  Awaited<ReturnType<ReturnType<typeof createRepos>["getBot"]>>["computer"]
+>;
+
+type ComputerSubject = {
+  /** Representative real bot — control ownership, adapter context, team file paths. */
+  botId: string;
+  botName: string;
+  /** Set when the target is a group: the shared workspace team computer. */
+  groupId: string | null;
+  /** Thread that computer.* lifecycle events are appended to (null for a bare bot with no thread). */
+  threadId: string | null;
+  computer: ComputerSubjectComputer | null;
+  computerMode: ComputerMode;
+};
+
+/**
+ * Resolves a `computer.*` target. A group target always drives the workspace team
+ * computer (`ensureTeamComputer`) with the group's default (or first) member as the
+ * representative bot, and posts lifecycle events to the group thread.
+ */
+async function resolveComputerSubject(
+  deps: RouterDeps,
+  actor: Actor,
+  input: ComputerTargetInput,
+): Promise<ComputerSubject> {
+  if (input.groupId) {
+    const group = await createGroupRepos(deps.prisma).getGroupTarget(actor, input.groupId);
+    const repMember =
+      group.members.find((member) => member.bot.id === group.defaultBotId) ?? group.members[0];
+    if (!repMember || !group.thread) throw new IsolationError();
+    const kind =
+      group.members.find((member) => member.bot.computer?.kind)?.bot.computer?.kind ??
+      process.env.SANDBOX_PROVIDER ??
+      "docker";
+    const team = await ensureTeamComputer(deps.prisma, {
+      workspaceId: actor.workspaceId,
+      userId: actor.userId,
+      kind,
+    });
+    return {
+      botId: repMember.bot.id,
+      botName: repMember.bot.name,
+      groupId: input.groupId,
+      threadId: group.thread.id,
+      computer: await deps.prisma.computer.findUnique({ where: { id: team.id } }),
+      computerMode: "team",
+    };
+  }
+  if (!input.botId) throw new IsolationError();
+  const bot = await createRepos(deps.prisma).getBot(actor, input.botId);
+  return {
+    botId: bot.id,
+    botName: bot.name,
+    groupId: null,
+    threadId: bot.thread?.id ?? null,
+    computer: bot.computer,
+    computerMode: bot.computer ? parseComputerMode(bot.computer.scope) : "team",
+  };
+}
+
 async function computerStatus(
   deps: RouterDeps,
   actor: Actor,
-  botId: string,
+  input: ComputerTargetInput,
 ): Promise<ComputerStatus> {
-  const repos = createRepos(deps.prisma);
-  let bot = await repos.getBot(actor, botId);
-  if (await expireStaleComputerControl(deps, bot.computer)) {
-    bot = await repos.getBot(actor, botId);
+  let subject = await resolveComputerSubject(deps, actor, input);
+  if (await expireStaleComputerControl(deps, subject.computer)) {
+    subject = await resolveComputerSubject(deps, actor, input);
   }
   const busyBotName = await resolveBusyBotName(deps.prisma, {
-    computerId: bot.computer?.id,
-    botId,
-    botName: bot.name,
+    computerId: subject.computer?.id,
+    botId: subject.botId,
+    botName: subject.botName,
   });
-  return toComputerStatus(botId, bot.computer, busyBotName);
+  return toComputerStatus(subject.botId, subject.computer, busyBotName, subject.groupId);
 }
 
 async function runComputerReplace(
   deps: RouterDeps,
   context: { actor: Actor },
-  botId: string,
+  input: ComputerTargetInput,
   mode: "recover" | "reset" | "update",
   operationId: string,
   opts?: { force?: boolean },
 ): Promise<ComputerStatus> {
-  const repos = createRepos(deps.prisma);
-  const bot = await repos.getBot(context.actor, botId);
+  const subject = await resolveComputerSubject(deps, context.actor, input);
+  const bot = { id: subject.botId, computer: subject.computer };
   if (!bot.computer) throw new IsolationError();
   if (mode === "update" && !computerSupportsUpdate(bot.computer.kind)) {
     throw new ORPCError("BAD_REQUEST", {
@@ -3368,7 +3448,7 @@ async function runComputerReplace(
   } finally {
     await releaseComputerExecutionLease(deps.prisma, lease);
   }
-  return computerStatus(deps, context.actor, botId);
+  return computerStatus(deps, context.actor, input);
 }
 
 async function cancelRunsOnComputer(deps: RouterDeps, computerId: string) {

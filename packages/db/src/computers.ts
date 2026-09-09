@@ -22,6 +22,23 @@ export function computerHomeKey(mode: ComputerMode, workspaceId: string, botId?:
 
 type ComputerDb = Pick<PrismaClient, "computer">;
 
+/**
+ * The one workspace-shared team computer. Grouped bots all run on this, and the
+ * group thread's Computer panel drives it. Idempotent: returns the same row that
+ * `createRepos().createBot` first creates for the workspace.
+ */
+export async function ensureTeamComputer(
+  prisma: ComputerDb,
+  input: { workspaceId: string; userId: string; kind: string },
+) {
+  return ensureComputerRecord(prisma, {
+    mode: "team",
+    workspaceId: input.workspaceId,
+    userId: input.userId,
+    kind: input.kind,
+  });
+}
+
 export async function ensureComputerRecord(
   prisma: ComputerDb,
   input: {

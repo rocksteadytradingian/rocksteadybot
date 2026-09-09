@@ -170,6 +170,62 @@ describe("threadSnapshot", () => {
     expect(snapshot.run).toBeNull();
     expect(findManyEvents).not.toHaveBeenCalled();
   });
+
+  it("exposes the workspace team computer on a group thread", async () => {
+    const tx = {
+      $queryRaw: vi.fn().mockResolvedValue([{ id: "thread-1" }]),
+      message: { findMany: vi.fn().mockResolvedValue([]) },
+      event: {
+        findFirst: vi.fn().mockResolvedValue({ seq: 2 }),
+        findMany: vi.fn().mockResolvedValue([]),
+      },
+      run: { findMany: vi.fn().mockResolvedValue([]) },
+    };
+    const upsert = vi.fn().mockResolvedValue({ id: "team-1" });
+    const prisma = {
+      $transaction: vi.fn(async (callback: (client: typeof tx) => unknown) => callback(tx)),
+      computer: {
+        upsert,
+        findUnique: vi.fn().mockResolvedValue({
+          id: "team-1",
+          kind: "fake",
+          state: "running",
+          scope: "team",
+          controlHolder: "none",
+          controlBotId: null,
+          controlRunId: null,
+          homeRevision: "empty",
+        }),
+      },
+      computerExecutionLease: { findUnique: vi.fn().mockResolvedValue(null) },
+    } as unknown as PrismaClient;
+    const target = {
+      kind: "group",
+      groupId: "group-1",
+      threadId: "thread-1",
+      groupName: "Team",
+      members: [{ botId: "bot-1", name: "Ada", color: "#fff", status: "idle" }],
+      memberBotIds: ["bot-1"],
+      workspaceId: "ws-1",
+      userId: "user-1",
+      repBotId: "bot-1",
+      computerKind: "fake",
+    } satisfies ThreadTarget;
+
+    const snapshot = await threadSnapshot({ prisma }, target);
+
+    expect(upsert).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { scopeKey: "team:ws-1" } }),
+    );
+    expect(snapshot.computer).toEqual(
+      expect.objectContaining({
+        botId: "bot-1",
+        groupId: "group-1",
+        mode: "team",
+        state: "running",
+      }),
+    );
+  });
 });
 
 describe("stopThreadRuns", () => {
@@ -196,7 +252,10 @@ describe("stopThreadRuns", () => {
         ]),
       },
       computerExecutionLease: { deleteMany: vi.fn().mockResolvedValue({ count: 2 }) },
-      computer: { updateMany: vi.fn().mockResolvedValue({ count: 2 }) },
+      computer: {
+        updateMany: vi.fn().mockResolvedValue({ count: 2 }),
+        findUnique: vi.fn().mockResolvedValue(null),
+      },
       event: { deleteMany: vi.fn().mockResolvedValue({ count: 0 }) },
     } as unknown as PrismaClient;
     const actor = {
@@ -210,6 +269,10 @@ describe("stopThreadRuns", () => {
       threadId: "thread-1",
       members: [],
       memberBotIds: ["bot-a", "bot-b"],
+      workspaceId: "workspace-1",
+      userId: "user-1",
+      repBotId: "bot-a",
+      computerKind: "fake",
     } satisfies ThreadTarget;
 
     await stopThreadRuns(

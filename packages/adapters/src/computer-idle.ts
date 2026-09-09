@@ -152,6 +152,27 @@ export async function sleepComputerIfIdle(
       payload: { status: "suspended" },
     });
   }
+  // Grouped bots run on this computer too; their Computer panel lives on the
+  // group thread, which is not any member's own `bot.thread`.
+  const groups = await deps.prisma.chatGroup.findMany({
+    where: { members: { some: { bot: { computerId } } }, thread: { isNot: null } },
+    select: {
+      defaultBotId: true,
+      thread: { select: { id: true } },
+      members: { select: { botId: true }, take: 1, orderBy: { createdAt: "asc" } },
+    },
+  });
+  for (const group of groups) {
+    const repBotId = group.defaultBotId ?? group.members[0]?.botId;
+    if (!group.thread || !repBotId) continue;
+    await deps.events.append({
+      workspaceId: computer.workspaceId,
+      threadId: group.thread.id,
+      botId: repBotId,
+      type: "computer.status",
+      payload: { status: "suspended" },
+    });
+  }
 }
 
 function loadComputer(prisma: PrismaClient, computerId: string) {

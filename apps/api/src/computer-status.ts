@@ -58,6 +58,7 @@ export function toComputerStatus(
     homeRevision: string;
   } | null,
   busyBotName: string | null = null,
+  groupId: string | null = null,
 ): ComputerStatus {
   const state =
     computer?.state === "suspending"
@@ -73,6 +74,7 @@ export function toComputerStatus(
   const kind = (computer?.kind ?? "fake") as ComputerStatus["kind"];
   return {
     botId,
+    ...(groupId ? { groupId } : {}),
     mode: computer?.scope === "dedicated" ? "dedicated" : "team",
     kind,
     state,

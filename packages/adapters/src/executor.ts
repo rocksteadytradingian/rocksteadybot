@@ -78,6 +78,7 @@ import {
   createThreadMessageInTransaction,
   effectiveMemoryScope,
   ensureIdentityDocuments,
+  ensureTeamComputer,
   findDefaultModelCredential,
   findModelCredential,
   findUserProviderModelCredentials,
@@ -603,17 +604,36 @@ export function createRunExecutor(deps: ExecutorDeps) {
       if (started.count !== 1) return;
       const leaseTarget = await deps.prisma.bot.findUniqueOrThrow({
         where: { id: run.botId },
-        select: { computerId: true, computerSwitching: true },
+        select: {
+          computerId: true,
+          computerSwitching: true,
+          computer: { select: { kind: true } },
+        },
       });
       if (!leaseTarget.computerId) throw new Error("Bot has no computer");
-      if (leaseTarget.computerSwitching) {
+      // Grouped bots all execute on the one workspace team computer, overriding a
+      // member's dedicated computer for the duration of the group thread.
+      const runThread = await deps.prisma.thread.findUnique({
+        where: { id: run.threadId },
+        select: { groupId: true },
+      });
+      const runComputerId = runThread?.groupId
+        ? (
+            await ensureTeamComputer(deps.prisma, {
+              workspaceId: run.workspaceId,
+              userId: run.userId,
+              kind: leaseTarget.computer?.kind ?? process.env.SANDBOX_PROVIDER ?? "docker",
+            })
+          ).id
+        : leaseTarget.computerId;
+      if (!runThread?.groupId && leaseTarget.computerSwitching) {
         await requeueComputerRun(deps, runId, workerId, fence, resumeCheckpoint);
         return;
       }
       let computerLease: ComputerExecutionLease | null = null;
       try {
         computerLease = await acquireComputerExecutionLease(deps.prisma, {
-          computerId: leaseTarget.computerId,
+          computerId: runComputerId,
           runId,
           botId: run.botId,
           resumeHeldLease: resumeFromTakeover,
@@ -921,8 +941,12 @@ export function createRunExecutor(deps: ExecutorDeps) {
           where: { id: runId, status: "running", leaseOwner: workerId, leaseFence: fence },
           data: { modelProvider: runModelProvider, modelId: runModelId },
         });
-        if (!bot.computer) throw new Error("Bot has no computer");
-        const storedComputer = bot.computer;
+        // A group run uses the shared team computer resolved for the lease above,
+        // not the member bot's own (possibly dedicated) computer.
+        const storedComputer = thread.groupId
+          ? await deps.prisma.computer.findUniqueOrThrow({ where: { id: runComputerId } })
+          : bot.computer;
+        if (!storedComputer) throw new Error("Bot has no computer");
         const computerMode = parseComputerMode(storedComputer.scope);
         const computer = await provisionComputer(deps, storedComputer.id, context, "bot");
         screenRelease = { computer, context };

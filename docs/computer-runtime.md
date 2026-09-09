@@ -16,6 +16,16 @@ Pi runs in the Rakazo API/worker process. It is not installed in, or executed by
 
 Each workspace gets one Team Computer by default, so bots share its browser sessions and installed tools. Each Team bot starts in `bots/<bot-id>/`, while deliberately shared work belongs in `shared/`. These folders organize work but are not security boundaries: every Team bot can access the full Team workspace. A bot can instead use a Private Computer, where the whole workspace is its home. Team Computer runs use a fenced per-bot database lease, so two Team bots can work at the same time on distinct screens. One bot still runs only one computer-use task on its own screen. When a provider cannot spawn another display, that bot's graphical tools fail with `MULTI_SCREEN_UNAVAILABLE` instead of queueing behind a single computer lock.
 
+### Grouped bots
+
+When bots are put in a workspace group, the group is treated as a team: every member's run
+executes on the shared Team Computer for the duration of the group thread, overriding a
+member's Private Computer. The group thread exposes that Team Computer with the same controls
+as a 1:1 Computer panel — live screen, take control, boot/stop, recover/reset/update — keyed
+by a representative member (the group's default bot, or its first member). Leaving the group
+restores each bot's own computer; nothing is migrated. Group members serialize on the one
+Team Computer through the same fenced execution lease that already serializes Team bots.
+
 `SandboxProvider.describe().capabilities.multiScreen` tells clients whether the backend can allocate distinct Team screens. Fake and Docker providers spawn extra Xvfb stacks inside one machine. E2B and Daytona keep the vendor's primary desktop stream on index 0 and spawn extra Xvfb + x11vnc + preview ports for additional Team bots on the same sandbox. Box exposes its primary desktop but does not ship the secondary-display stack, so its adapter reports `multiScreen: false`. If a provider cannot allocate another display, graphical tools for that bot return `MULTI_SCREEN_UNAVAILABLE` while shell and file tools keep working.
 
 `SandboxProvider` is the provider boundary. A backend must implement:
