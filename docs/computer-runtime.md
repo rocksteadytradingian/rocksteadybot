@@ -19,10 +19,12 @@ Each workspace gets one Team Computer by default, so bots share its browser sess
 ### Grouped bots
 
 A run's primary surface is always the bot's own computer — Private or Team — exactly as in a
-1:1 chat. In a **group thread** the bot additionally gets `team_*` tools
-(`team_observe`, `team_act`, `team_shell`, `team_list_files`, `team_read_file`,
-`team_write_file`) for the workspace **Team Computer** as a shared surface: use it only when
-the work must be seen by, or coordinated with, the other members. The Team Computer is
+1:1 chat. In a **group thread** a member whose own computer is *Private* additionally gets
+`team_*` tools (`team_observe`, `team_act`, `team_shell`, `team_list_files`,
+`team_read_file`, `team_write_file`) for the workspace **Team Computer** as a shared
+surface: use it only when the work must be seen by, or coordinated with, the other members.
+A member already on the Team Computer doesn't get `team_*` — its own `computer_*` / `shell`
+/ file tools already act on that machine. The Team Computer is
 opened lazily on the first `team_*` call and released when the run ends; it is never spun up
 just to run a grouped bot. Each member holds its own fenced execution lease on it, so
 several members can drive it at once on distinct screens (`MULTI_SCREEN_UNAVAILABLE` if the

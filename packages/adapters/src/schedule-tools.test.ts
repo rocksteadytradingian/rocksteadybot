@@ -114,20 +114,29 @@ describe("filterBuiltinToolsForThread", () => {
     }
   });
 
-  it("offers team_* tools only in a group thread", () => {
+  it("offers team_* tools only to a non-team member in a group thread", () => {
     const teamTools = [
       { name: "team_observe" },
       { name: "team_shell" },
       { name: "team_write_file" },
       { name: "remember" },
     ];
-    expect(filterBuiltinToolsForThread(teamTools, "group-1").map((t) => t.name)).toEqual([
-      "team_observe",
-      "team_shell",
-      "team_write_file",
+    // group + the member is on its own (dedicated) computer -> team_* offered
+    expect(
+      filterBuiltinToolsForThread(teamTools, "group-1", "dedicated").map((t) => t.name),
+    ).toEqual(["team_observe", "team_shell", "team_write_file", "remember"]);
+    // group + the member already runs on the team computer -> no team_* (use normal tools)
+    expect(filterBuiltinToolsForThread(teamTools, "group-1", "team").map((t) => t.name)).toEqual([
       "remember",
     ]);
-    expect(filterBuiltinToolsForThread(teamTools, null).map((t) => t.name)).toEqual(["remember"]);
+    // 1:1 thread -> never
+    expect(filterBuiltinToolsForThread(teamTools, null, "dedicated").map((t) => t.name)).toEqual([
+      "remember",
+    ]);
+    // mode omitted defaults to offering them in a group (back-compat)
+    expect(filterBuiltinToolsForThread(teamTools, "group-1").map((t) => t.name)).toContain(
+      "team_shell",
+    );
   });
 });
 
