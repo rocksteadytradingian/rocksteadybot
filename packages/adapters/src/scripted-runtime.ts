@@ -138,6 +138,37 @@ export function inferScript(
     ];
   }
   if (
+    lower.includes("team_write_file") ||
+    (lower.includes("write") && lower.includes("team comput"))
+  ) {
+    const content =
+      /(?:text|content|says?)\s+"([^"]+)"/i.exec(prompt)?.[1] ?? "hello from the team";
+    return [
+      { assistant: "writing that onto the shared team computer." },
+      {
+        toolCalls: [
+          {
+            name: "team_write_file",
+            args: { path: scriptedFilePath(prompt), content: `${content}\n` },
+          },
+        ],
+        complete: true,
+      },
+    ];
+  }
+  if (
+    lower.includes("team_read_file") ||
+    (lower.includes("read") && lower.includes("team comput"))
+  ) {
+    return [
+      { assistant: "reading from the shared team computer." },
+      {
+        toolCalls: [{ name: "team_read_file", args: { path: scriptedFilePath(prompt) } }],
+        complete: true,
+      },
+    ];
+  }
+  if (
     lower.includes("ask me") ||
     lower.includes("which city") ||
     lower.includes("need a decision")
@@ -326,6 +357,14 @@ export function inferScript(
       complete: true,
     },
   ];
+}
+
+/** First path-shaped token in the prompt (has a slash or a dotted extension). */
+function scriptedFilePath(prompt: string): string {
+  return (
+    /([\w.-]*\/[\w./-]+|[\w-]+\.[a-z0-9]+)/i.exec(prompt.replace(/team_\w+/gi, ""))?.[1] ??
+    "shared/note.md"
+  );
 }
 
 function shouldHang(prompt: string): boolean {
