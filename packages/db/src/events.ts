@@ -60,6 +60,11 @@ export interface FinalizeComputerControlReleaseInput {
   leaseId: string;
   holder: "bot" | "none";
   reason: "done" | "expired" | "released" | "skipped";
+  /**
+   * Thread to post `computer.takeover.released` to. Defaults to the bot's own
+   * thread; a group target passes the shared group thread instead.
+   */
+  threadId?: string;
 }
 
 export interface FinalizeComputerControlReleaseResult {
@@ -678,14 +683,18 @@ export async function finalizeComputerControlRelease(
       : { count: 0 };
     const runId = resumed.count === 1 ? input.runId : null;
 
-    const bot = await tx.bot.findFirst({
-      where: { id: input.botId, workspaceId: input.workspaceId },
-      select: { thread: { select: { id: true } } },
-    });
-    if (!bot?.thread) return { threadId: null, seq: null, runId };
+    let threadId = input.threadId ?? null;
+    if (!threadId) {
+      const bot = await tx.bot.findFirst({
+        where: { id: input.botId, workspaceId: input.workspaceId },
+        select: { thread: { select: { id: true } } },
+      });
+      threadId = bot?.thread?.id ?? null;
+    }
+    if (!threadId) return { threadId: null, seq: null, runId };
     const event = await appendEventInTransaction(tx, {
       workspaceId: input.workspaceId,
-      threadId: bot.thread.id,
+      threadId,
       botId: input.botId,
       runId: runId ?? undefined,
       type: "computer.takeover.released",

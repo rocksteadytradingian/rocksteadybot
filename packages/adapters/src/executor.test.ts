@@ -300,7 +300,11 @@ description: Prepare standup notes
         findUniqueOrThrow: vi.fn(async () => ({
           computerId: "computer-1",
           computerSwitching: true,
+          computer: { kind: "fake" },
         })),
+      },
+      thread: {
+        findUnique: vi.fn(async () => ({ groupId: null })),
       },
     } as unknown as PrismaClient;
     const executor = createRunExecutor({ prisma, jobs: { enqueue } } as unknown as Parameters<
@@ -317,6 +321,59 @@ description: Prepare standup notes
         }),
       }),
     );
+    expect(enqueue).toHaveBeenCalledOnce();
+  });
+
+  it("routes a grouped run onto the workspace team computer, not the member's own", async () => {
+    const enqueue = vi.fn(async () => undefined);
+    const upsert = vi.fn(async () => ({ id: "team-1" }));
+    // The team computer is busy, so the run requeues right after acquiring — enough
+    // to assert which computer the lease targeted.
+    const computerFindUniqueOrThrow = vi.fn(async () => ({
+      id: "team-1",
+      state: "suspending",
+      scope: "team",
+    }));
+    const prisma = {
+      run: {
+        findUnique: vi.fn(async () => ({
+          id: "run-1",
+          botId: "bot-1",
+          workspaceId: "ws-1",
+          userId: "user-1",
+          threadId: "thread-1",
+          status: "queued",
+          checkpoint: null,
+          leaseFence: 0,
+        })),
+        findUniqueOrThrow: vi.fn(async () => ({ status: "leased", startedAt: null })),
+        updateMany: vi.fn(async () => ({ count: 1 })),
+      },
+      bot: {
+        findUniqueOrThrow: vi.fn(async () => ({
+          computerId: "dedicated-1",
+          computerSwitching: false,
+          computer: { kind: "fake" },
+        })),
+      },
+      thread: {
+        findUnique: vi.fn(async () => ({ groupId: "group-1" })),
+      },
+      computer: {
+        upsert,
+        findUniqueOrThrow: computerFindUniqueOrThrow,
+      },
+    } as unknown as PrismaClient;
+    const executor = createRunExecutor({ prisma, jobs: { enqueue } } as unknown as Parameters<
+      typeof createRunExecutor
+    >[0]);
+
+    await executor.continueRun("run-1", "worker-1");
+
+    expect(upsert).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { scopeKey: "team:ws-1" } }),
+    );
+    expect(computerFindUniqueOrThrow).toHaveBeenCalledWith({ where: { id: "team-1" } });
     expect(enqueue).toHaveBeenCalledOnce();
   });
 

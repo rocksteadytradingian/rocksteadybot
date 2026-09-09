@@ -227,6 +227,16 @@ belong to one bot.
    computer”; Team means “Shared with other bots”.
 3. Some features (see **Folders**) require Private.
 
+### Group threads use the Team Computer
+
+**What it is.** When bots are in a workspace group, every member runs on the shared
+**Team Computer** while in that group — a Private-computer member is overridden for the
+group thread only. The group’s **Computer** panel drives that Team Computer with the full
+1:1 controls (watch, take control, boot/stop, recover/reset).
+
+**How to use it.** Open a group thread and click the **monitor** icon in the header. Leaving
+the group restores each bot’s own computer.
+
 ### Browser, terminal, file, and desktop access
 
 **What it is.** Each computer exposes a browser, a terminal, a file system, and a

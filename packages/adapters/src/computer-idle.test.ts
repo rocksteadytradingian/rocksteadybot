@@ -182,6 +182,9 @@ function idleHarness(options: { exportError?: Error } = {}) {
     bot: {
       findMany: vi.fn().mockResolvedValue([{ id: "bot", thread: { id: "thread" } }]),
     },
+    chatGroup: {
+      findMany: vi.fn().mockResolvedValue([]),
+    },
   };
   const sandbox = {
     exportWorkspace: vi.fn(async function* () {

@@ -18,6 +18,7 @@ import {
   createGroupRepos,
   createRepos,
   createThreadMessageInTransaction,
+  ensureTeamComputer,
   IsolationError,
   lockOwnedGroup,
   type Prisma,
@@ -49,6 +50,12 @@ export type ThreadTarget =
       groupName: string;
       members: GroupMember[];
       memberBotIds: string[];
+      workspaceId: string;
+      userId: string;
+      /** Representative member — drives the shared team computer for the group. */
+      repBotId: string;
+      /** `kind` to seed a fresh team computer with if the workspace somehow lacks one. */
+      computerKind: string;
     };
 
 const THREAD_MESSAGE_PAGE_SIZE = 100;
@@ -248,6 +255,10 @@ export async function resolveThreadTarget(
       color: member.bot.color,
       status: member.bot.runs[0]?.status ?? "idle",
     }));
+    const repBotId =
+      group.members.find((member) => member.bot.id === group.defaultBotId)?.bot.id ??
+      group.members[0]?.bot.id;
+    if (!repBotId) throw new IsolationError();
     return {
       kind: "group",
       groupId: group.id,
@@ -255,6 +266,13 @@ export async function resolveThreadTarget(
       groupName: group.name,
       members,
       memberBotIds: members.map((member) => member.botId),
+      workspaceId: actor.workspaceId,
+      userId: actor.userId,
+      repBotId,
+      computerKind:
+        group.members.find((member) => member.bot.computer?.kind)?.bot.computer?.kind ??
+        process.env.SANDBOX_PROVIDER ??
+        "docker",
     };
   }
   throw new IsolationError();
@@ -348,6 +366,21 @@ export async function threadSnapshot(
         : [];
     return { messagePage, last, activeRuns, liveEvents };
   });
+  // Grouped bots all run on the shared workspace team computer; the group thread
+  // exposes it with full parity to a 1:1 Computer panel.
+  const teamComputerRow = await ensureTeamComputer(deps.prisma, {
+    workspaceId: target.workspaceId,
+    userId: target.userId,
+    kind: target.computerKind,
+  });
+  const teamComputer = await deps.prisma.computer.findUnique({
+    where: { id: teamComputerRow.id },
+  });
+  const busyBotName = await resolveBusyBotName(deps.prisma, {
+    computerId: teamComputer?.id,
+    botId: target.repBotId,
+    botName: target.members.find((member) => member.botId === target.repBotId)?.name ?? "",
+  });
   return {
     groupId: target.groupId,
     groupName: target.groupName,
@@ -358,6 +391,7 @@ export async function threadSnapshot(
     olderCursor: core.messagePage.olderCursor,
     run: core.activeRuns[0] ? mapRun(core.activeRuns[0]) : null,
     activeRuns: core.activeRuns.map(mapRun),
+    computer: toComputerStatus(target.repBotId, teamComputer, busyBotName, target.groupId),
   };
 }
 
@@ -669,16 +703,41 @@ export async function stopThreadRuns(
         executionLeaseExpiresAt: null,
       },
     });
+    // Grouped runs execute on the shared team computer, whose screen is not any
+    // one member's `bot.computer`; release it explicitly too.
+    const teamComputer =
+      target.kind === "group"
+        ? await deps.prisma.computer.findUnique({
+            where: { scopeKey: `team:${actor.workspaceId}` },
+            select: { id: true, homeKey: true, kind: true, providerRef: true },
+          })
+        : null;
+    if (teamComputer) {
+      await deps.prisma.computerExecutionLease.deleteMany({
+        where: { computerId: teamComputer.id, botId: { in: botIds } },
+      });
+      await deps.prisma.computer.updateMany({
+        where: { id: teamComputer.id, executionBotId: { in: botIds } },
+        data: {
+          executionRunId: null,
+          executionBotId: null,
+          executionLeaseExpiresAt: null,
+        },
+      });
+    }
     await Promise.all(
-      botsWithScreens.map(async (bot) => {
-        if (!bot.computer?.providerRef) return;
+      [
+        ...botsWithScreens.map((bot) => ({ bot: bot.id, computer: bot.computer })),
+        ...(teamComputer?.providerRef ? [{ bot: target.repBotId, computer: teamComputer }] : []),
+      ].map(async ({ bot, computer }) => {
+        if (!computer?.providerRef) return;
         await deps.sandbox
-          .releaseScreen?.(toComputerRef(bot.computer), {
+          .releaseScreen?.(toComputerRef(computer), {
             operationId: "stop",
             traceId: "stop",
             workspaceId: actor.workspaceId,
             userId: actor.userId,
-            botId: bot.id,
+            botId: bot,
             signal: new AbortController().signal,
           })
           .catch(() => undefined);

@@ -615,7 +615,9 @@ export const UsageRecordSchema = z.object({
 });
 
 export const ComputerStatusSchema = z.object({
+  // For a group target this is a representative member bot; `groupId` is then set.
   botId: Id,
+  groupId: Id.optional(),
   mode: ComputerModeSchema,
   kind: SandboxKind,
   state: z.enum(["stopped", "booting", "running", "suspended", "error"]),

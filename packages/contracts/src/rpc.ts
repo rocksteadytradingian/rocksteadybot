@@ -267,41 +267,41 @@ export const appContract = {
     markUnread: oc.input(threadTarget).output(z.object({ ok: z.literal(true) })),
   },
   computer: {
-    status: oc.input(botId).output(ComputerStatusSchema),
-    boot: oc.input(botId).output(ComputerStatusSchema),
-    stop: oc.input(botId).output(ComputerStatusSchema),
-    recover: oc.input(botId).output(ComputerStatusSchema),
-    reset: oc.input(botId).output(ComputerStatusSchema),
-    update: oc.input(botId).output(ComputerStatusSchema),
-    restart: oc.input(botId).output(ComputerStatusSchema),
-    takeover: oc.input(botId).output(z.object({ leaseId: Id, expiresAt: z.string() })),
+    // A computer target is a single bot (its own dedicated/team computer) or a group
+    // (the workspace team computer that every grouped member runs on).
+    status: oc.input(threadTarget).output(ComputerStatusSchema),
+    boot: oc.input(threadTarget).output(ComputerStatusSchema),
+    stop: oc.input(threadTarget).output(ComputerStatusSchema),
+    recover: oc.input(threadTarget).output(ComputerStatusSchema),
+    reset: oc.input(threadTarget).output(ComputerStatusSchema),
+    update: oc.input(threadTarget).output(ComputerStatusSchema),
+    restart: oc.input(threadTarget).output(ComputerStatusSchema),
+    takeover: oc.input(threadTarget).output(z.object({ leaseId: Id, expiresAt: z.string() })),
     release: oc
       .input(
-        z.object({
-          botId: Id,
+        threadTarget.safeExtend({
           reason: ComputerReleaseReasonSchema.optional(),
         }),
       )
       .output(z.object({ ok: z.literal(true) })),
     input: oc
       .input(
-        z.object({
-          botId: Id,
+        threadTarget.safeExtend({
           kind: z.enum(["key", "pointer", "clipboard", "scroll"]),
           payload: z.record(z.string(), z.unknown()),
         }),
       )
       .output(z.object({ ok: z.literal(true) })),
     files: oc
-      .input(z.object({ botId: Id, path: z.string().default("/") }))
+      .input(threadTarget.safeExtend({ path: z.string().default("/") }))
       .output(
         z.array(z.object({ path: z.string(), kind: z.enum(["file", "dir"]), size: z.number() })),
       ),
     readFile: oc
-      .input(z.object({ botId: Id, path: z.string() }))
+      .input(threadTarget.safeExtend({ path: z.string() }))
       .output(z.object({ path: z.string(), content: z.string() })),
-    screenUrl: oc.input(botId).output(z.object({ url: z.string().nullable() })),
-    heartbeat: oc.input(botId).output(z.object({ ok: z.literal(true) })),
+    screenUrl: oc.input(threadTarget).output(z.object({ url: z.string().nullable() })),
+    heartbeat: oc.input(threadTarget).output(z.object({ ok: z.literal(true) })),
   },
   memory: {
     list: oc

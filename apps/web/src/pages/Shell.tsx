@@ -587,7 +587,14 @@ export function ShellPage() {
       expandedHistoryThread.current === snap.threadId,
     );
     commitSnapshot(reconciled.snapshot);
-    commitComputer(null);
+    // Grouped bots share the workspace team computer; the group thread drives it.
+    commitComputer(reconciled.computer);
+    if (reconciled.computer) {
+      cacheComputerFor(`group:${id}`, { computer: reconciled.computer });
+      void refreshComputerScreen({ groupId: id }).catch(() => undefined);
+    } else {
+      setScreenUrl(null);
+    }
     setRoutines([]);
     setRoutinesBotId(null);
     // Keep the search-jump viewport; expandedHistoryThread merge still accepts live messages.
@@ -659,19 +666,22 @@ export function ShellPage() {
     return snap;
   }
 
-  async function refreshComputerScreen(id: string) {
+  async function refreshComputerScreen(target: string | { botId: string } | { groupId: string }) {
     if (!computerVisible.current) return null;
+    const resolved: { botId: string } | { groupId: string } =
+      typeof target === "string" ? { botId: target } : target;
+    const cacheKey = "groupId" in resolved ? `group:${resolved.groupId}` : resolved.botId;
     const request = ++screenRequest.current;
-    const screen = await rpc.computer.screenUrl({ botId: id }).catch(() => ({ url: null }));
-    if (
-      request !== screenRequest.current ||
-      activeBotId.current !== id ||
-      !computerVisible.current
-    ) {
+    const screen = await rpc.computer.screenUrl(resolved).catch(() => ({ url: null }));
+    const stillOnTarget =
+      "groupId" in resolved
+        ? routeGroupId.current === resolved.groupId
+        : activeBotId.current === resolved.botId;
+    if (request !== screenRequest.current || !stillOnTarget || !computerVisible.current) {
       return null;
     }
     setScreenUrl(screen.url);
-    cacheComputerFor(id, { screenUrl: screen.url });
+    cacheComputerFor(cacheKey, { screenUrl: screen.url });
     return screen.url;
   }
 
@@ -1013,6 +1023,9 @@ export function ShellPage() {
             cursor = Math.max(cursor, event.seq);
             retryMs = 250;
             applyThreadEvent(event, commitSnapshot, commitComputer, snapshotRef, computerRef);
+            if (isComputerStatusEvent(event)) {
+              void refreshComputerScreen({ groupId }).catch(() => undefined);
+            }
             if (event.type === "thread.message.created" && event.payload.role === "bot") {
               readVisibleGroups.current.delete(groupId);
               markVisibleGroupRead();
@@ -1186,6 +1199,26 @@ export function ShellPage() {
       : null
     : snapshot?.botId === active?.id
       ? snapshot
+      : null;
+  // The Computer panel targets one bot's computer, or — in a group — the shared
+  // workspace team computer every grouped member runs on. `id` is the bot the
+  // computer.* RPCs key off (a representative member for a group).
+  const computerSubject: { id: string; name: string } | null = inGroup
+    ? activeSnapshot?.computer
+      ? {
+          id: activeSnapshot.computer.botId,
+          name: activeGroup?.name ?? activeSnapshot.groupName ?? "",
+        }
+      : null
+    : active
+      ? { id: active.id, name: active.name }
+      : null;
+  const computerTarget: { botId: string } | { groupId: string } | null = inGroup
+    ? groupId
+      ? { groupId }
+      : null
+    : active
+      ? { botId: active.id }
       : null;
   const activeReplyTarget =
     replyTarget && activeSnapshot?.messages.some((message) => message.id === replyTarget.id)
@@ -1850,13 +1883,13 @@ export function ShellPage() {
     overlay: boolean;
     force?: boolean;
   }) {
-    if (!active) return;
+    if (!computerTarget) return;
     const needsBoot = force || computer?.state !== "running" || !screenUrl;
     if (overlay && needsBoot) setBooting(true);
     try {
-      if (needsBoot) await rpc.computer.boot({ botId: active.id });
-      if (takeControl) await rpc.computer.takeover({ botId: active.id });
-      await refreshThread(active.id);
+      if (needsBoot) await rpc.computer.boot(computerTarget);
+      if (takeControl) await rpc.computer.takeover(computerTarget);
+      await refreshActiveThread();
       setComputerError(null);
     } catch (error) {
       setComputerError(error instanceof Error ? error.message : t`Could not take control`);
@@ -1871,24 +1904,29 @@ export function ShellPage() {
       autoBooted.current = null;
       return;
     }
-    if (!active) return;
-    const botId = active.id;
+    if (!computerTarget || !computerSubject) return;
+    const subjectId = computerSubject.id;
+    const target = computerTarget;
+    const onTarget = () =>
+      "groupId" in target
+        ? routeGroupId.current === target.groupId
+        : activeBotId.current === subjectId;
     let cancelled = false;
     void (async () => {
       // Refresh from the server first. A stale SSE "booting" snapshot used to
       // skip this effect, so an RPC takeover never showed "You have control".
-      const snap = await refreshThread(botId).catch(() => null);
-      if (cancelled || activeBotId.current !== botId) return;
-      const state = snap?.computer?.state;
-      const screen = state === "running" ? await refreshComputerScreen(botId) : null;
-      if (cancelled || activeBotId.current !== botId) return;
+      await refreshActiveThread().catch(() => undefined);
+      if (cancelled || !onTarget()) return;
+      const state = computerRef.current?.state;
+      const screen = state === "running" ? await refreshComputerScreen(target) : null;
+      if (cancelled || !onTarget()) return;
       const action = computerPanelAutoBoot(state, screen);
       if (action === "wait") {
-        if (state === "running") autoBooted.current = botId;
+        if (state === "running") autoBooted.current = subjectId;
         return;
       }
-      if (action === "boot" && autoBooted.current === botId) return;
-      autoBooted.current = botId;
+      if (action === "boot" && autoBooted.current === subjectId) return;
+      autoBooted.current = subjectId;
       if (!computerPanelAutoUsesBoot(action)) return;
       await bootComputer({
         takeControl: false,
@@ -1899,7 +1937,7 @@ export function ShellPage() {
     return () => {
       cancelled = true;
     };
-  }, [panel, active?.id]);
+  }, [panel, active?.id, groupId]);
 
   useEffect(() => {
     function onFullscreenChange() {
@@ -1914,7 +1952,7 @@ export function ShellPage() {
     setComputerEnlarged(false);
     setComputerError(null);
     if (document.fullscreenElement) void document.exitFullscreen().catch(() => undefined);
-  }, [active?.id]);
+  }, [active?.id, groupId]);
 
   useEffect(() => {
     if (!computer?.busyBotName) setComputerError(null);
@@ -1960,12 +1998,14 @@ export function ShellPage() {
   }, [computerOpen]);
 
   useEffect(() => {
-    if ((panel !== "computer" && !computerOpen) || !active || computer?.state !== "running") return;
-    const ping = () => void rpc.computer.heartbeat({ botId: active.id }).catch(() => undefined);
+    if ((panel !== "computer" && !computerOpen) || !computerTarget || computer?.state !== "running")
+      return;
+    const target = computerTarget;
+    const ping = () => void rpc.computer.heartbeat(target).catch(() => undefined);
     ping();
     const timer = window.setInterval(ping, 60_000);
     return () => window.clearInterval(timer);
-  }, [panel, computerOpen, active?.id, computer?.state]);
+  }, [panel, computerOpen, active?.id, groupId, computer?.state]);
 
   function closeComputerOverlay() {
     if (document.fullscreenElement) void document.exitFullscreen().catch(() => undefined);
@@ -1984,8 +2024,8 @@ export function ShellPage() {
   }
 
   async function openComputer() {
-    if (!active) return;
-    const needsTakeover = !userHoldsComputerControl(computer, active.id);
+    if (!computerTarget || !computerSubject) return;
+    const needsTakeover = !userHoldsComputerControl(computer, computerSubject.id);
     const blocked = computerTakeoverBlocked(computer, snapshot?.run?.status);
     try {
       await bootComputer({
@@ -2000,14 +2040,14 @@ export function ShellPage() {
   }
 
   async function releaseComputer(reason?: ComputerReleaseReason) {
-    if (!active) return;
+    if (!computerTarget) return;
     closeComputerOverlay();
-    await rpc.computer.release({ botId: active.id, reason }).catch(() => undefined);
-    await refreshThread(active.id);
+    await rpc.computer.release({ ...computerTarget, reason }).catch(() => undefined);
+    await refreshActiveThread();
   }
 
   const embeddedScreenUrl = embeddableScreenUrl(screenUrl);
-  const hasControl = userHoldsComputerControl(computer, active?.id);
+  const hasControl = userHoldsComputerControl(computer, computerSubject?.id);
   const takeoverBlocked = computerTakeoverBlocked(computer, snapshot?.run?.status);
 
   async function switchComputerMode(mode: ComputerMode) {
@@ -2693,17 +2733,21 @@ export function ShellPage() {
                   <Phone size={16} strokeWidth={1.6} className="text-[var(--rk-muted)]" />
                 </button>
               ) : null}
-              {!inGroup ? (
+              {!inGroup || activeSnapshot?.computer ? (
                 <button
                   type="button"
-                  title={t`Agent computer`}
-                  aria-label={t`Agent computer`}
+                  title={inGroup ? t`Team computer` : t`Agent computer`}
+                  aria-label={inGroup ? t`Team computer` : t`Agent computer`}
                   onClick={() => {
                     const next = panel === "computer" ? null : "computer";
                     setPanel(next);
-                    if (next === "computer" && active) {
+                    if (next === "computer") {
                       // Refresh run/computer so Take control isn't stuck on a stale busyBotName.
-                      void refreshThread(active.id).catch(() => undefined);
+                      if (inGroup && groupId) {
+                        void refreshGroupThread(groupId).catch(() => undefined);
+                      } else if (active) {
+                        void refreshThread(active.id).catch(() => undefined);
+                      }
                     }
                   }}
                   className="grid h-9 w-9 place-items-center rounded-[9px] text-[var(--rk-ink)] hover:bg-[var(--rk-hover)]"
@@ -2858,6 +2902,8 @@ export function ShellPage() {
                     <Trans>Settings</Trans>
                   ) : active ? (
                     (computer?.state ?? active.status)
+                  ) : panel === "computer" && computerSubject ? (
+                    (computer?.state ?? <Trans>Team computer</Trans>)
                   ) : (
                     <Trans>Group</Trans>
                   )}
@@ -2903,7 +2949,7 @@ export function ShellPage() {
                 </div>
               </div>
             ) : null}
-            {panel === "computer" && active ? (
+            {panel === "computer" && computerSubject ? (
               <div className={computerEnlarged ? "flex min-h-0 flex-1 flex-col" : undefined}>
                 <div
                   className={
@@ -2937,7 +2983,7 @@ export function ShellPage() {
                       {computerPlaceholder(
                         computer?.state,
                         booting,
-                        computerLabel(computer?.mode, active.name),
+                        computerLabel(computer?.mode, computerSubject.name),
                       )}
                     </div>
                   )}
@@ -2977,7 +3023,7 @@ export function ShellPage() {
                           ? t`${computer.busyBotName} is using it`
                           : computer?.state === "suspended"
                             ? t`Asleep`
-                            : computerLabel(computer?.mode, active.name)}
+                            : computerLabel(computer?.mode, computerSubject.name)}
                   </span>
                   {hasControl ? (
                     <ComputerReleaseActions
@@ -3001,118 +3047,127 @@ export function ShellPage() {
                 computer?.state === "booting" ||
                 (computer?.state === "running" && !embeddedScreenUrl) ? (
                   <ComputerMaintenanceActions
-                    botId={active.id}
+                    botId={computerSubject.id}
+                    target={computerTarget ?? undefined}
                     computer={computer}
                     compact
                     onChanged={async () => {
-                      await refreshThread(active.id);
+                      await refreshActiveThread();
                     }}
                   />
                 ) : null}
-                <ComputerModePicker
-                  value={computer?.mode ?? active.computerMode}
-                  disabled={computerSwitching}
-                  onChange={(mode) => void switchComputerMode(mode)}
-                />
-                <div
-                  className={
-                    computerEnlarged ? "mt-3 min-h-0 max-h-[36%] overflow-y-auto" : undefined
-                  }
-                >
-                  <ApprovalsPanelSection
-                    items={botApprovals}
-                    busyId={approvalBusyId}
-                    canRepair={canRepairStack}
-                    onViewAll={() => setApprovalsOpen(true)}
-                    onView={openApproval}
-                    onApprove={(item) => void answerApproval(item)}
-                  />
-                  <div className="mt-[30px] mb-3 text-[14px] text-[var(--rk-body)]">
-                    <Trans>Routines</Trans>
-                  </div>
-                  {activeRoutines.map((routine) => {
-                    const routineRunning =
-                      snapshot?.run?.routineId === routine.id && isActive(snapshot.run.status);
-                    return (
-                      <div
-                        key={routine.id}
-                        className="flex w-full items-center gap-2 rounded-[11px] px-2.5 py-2.5 hover:bg-[var(--rk-hover)]"
+                {!inGroup && active ? (
+                  <>
+                    <ComputerModePicker
+                      value={computer?.mode ?? active.computerMode}
+                      disabled={computerSwitching}
+                      onChange={(mode) => void switchComputerMode(mode)}
+                    />
+                    <div
+                      className={
+                        computerEnlarged ? "mt-3 min-h-0 max-h-[36%] overflow-y-auto" : undefined
+                      }
+                    >
+                      <ApprovalsPanelSection
+                        items={botApprovals}
+                        busyId={approvalBusyId}
+                        canRepair={canRepairStack}
+                        onViewAll={() => setApprovalsOpen(true)}
+                        onView={openApproval}
+                        onApprove={(item) => void answerApproval(item)}
+                      />
+                      <div className="mt-[30px] mb-3 text-[14px] text-[var(--rk-body)]">
+                        <Trans>Routines</Trans>
+                      </div>
+                      {activeRoutines.map((routine) => {
+                        const routineRunning =
+                          snapshot?.run?.routineId === routine.id && isActive(snapshot.run.status);
+                        return (
+                          <div
+                            key={routine.id}
+                            className="flex w-full items-center gap-2 rounded-[11px] px-2.5 py-2.5 hover:bg-[var(--rk-hover)]"
+                          >
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setRoutineDraft({
+                                  name: routine.name,
+                                  prompt: routine.prompt,
+                                  schedules: routine.crons.map(presetFromCron),
+                                });
+                                setEditingRoutine(routine);
+                                setPanel("routine");
+                              }}
+                              className="flex min-w-0 flex-1 items-center gap-3 text-start"
+                            >
+                              <span className="text-[var(--rk-danger)]">◷</span>
+                              <span
+                                className="min-w-0 flex-1 truncate text-start text-[14.5px] text-[var(--rk-ink)]"
+                                dir="auto"
+                              >
+                                {routine.name}
+                              </span>
+                              <span className="shrink-0 text-[13px] text-[var(--rk-muted-2)]">
+                                {routine.crons.map(formatCron).join(" · ")}
+                              </span>
+                            </button>
+                            {routineRunning ? (
+                              <button
+                                type="button"
+                                onClick={() => void stopRun()}
+                                className="shrink-0 rounded-full bg-[color-mix(in_srgb,var(--rk-danger)_14%,transparent)] px-2.5 py-1 text-[12px] text-[var(--rk-danger)]"
+                              >
+                                <Trans>Running · Stop</Trans>
+                              </button>
+                            ) : null}
+                          </div>
+                        );
+                      })}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setRoutineDraft({
+                            name: "",
+                            prompt: "",
+                            schedules: [defaultCronPreset()],
+                          });
+                          setEditingRoutine(null);
+                          setPanel("routine");
+                        }}
+                        className="mt-1 flex items-center gap-2.5 px-2.5 py-2.5 text-[14.5px] text-[var(--rk-ink)]"
                       >
-                        <button
-                          type="button"
-                          onClick={() => {
+                        + <Trans>New routine</Trans>
+                      </button>
+                      {active ? (
+                        <TeachComputerSection
+                          botId={active.id}
+                          computer={computer}
+                          skills={activeTaughtSkills}
+                          browserAvailable={Boolean(bootstrapMe?.browserSurfaceAvailable)}
+                          busy={teachBusy}
+                          onRefresh={refreshActiveThread}
+                          onOpenComputer={openComputer}
+                          onStopTeaching={stopTeaching}
+                          onAddRoutine={(skill) => {
                             setRoutineDraft({
-                              name: routine.name,
-                              prompt: routine.prompt,
-                              schedules: routine.crons.map(presetFromCron),
+                              name: skill.name || skill.goal.slice(0, 80),
+                              prompt: `Run taught skill: ${skill.name || skill.goal}\n${skill.playbook.steps.map((step, index) => `${index + 1}. ${step}`).join("\n")}`,
+                              schedules: [defaultCronPreset()],
                             });
-                            setEditingRoutine(routine);
+                            setEditingRoutine(null);
                             setPanel("routine");
                           }}
-                          className="flex min-w-0 flex-1 items-center gap-3 text-start"
-                        >
-                          <span className="text-[var(--rk-danger)]">◷</span>
-                          <span
-                            className="min-w-0 flex-1 truncate text-start text-[14.5px] text-[var(--rk-ink)]"
-                            dir="auto"
-                          >
-                            {routine.name}
-                          </span>
-                          <span className="shrink-0 text-[13px] text-[var(--rk-muted-2)]">
-                            {routine.crons.map(formatCron).join(" · ")}
-                          </span>
-                        </button>
-                        {routineRunning ? (
-                          <button
-                            type="button"
-                            onClick={() => void stopRun()}
-                            className="shrink-0 rounded-full bg-[color-mix(in_srgb,var(--rk-danger)_14%,transparent)] px-2.5 py-1 text-[12px] text-[var(--rk-danger)]"
-                          >
-                            <Trans>Running · Stop</Trans>
-                          </button>
-                        ) : null}
-                      </div>
-                    );
-                  })}
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setRoutineDraft({ name: "", prompt: "", schedules: [defaultCronPreset()] });
-                      setEditingRoutine(null);
-                      setPanel("routine");
-                    }}
-                    className="mt-1 flex items-center gap-2.5 px-2.5 py-2.5 text-[14.5px] text-[var(--rk-ink)]"
-                  >
-                    + <Trans>New routine</Trans>
-                  </button>
-                  {active ? (
-                    <TeachComputerSection
-                      botId={active.id}
-                      computer={computer}
-                      skills={activeTaughtSkills}
-                      browserAvailable={Boolean(bootstrapMe?.browserSurfaceAvailable)}
-                      busy={teachBusy}
-                      onRefresh={refreshActiveThread}
-                      onOpenComputer={openComputer}
-                      onStopTeaching={stopTeaching}
-                      onAddRoutine={(skill) => {
-                        setRoutineDraft({
-                          name: skill.name || skill.goal.slice(0, 80),
-                          prompt: `Run taught skill: ${skill.name || skill.goal}\n${skill.playbook.steps.map((step, index) => `${index + 1}. ${step}`).join("\n")}`,
-                          schedules: [defaultCronPreset()],
-                        });
-                        setEditingRoutine(null);
-                        setPanel("routine");
-                      }}
-                    />
-                  ) : null}
-                  {active ? (
-                    <BotFoldersSection
-                      botId={active.id}
-                      computerMode={computer?.mode ?? active.computerMode}
-                    />
-                  ) : null}
-                </div>
+                        />
+                      ) : null}
+                      {active ? (
+                        <BotFoldersSection
+                          botId={active.id}
+                          computerMode={computer?.mode ?? active.computerMode}
+                        />
+                      ) : null}
+                    </div>
+                  </>
+                ) : null}
               </div>
             ) : null}
             {panel === "create-group" ? (
@@ -3580,25 +3635,29 @@ export function ShellPage() {
       {booting ? (
         <div className="absolute inset-0 z-30 flex flex-col items-center justify-center gap-[22px] bg-[var(--rk-overlay)]">
           <div className="text-[19px] font-medium text-[var(--rk-ink)]">
-            <Trans>Booting up {active?.name}’s computer</Trans>
+            <Trans>Booting up {computerSubject?.name ?? active?.name}’s computer</Trans>
           </div>
           <div className="h-[5px] w-[min(420px,70%)] overflow-hidden rounded-full bg-[var(--rk-hover)]">
             <div className="h-full w-2/3 rounded-full bg-[var(--rk-solid)]" />
           </div>
         </div>
-      ) : computerOpen && active ? (
+      ) : computerOpen && computerSubject ? (
         <div
           ref={computerOverlayRef}
           className="rk-computer-overlay absolute inset-0 z-30 flex h-full w-full flex-col bg-[var(--rk-page)]"
         >
           <div className="flex items-center justify-between gap-4 border-b border-[var(--rk-hairline)] px-[18px] py-3.5">
             <div className="flex min-w-0 flex-1 items-center gap-3">
-              <BotAvatar
-                color={active.color}
-                identity={active.id}
-                size={28}
-                status={liveStatusByBotId.get(active.id) ?? active.status}
-              />
+              {active ? (
+                <BotAvatar
+                  color={active.color}
+                  identity={active.id}
+                  size={28}
+                  status={liveStatusByBotId.get(active.id) ?? active.status}
+                />
+              ) : (
+                <Monitor size={22} strokeWidth={1.7} className="text-[var(--rk-muted)]" />
+              )}
               {recordingSkill ? (
                 <TeachRecordingChrome
                   recording={recordingSkill}
@@ -3611,7 +3670,7 @@ export function ShellPage() {
                   className="truncate text-[15.5px] font-medium text-[var(--rk-ink)]"
                   dir="auto"
                 >
-                  {computerLabel(computer?.mode, active.name)}
+                  {computerLabel(computer?.mode, computerSubject.name)}
                 </span>
               )}
               {!recordingSkill && hasControl ? (
@@ -3718,7 +3777,7 @@ export function ShellPage() {
               <div className="grid h-full place-items-center text-sm text-[var(--rk-muted)]">
                 {computer?.state === "suspended"
                   ? t`Computer is asleep`
-                  : computerLabel(computer?.mode, active.name)}
+                  : computerLabel(computer?.mode, computerSubject.name)}
               </div>
             )}
           </div>
