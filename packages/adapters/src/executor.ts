@@ -66,7 +66,6 @@ import {
   replayInputCount,
   resolveActionApproval,
   resolveComplexityRouterModelId,
-  sandboxCommandTimeoutMs,
   skillSurface,
   type ToolCallStreak,
   toolRequiresApproval,
@@ -199,6 +198,7 @@ import {
   secretPausedToolResult,
   tryCompleteConnectionWithCode,
 } from "./run-secret.js";
+import { runSandboxCommand } from "./sandbox-command.js";
 import {
   cancelScheduleFromTool,
   createScheduleFromTool,
@@ -238,6 +238,7 @@ import {
 } from "./teach-replay-binding.js";
 import { runReplay } from "./teach-replay-runner.js";
 import { getActiveTeachingSession, parsePlaybook, parseRecording } from "./teaching-session.js";
+import { runTeamFileTool, TEAM_COMPUTER_READ_ONLY_TOOL_NAMES } from "./team-computer-tools.js";
 import {
   attachWorkspaceFileToThread,
   currentTurnFilesInstruction,
@@ -260,6 +261,7 @@ const READ_ONLY_AGENT_TOOLS = new Set([
   "scratchpad_list",
   "sentinel_list",
   "skill_read",
+  ...TEAM_COMPUTER_READ_ONLY_TOOL_NAMES,
 ]);
 const MAX_MODEL_FILE_BYTES = 250_000;
 const BUILTIN_AGENT_TOOL_NAMES = new Set(builtinAgentTools.map((tool) => tool.name));
@@ -1401,6 +1403,8 @@ export function createRunExecutor(deps: ExecutorDeps) {
               );
             }
             if (name === "team_act") {
+              // Mutating: settle the recorded effect via `finish` so a workspace
+              // `require_approval` rule on team_act completes correctly on resume.
               return computerScreenToolResult(async () => {
                 const result = await deps.sandbox.act(
                   surface.ref,
@@ -1417,82 +1421,20 @@ export function createRunExecutor(deps: ExecutorDeps) {
                       `completed ${result.completed} team computer action${result.completed === 1 ? "" : "s"}`,
                     )
                   : { ok: true, completed: result.completed };
-              });
+              }, finish);
             }
-            if (name === "team_shell") {
-              const command = String(args.command ?? args.cmd ?? "");
-              const cwd = resolveBotWorkspaceCwd(
-                "team",
-                bot.id,
-                args.cwd ? String(args.cwd) : undefined,
-              );
-              return runSandboxCommand(
-                deps.sandbox,
-                surface.ref,
-                ["bash", "-lc", command],
-                cwd,
-                surface.ctx,
-              );
-            }
-            if (name === "team_list_files") {
-              const requestedPath = String(args.path ?? "");
-              const entries = await deps.sandbox.listFiles(
-                surface.ref,
-                resolveBotWorkspacePath("team", bot.id, requestedPath),
-                surface.ctx,
-              );
-              return {
-                path: requestedPath,
-                entries: entries.map((entry) => ({
-                  ...entry,
-                  path: displayBotWorkspacePath("team", bot.id, requestedPath, entry.path),
-                })),
-              };
-            }
-            if (name === "team_read_file") {
-              const filePath = String(args.path ?? "");
-              const storedPath = resolveBotWorkspacePath("team", bot.id, filePath);
-              let bytes: Uint8Array;
-              try {
-                bytes = await deps.sandbox.readFile(surface.ref, storedPath, surface.ctx, {
-                  maxBytes: MAX_MODEL_FILE_BYTES,
-                });
-              } catch (error) {
-                if (error instanceof Error && /exceeds \d+ bytes/.test(error.message)) {
-                  return { error: "file is too large for model context", path: filePath };
-                }
-                throw error;
-              }
-              if (bytes.byteLength > MAX_MODEL_FILE_BYTES) {
-                return {
-                  error: "file is too large for model context",
-                  path: filePath,
-                  size: bytes.byteLength,
-                };
-              }
-              try {
-                return {
-                  path: filePath,
-                  content: new TextDecoder("utf-8", { fatal: true }).decode(bytes),
-                };
-              } catch {
-                return { error: "file is not UTF-8 text", path: filePath };
-              }
-            }
-            if (name === "team_write_file") {
-              const filePath = String(args.path ?? "notes/result.txt");
-              const content = textContentArg(args.content, "");
-              await deps.sandbox.writeFile(
-                surface.ref,
-                {
-                  path: resolveBotWorkspacePath("team", bot.id, filePath),
-                  content: new TextEncoder().encode(content),
-                },
-                surface.ctx,
-              );
-              return { ok: true, path: filePath };
-            }
-            return { error: `unknown team tool ${name}` };
+            const fileResult = await runTeamFileTool(deps.sandbox, {
+              name,
+              args,
+              ref: surface.ref,
+              ctx: surface.ctx,
+              botId: bot.id,
+              maxBytes: MAX_MODEL_FILE_BYTES,
+            });
+            // team_shell / team_write_file mutate the shared machine — settle the effect.
+            return name === "team_shell" || name === "team_write_file"
+              ? finish(fileResult)
+              : fileResult;
           }
           if (name.startsWith("browser_")) {
             if (!deps.browser) return { error: "This deployment has no browser." };
@@ -3503,36 +3445,6 @@ function uncertainEffectError(toolName: string): Error {
   return new Error(
     `tool ${toolName} has an earlier execution with an uncertain outcome; it may already have completed, so verify the destination before retrying`,
   );
-}
-
-async function runSandboxCommand(
-  sandbox: SandboxProvider,
-  computer: ComputerRef,
-  argv: string[],
-  cwd: string | undefined,
-  context: {
-    operationId: string;
-    traceId: string;
-    workspaceId: string;
-    userId: string;
-    botId?: string;
-    runId?: string;
-    signal: AbortSignal;
-  },
-) {
-  let stdout = "";
-  let stderr = "";
-  let code = 0;
-  for await (const event of sandbox.execute(
-    computer,
-    { argv, cwd, timeoutMs: sandboxCommandTimeoutMs() },
-    context,
-  )) {
-    if (event.type === "stdout") stdout += event.data;
-    if (event.type === "stderr") stderr += event.data;
-    if (event.type === "exit") code = event.code;
-  }
-  return { stdout, stderr, code };
 }
 
 /**

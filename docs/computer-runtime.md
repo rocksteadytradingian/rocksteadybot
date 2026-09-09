@@ -30,6 +30,12 @@ provider cannot allocate another). Team files land under the calling bot's `bots
 folder by default; `shared/…` is the common area. Leaving the group removes the `team_*`
 tools; no computer is reassigned.
 
+`team_act`, `team_shell`, and `team_write_file` mutate the shared machine and record an
+external effect like their private counterparts, so a workspace **action-approval rule**
+keyed on the tool name (e.g. `team_shell` → require approval) gates them. Unlike the private
+`shell` / `write_file`, the `team_*` names are not approval-exempt, so such a rule takes
+effect. `team_observe`, `team_list_files`, and `team_read_file` are read-only.
+
 The group thread's **Computer panel** drives that same shared Team Computer for a human —
 live screen, take control, boot/stop, recover/reset/update, keyed by a representative member
 (the group's default bot, or its first member). It shows the Team Computer stopped/asleep
