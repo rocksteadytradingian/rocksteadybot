@@ -16,7 +16,11 @@ export const SCHEDULE_TOOL_NAMES = new Set(["schedule_create", "schedule_list", 
 export function filterBuiltinToolsForThread<T extends { name: string }>(
   tools: T[],
   groupId: string | null | undefined,
+  computerMode?: "team" | "dedicated",
 ): T[] {
+  // The shared team computer only exists in a group, and a member that already
+  // runs on it (team mode) reaches it with the normal computer_/shell/file tools.
+  const offerTeamTools = Boolean(groupId) && computerMode !== "team";
   return tools.filter(
     (tool) =>
       (groupId || tool.name !== "handoff_to_bot") &&
@@ -26,8 +30,7 @@ export function filterBuiltinToolsForThread<T extends { name: string }>(
       (!groupId || !SCHEDULE_TOOL_NAMES.has(tool.name)) &&
       // Sentinels post into a specific thread; keep them to 1:1 like schedules.
       (!groupId || !tool.name.startsWith("sentinel_")) &&
-      // The shared team computer only exists in a group.
-      (groupId || !tool.name.startsWith("team_")),
+      (offerTeamTools || !tool.name.startsWith("team_")),
   );
 }
 

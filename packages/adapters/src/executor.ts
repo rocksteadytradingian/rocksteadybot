@@ -982,7 +982,11 @@ export function createRunExecutor(deps: ExecutorDeps) {
                 : browserAgentTools.filter((tool) => tool.name !== "browser_screenshot")),
             ]
           : filterImageReturningComputerTools(builtinAgentTools, graphicalToolsAllowed);
-        const availableBuiltins = filterBuiltinToolsForThread(graphicalBuiltins, thread.groupId);
+        const availableBuiltins = filterBuiltinToolsForThread(
+          graphicalBuiltins,
+          thread.groupId,
+          computerMode,
+        );
         const builtins = selectMemoryTools(availableBuiltins, semanticMemoryEnabled);
         const exposedConnectorTools = discovered.filter(
           (tool) =>
@@ -1379,6 +1383,12 @@ export function createRunExecutor(deps: ExecutorDeps) {
           if (name.startsWith("team_")) {
             if (!thread.groupId) {
               return { error: "The shared team computer is only available in a group thread." };
+            }
+            if (computerMode === "team") {
+              return {
+                error:
+                  "Your own computer is the shared team computer — use write_file / shell / computer_* instead.",
+              };
             }
             if (await getActiveTeachingSession(deps.prisma, run.workspaceId, run.botId)) {
               return { error: "Teaching is in progress. Stop teaching before using the computer." };
