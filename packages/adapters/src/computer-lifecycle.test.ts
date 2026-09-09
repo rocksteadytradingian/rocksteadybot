@@ -14,6 +14,7 @@ import {
   ComputerBusyError,
   computerSupportsUpdate,
   provisionComputer,
+  provisionSharedComputer,
   releaseBotComputerSession,
   releaseComputerExecutionLease,
   renewComputerExecutionLease,
@@ -158,6 +159,62 @@ describe("computer provisioning", () => {
       expect(releaseScreen).toHaveBeenCalledWith(ref, context);
       expect(cleanup === "destroy" ? destroy : stop).toHaveBeenCalledWith(ref, context);
       expect(cleanup === "destroy" ? stop : destroy).not.toHaveBeenCalled();
+    } finally {
+      await rm(dataDir, { recursive: true, force: true });
+    }
+  });
+
+  it("provisionSharedComputer boots a team computer with no associated bots", async () => {
+    const dataDir = await mkdtemp(path.join(tmpdir(), "rakazo-shared-provision-"));
+    const bootClaim = vi.fn().mockResolvedValue({ count: 1 });
+    const prisma = {
+      computer: {
+        findUniqueOrThrow: vi.fn().mockResolvedValue({
+          id: "team-1",
+          homeKey: "team-ws-1",
+          providerRef: null,
+          kind: "fake",
+          scope: "team",
+          state: "stopped",
+          controlLeaseId: null,
+        }),
+        updateMany: bootClaim,
+      },
+    } as unknown as PrismaClient;
+    const sandbox = {
+      provision: vi.fn().mockResolvedValue({
+        id: "provider-1",
+        botId: "team-ws-1",
+        kind: "fake" as const,
+        providerRef: "provider-1",
+        fresh: true,
+      }),
+      // Fail preparation to bail before the workspace-restore path — we only care
+      // that the boot claim did not require bot membership.
+      prepare: vi.fn().mockRejectedValue(new Error("stop here")),
+      destroy: vi.fn().mockResolvedValue(undefined),
+      releaseScreen: vi.fn().mockResolvedValue(undefined),
+    } as unknown as SandboxProvider;
+
+    try {
+      await expect(
+        provisionSharedComputer(
+          {
+            prisma,
+            sandbox,
+            home: {} as AgentHomeStore,
+            jobs: {} as JobPublisher,
+            events: {} as ThreadEvents,
+            dataDir,
+          },
+          "team-1",
+          context, // context.botId is set, but the boot claim must ignore it
+        ),
+      ).rejects.toThrow("stop here");
+      expect(bootClaim).toHaveBeenCalledWith({
+        where: { id: "team-1", state: { in: ["stopped", "suspended", "error"] } },
+        data: { state: "booting" },
+      });
     } finally {
       await rm(dataDir, { recursive: true, force: true });
     }

@@ -135,6 +135,22 @@ describe("scripted runtime", () => {
       ),
     ).toBe(true);
   });
+
+  it("writes onto the shared team computer", () => {
+    const script = inferScript(
+      'use team_write_file to create shared/smoke.md with text "hello from June" then say done',
+    );
+    const call = script
+      ?.flatMap((t) => t.toolCalls ?? [])
+      .find((c) => c.name === "team_write_file");
+    expect(call?.args).toEqual({ path: "shared/smoke.md", content: "hello from June\n" });
+  });
+
+  it("reads back from the shared team computer", () => {
+    const script = inferScript("use team_read_file to read shared/smoke.md then reply");
+    const call = script?.flatMap((t) => t.toolCalls ?? []).find((c) => c.name === "team_read_file");
+    expect(call?.args).toEqual({ path: "shared/smoke.md" });
+  });
 });
 
 describe("builtin tools", () => {

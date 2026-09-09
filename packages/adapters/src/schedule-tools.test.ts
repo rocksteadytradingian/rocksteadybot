@@ -113,6 +113,22 @@ describe("filterBuiltinToolsForThread", () => {
       ]);
     }
   });
+
+  it("offers team_* tools only in a group thread", () => {
+    const teamTools = [
+      { name: "team_observe" },
+      { name: "team_shell" },
+      { name: "team_write_file" },
+      { name: "remember" },
+    ];
+    expect(filterBuiltinToolsForThread(teamTools, "group-1").map((t) => t.name)).toEqual([
+      "team_observe",
+      "team_shell",
+      "team_write_file",
+      "remember",
+    ]);
+    expect(filterBuiltinToolsForThread(teamTools, null).map((t) => t.name)).toEqual(["remember"]);
+  });
 });
 
 describe("isOneShotRoutineCron", () => {

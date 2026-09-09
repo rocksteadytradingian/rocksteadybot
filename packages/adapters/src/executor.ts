@@ -66,7 +66,6 @@ import {
   replayInputCount,
   resolveActionApproval,
   resolveComplexityRouterModelId,
-  sandboxCommandTimeoutMs,
   skillSurface,
   type ToolCallStreak,
   toolRequiresApproval,
@@ -122,11 +121,12 @@ import {
   type ComputerExecutionLease,
   holdComputerExecutionLeaseForTakeover,
   provisionComputer,
+  provisionSharedComputer,
   releaseComputerExecutionLease,
   renewComputerExecutionLease,
   screenLeaseIdForRun,
 } from "./computer-lifecycle.js";
-import { withComputerScreenAvailability } from "./computer-screens.js";
+import { isComputerScreenUnavailable, withComputerScreenAvailability } from "./computer-screens.js";
 import {
   displayBotWorkspacePath,
   resolveBotWorkspaceCwd,
@@ -198,6 +198,7 @@ import {
   secretPausedToolResult,
   tryCompleteConnectionWithCode,
 } from "./run-secret.js";
+import { runSandboxCommand } from "./sandbox-command.js";
 import {
   cancelScheduleFromTool,
   createScheduleFromTool,
@@ -237,6 +238,7 @@ import {
 } from "./teach-replay-binding.js";
 import { runReplay } from "./teach-replay-runner.js";
 import { getActiveTeachingSession, parsePlaybook, parseRecording } from "./teaching-session.js";
+import { runTeamFileTool, TEAM_COMPUTER_READ_ONLY_TOOL_NAMES } from "./team-computer-tools.js";
 import {
   attachWorkspaceFileToThread,
   currentTurnFilesInstruction,
@@ -259,6 +261,7 @@ const READ_ONLY_AGENT_TOOLS = new Set([
   "scratchpad_list",
   "sentinel_list",
   "skill_read",
+  ...TEAM_COMPUTER_READ_ONLY_TOOL_NAMES,
 ]);
 const MAX_MODEL_FILE_BYTES = 250_000;
 const BUILTIN_AGENT_TOOL_NAMES = new Set(builtinAgentTools.map((tool) => tool.name));
@@ -604,36 +607,17 @@ export function createRunExecutor(deps: ExecutorDeps) {
       if (started.count !== 1) return;
       const leaseTarget = await deps.prisma.bot.findUniqueOrThrow({
         where: { id: run.botId },
-        select: {
-          computerId: true,
-          computerSwitching: true,
-          computer: { select: { kind: true } },
-        },
+        select: { computerId: true, computerSwitching: true },
       });
       if (!leaseTarget.computerId) throw new Error("Bot has no computer");
-      // Grouped bots all execute on the one workspace team computer, overriding a
-      // member's dedicated computer for the duration of the group thread.
-      const runThread = await deps.prisma.thread.findUnique({
-        where: { id: run.threadId },
-        select: { groupId: true },
-      });
-      const runComputerId = runThread?.groupId
-        ? (
-            await ensureTeamComputer(deps.prisma, {
-              workspaceId: run.workspaceId,
-              userId: run.userId,
-              kind: leaseTarget.computer?.kind ?? process.env.SANDBOX_PROVIDER ?? "docker",
-            })
-          ).id
-        : leaseTarget.computerId;
-      if (!runThread?.groupId && leaseTarget.computerSwitching) {
+      if (leaseTarget.computerSwitching) {
         await requeueComputerRun(deps, runId, workerId, fence, resumeCheckpoint);
         return;
       }
       let computerLease: ComputerExecutionLease | null = null;
       try {
         computerLease = await acquireComputerExecutionLease(deps.prisma, {
-          computerId: runComputerId,
+          computerId: leaseTarget.computerId,
           runId,
           botId: run.botId,
           resumeHeldLease: resumeFromTakeover,
@@ -658,14 +642,19 @@ export function createRunExecutor(deps: ExecutorDeps) {
       let screenRelease: { computer: ComputerRef; context: AdapterContext } | undefined;
       // Opened lazily on the first browser_* tool call; closed in this run's finally block.
       let browserSession: BrowserSession | undefined;
+      // Opened lazily on the first team_* tool call in a group thread; released in finally.
+      let teamSurface:
+        | { ref: ComputerRef; ctx: AdapterContext; lease: ComputerExecutionLease }
+        | undefined;
       let runAbortController: AbortController | null = null;
       const heartbeat = setInterval(() => {
         void Promise.all([
           renewRunLease(deps, runId, workerId, fence),
           renewComputerExecutionLease(deps.prisma, computerLease),
+          renewComputerExecutionLease(deps.prisma, teamSurface?.lease ?? null),
         ])
-          .then(([runRenewed, computerRenewed]) => {
-            if (!runRenewed || !computerRenewed) {
+          .then(([runRenewed, computerRenewed, teamRenewed]) => {
+            if (!runRenewed || !computerRenewed || !teamRenewed) {
               leaseValid = false;
               runAbortController?.abort();
             }
@@ -941,12 +930,11 @@ export function createRunExecutor(deps: ExecutorDeps) {
           where: { id: runId, status: "running", leaseOwner: workerId, leaseFence: fence },
           data: { modelProvider: runModelProvider, modelId: runModelId },
         });
-        // A group run uses the shared team computer resolved for the lease above,
-        // not the member bot's own (possibly dedicated) computer.
-        const storedComputer = thread.groupId
-          ? await deps.prisma.computer.findUniqueOrThrow({ where: { id: runComputerId } })
-          : bot.computer;
-        if (!storedComputer) throw new Error("Bot has no computer");
+        if (!bot.computer) throw new Error("Bot has no computer");
+        // A run's primary surface is always the bot's own computer. In a group thread
+        // the bot additionally gets `team_*` tools for the shared team computer
+        // (opened lazily below).
+        const storedComputer = bot.computer;
         const computerMode = parseComputerMode(storedComputer.scope);
         const computer = await provisionComputer(deps, storedComputer.id, context, "bot");
         screenRelease = { computer, context };
@@ -983,7 +971,11 @@ export function createRunExecutor(deps: ExecutorDeps) {
         const graphicalBuiltins = browserRunActive
           ? [
               ...builtinAgentTools.filter(
-                (tool) => tool.name !== "computer_observe" && tool.name !== "computer_act",
+                (tool) =>
+                  tool.name !== "computer_observe" &&
+                  tool.name !== "computer_act" &&
+                  tool.name !== "team_observe" &&
+                  tool.name !== "team_act",
               ),
               ...(acceptsImages
                 ? browserAgentTools
@@ -1129,6 +1121,38 @@ export function createRunExecutor(deps: ExecutorDeps) {
         const openBrowserSession = async (): Promise<BrowserSession> => {
           browserSession ??= await deps.browser!.open(bot.id, context);
           return browserSession;
+        };
+
+        // The shared team computer, opened on the first team_* tool call in a group
+        // thread. It is a secondary surface — the run's primary computer stays
+        // `storedComputer` (the bot's own). Held per-bot so members work concurrently.
+        const openTeamSurface = async (): Promise<NonNullable<typeof teamSurface>> => {
+          if (teamSurface) return teamSurface;
+          const team = await ensureTeamComputer(deps.prisma, {
+            workspaceId: run.workspaceId,
+            userId: run.userId,
+            kind: storedComputer.kind,
+          });
+          const lease = await acquireComputerExecutionLease(deps.prisma, {
+            computerId: team.id,
+            runId,
+            botId: run.botId,
+          });
+          if (!lease) throw new ComputerBusyError();
+          try {
+            const ctx: AdapterContext = {
+              ...context,
+              operationId: `${runId}:team`,
+              screenLeaseId: screenLeaseIdForRun(lease, runId, fence),
+            };
+            const ref = await provisionSharedComputer(deps, team.id, ctx);
+            scheduleComputerSleep(deps.jobs, team.id);
+            teamSurface = { ref, ctx, lease };
+            return teamSurface;
+          } catch (error) {
+            await releaseComputerExecutionLease(deps.prisma, lease).catch(() => undefined);
+            throw error;
+          }
         };
         const browserToolResult = async (view: BrowserSnapshot, note?: string) => {
           let tree = view.tree;
@@ -1351,6 +1375,66 @@ export function createRunExecutor(deps: ExecutorDeps) {
                   )
                 : { ok: true, completed: result.completed };
             }, finish);
+          }
+          if (name.startsWith("team_")) {
+            if (!thread.groupId) {
+              return { error: "The shared team computer is only available in a group thread." };
+            }
+            if (await getActiveTeachingSession(deps.prisma, run.workspaceId, run.botId)) {
+              return { error: "Teaching is in progress. Stop teaching before using the computer." };
+            }
+            let surface: NonNullable<typeof teamSurface>;
+            try {
+              surface = await openTeamSurface();
+            } catch (error) {
+              if (error instanceof ComputerBusyError) {
+                return { error: "The shared team computer is busy; try again shortly." };
+              }
+              if (isComputerScreenUnavailable(error)) {
+                return {
+                  error: "The shared team computer cannot open another screen right now.",
+                };
+              }
+              throw error;
+            }
+            if (name === "team_observe") {
+              return computerScreenToolResult(async () =>
+                formatObservation(await deps.sandbox.observe(surface.ref, surface.ctx)),
+              );
+            }
+            if (name === "team_act") {
+              // Mutating: settle the recorded effect via `finish` so a workspace
+              // `require_approval` rule on team_act completes correctly on resume.
+              return computerScreenToolResult(async () => {
+                const result = await deps.sandbox.act(
+                  surface.ref,
+                  {
+                    actions: parseComputerActions(args.actions),
+                    observe: args.observe !== false,
+                    settleMs: Number(args.settle_ms ?? 350),
+                  },
+                  surface.ctx,
+                );
+                return result.observation
+                  ? formatObservation(
+                      result.observation,
+                      `completed ${result.completed} team computer action${result.completed === 1 ? "" : "s"}`,
+                    )
+                  : { ok: true, completed: result.completed };
+              }, finish);
+            }
+            const fileResult = await runTeamFileTool(deps.sandbox, {
+              name,
+              args,
+              ref: surface.ref,
+              ctx: surface.ctx,
+              botId: bot.id,
+              maxBytes: MAX_MODEL_FILE_BYTES,
+            });
+            // team_shell / team_write_file mutate the shared machine — settle the effect.
+            return name === "team_shell" || name === "team_write_file"
+              ? finish(fileResult)
+              : fileResult;
           }
           if (name.startsWith("browser_")) {
             if (!deps.browser) return { error: "This deployment has no browser." };
@@ -3132,6 +3216,17 @@ export function createRunExecutor(deps: ExecutorDeps) {
       } finally {
         clearInterval(heartbeat);
         if (browserSession) await browserSession.close().catch(() => undefined);
+        if (teamSurface) {
+          // The shared team computer is a secondary surface: always drop this bot's
+          // screen + execution lease. Its lifecycle (sleep, human takeover) is owned
+          // elsewhere, so never stop it here.
+          await deps.sandbox
+            .releaseScreen?.(teamSurface.ref, teamSurface.ctx)
+            .catch(() => undefined);
+          await releaseComputerExecutionLease(deps.prisma, teamSurface.lease).catch(
+            () => undefined,
+          );
+        }
         if (!retainComputerLease) {
           if (screenRelease) {
             await deps.sandbox
@@ -3350,36 +3445,6 @@ function uncertainEffectError(toolName: string): Error {
   return new Error(
     `tool ${toolName} has an earlier execution with an uncertain outcome; it may already have completed, so verify the destination before retrying`,
   );
-}
-
-async function runSandboxCommand(
-  sandbox: SandboxProvider,
-  computer: ComputerRef,
-  argv: string[],
-  cwd: string | undefined,
-  context: {
-    operationId: string;
-    traceId: string;
-    workspaceId: string;
-    userId: string;
-    botId?: string;
-    runId?: string;
-    signal: AbortSignal;
-  },
-) {
-  let stdout = "";
-  let stderr = "";
-  let code = 0;
-  for await (const event of sandbox.execute(
-    computer,
-    { argv, cwd, timeoutMs: sandboxCommandTimeoutMs() },
-    context,
-  )) {
-    if (event.type === "stdout") stdout += event.data;
-    if (event.type === "stderr") stderr += event.data;
-    if (event.type === "exit") code = event.code;
-  }
-  return { stdout, stderr, code };
 }
 
 /**

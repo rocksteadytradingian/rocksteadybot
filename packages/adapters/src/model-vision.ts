@@ -11,6 +11,8 @@ import { TOKENROUTER_PROVIDER_ID } from "./pi-tokenrouter-provider.js";
 export const IMAGE_RETURNING_COMPUTER_TOOLS = new Set([
   "computer_observe",
   "computer_act",
+  "team_observe",
+  "team_act",
   "open_path",
   "launch_app",
   "browser_screenshot",

@@ -324,15 +324,15 @@ description: Prepare standup notes
     expect(enqueue).toHaveBeenCalledOnce();
   });
 
-  it("routes a grouped run onto the workspace team computer, not the member's own", async () => {
+  it("a grouped run's primary lease targets the member's own computer, not the team computer", async () => {
     const enqueue = vi.fn(async () => undefined);
     const upsert = vi.fn(async () => ({ id: "team-1" }));
-    // The team computer is busy, so the run requeues right after acquiring — enough
-    // to assert which computer the lease targeted.
-    const computerFindUniqueOrThrow = vi.fn(async () => ({
-      id: "team-1",
+    // The member's own computer is busy, so the run requeues right after acquiring —
+    // enough to assert which computer the primary lease targeted.
+    const computerFindUniqueOrThrow = vi.fn(async (args: { where: { id: string } }) => ({
+      id: args.where.id,
       state: "suspending",
-      scope: "team",
+      scope: "dedicated",
     }));
     const prisma = {
       run: {
@@ -353,7 +353,6 @@ description: Prepare standup notes
         findUniqueOrThrow: vi.fn(async () => ({
           computerId: "dedicated-1",
           computerSwitching: false,
-          computer: { kind: "fake" },
         })),
       },
       thread: {
@@ -370,10 +369,10 @@ description: Prepare standup notes
 
     await executor.continueRun("run-1", "worker-1");
 
-    expect(upsert).toHaveBeenCalledWith(
-      expect.objectContaining({ where: { scopeKey: "team:ws-1" } }),
-    );
-    expect(computerFindUniqueOrThrow).toHaveBeenCalledWith({ where: { id: "team-1" } });
+    // primary lease is acquired against the bot's own computer
+    expect(computerFindUniqueOrThrow).toHaveBeenCalledWith({ where: { id: "dedicated-1" } });
+    // no team computer resolved just to run a grouped bot
+    expect(upsert).not.toHaveBeenCalled();
     expect(enqueue).toHaveBeenCalledOnce();
   });
 
