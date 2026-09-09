@@ -25,7 +25,9 @@ export function filterBuiltinToolsForThread<T extends { name: string }>(
       (!groupId || tool.name !== "message_bot") &&
       (!groupId || !SCHEDULE_TOOL_NAMES.has(tool.name)) &&
       // Sentinels post into a specific thread; keep them to 1:1 like schedules.
-      (!groupId || !tool.name.startsWith("sentinel_")),
+      (!groupId || !tool.name.startsWith("sentinel_")) &&
+      // The shared team computer only exists in a group.
+      (groupId || !tool.name.startsWith("team_")),
   );
 }
 

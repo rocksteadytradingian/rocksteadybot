@@ -175,6 +175,93 @@ export const builtinAgentTools: ConnectorTool[] = [
     },
   },
   {
+    name: "team_observe",
+    description:
+      "Capture the current screen of the shared team computer for this group. Only available in a group thread. Use the shared computer only when the work must be seen by or coordinated with the other members — otherwise use computer_observe on your own computer.",
+    inputSchema: { type: "object", properties: {} },
+  },
+  {
+    name: "team_act",
+    description:
+      "Perform up to 24 ordered desktop actions on the shared team computer for this group and return the resulting screen. Other members may be driving it at the same time. Only available in a group thread; prefer your own computer for private work.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        actions: {
+          type: "array",
+          items: {
+            type: "object",
+            properties: {
+              kind: {
+                type: "string",
+                enum: ["click", "move", "down", "up", "type", "key", "scroll", "wait"],
+              },
+              x: { type: "number" },
+              y: { type: "number" },
+              button: { type: "string", enum: ["left", "right"] },
+              double: { type: "boolean" },
+              text: { type: "string" },
+              key: { type: "string" },
+              modifiers: { type: "array", items: { type: "string" } },
+              direction: { type: "string", enum: ["up", "down"] },
+              amount: { type: "number" },
+              ms: { type: "number" },
+            },
+            required: ["kind"],
+          },
+        },
+        observe: { type: "boolean" },
+        settle_ms: { type: "number" },
+      },
+      required: ["actions"],
+    },
+  },
+  {
+    name: "team_shell",
+    description:
+      "Run a command inside the shared team computer for this group. Only available in a group thread. cwd defaults to your bot folder; use shared/... for work the other members should see.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        command: { type: "string" },
+        cwd: { type: "string" },
+      },
+      required: ["command"],
+    },
+  },
+  {
+    name: "team_list_files",
+    description:
+      "List files and directories on the shared team computer for this group. Only available in a group thread. Relative paths use your bot folder; use shared/... for shared work or bots/... to inspect the team root.",
+    inputSchema: {
+      type: "object",
+      properties: { path: { type: "string" } },
+    },
+  },
+  {
+    name: "team_read_file",
+    description:
+      "Read a UTF-8 text file from the shared team computer for this group. Only available in a group thread. Relative paths use your bot folder and shared/... accesses shared work.",
+    inputSchema: {
+      type: "object",
+      properties: { path: { type: "string" } },
+      required: ["path"],
+    },
+  },
+  {
+    name: "team_write_file",
+    description:
+      "Write a UTF-8 file onto the shared team computer for this group. Only available in a group thread. Use shared/... for work the other members should share; relative paths use your bot folder.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        path: { type: "string" },
+        content: { type: "string" },
+      },
+      required: ["path", "content"],
+    },
+  },
+  {
     name: "open_path",
     description:
       "Open a workspace file or an http(s) URL in its default graphical application on this bot's computer and return the resulting screen. Do not open Gmail, YouTube Studio, Google Business, Calendar, Drive, or other signed-in Google consumer sites — connect the matching plugin instead.",

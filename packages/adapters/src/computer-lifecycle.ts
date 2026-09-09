@@ -31,18 +31,35 @@ export class ComputerBusyError extends Error {
 
 export { toComputerRef } from "./computer-support.js";
 
+type ProvisionDeps = {
+  prisma: PrismaClient;
+  sandbox: SandboxProvider;
+  home: AgentHomeStore;
+  jobs: JobPublisher;
+  events: ThreadEvents;
+  dataDir?: string;
+};
+
+/**
+ * Boot the workspace team computer as a shared surface for a grouped bot. Unlike
+ * `provisionComputer`, this does not require `context.botId` to be an assigned bot
+ * of the computer — a group whose members all run on their own computers leaves the
+ * team computer with no `bots` rows.
+ */
+export function provisionSharedComputer(
+  deps: ProvisionDeps,
+  computerId: string,
+  context: AdapterContext,
+): Promise<ComputerRef> {
+  return provisionComputer(deps, computerId, context, "none", { requireBotMembership: false });
+}
+
 export async function provisionComputer(
-  deps: {
-    prisma: PrismaClient;
-    sandbox: SandboxProvider;
-    home: AgentHomeStore;
-    jobs: JobPublisher;
-    events: ThreadEvents;
-    dataDir?: string;
-  },
+  deps: ProvisionDeps,
   computerId: string,
   context: AdapterContext,
   controlHolder: "bot" | "none" = "none",
+  options: { requireBotMembership?: boolean } = {},
 ): Promise<ComputerRef> {
   let existing = await deps.prisma.computer.findUniqueOrThrow({ where: { id: computerId } });
   if (existing.controlLeaseId && !hasActiveComputerControl(existing)) {
@@ -66,11 +83,14 @@ export async function provisionComputer(
     existing = await deps.prisma.computer.findUniqueOrThrow({ where: { id: computerId } });
   }
 
+  const requireBotMembership = options.requireBotMembership ?? true;
   const claimed = await deps.prisma.computer.updateMany({
     where: {
       id: computerId,
       state: { in: ["stopped", "suspended", "error"] },
-      ...(context.botId ? { bots: { some: { id: context.botId, archivedAt: null } } } : {}),
+      ...(requireBotMembership && context.botId
+        ? { bots: { some: { id: context.botId, archivedAt: null } } }
+        : {}),
     },
     data: { state: "booting" },
   });

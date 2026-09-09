@@ -18,13 +18,22 @@ Each workspace gets one Team Computer by default, so bots share its browser sess
 
 ### Grouped bots
 
-When bots are put in a workspace group, the group is treated as a team: every member's run
-executes on the shared Team Computer for the duration of the group thread, overriding a
-member's Private Computer. The group thread exposes that Team Computer with the same controls
-as a 1:1 Computer panel — live screen, take control, boot/stop, recover/reset/update — keyed
-by a representative member (the group's default bot, or its first member). Leaving the group
-restores each bot's own computer; nothing is migrated. Group members serialize on the one
-Team Computer through the same fenced execution lease that already serializes Team bots.
+A run's primary surface is always the bot's own computer — Private or Team — exactly as in a
+1:1 chat. In a **group thread** the bot additionally gets `team_*` tools
+(`team_observe`, `team_act`, `team_shell`, `team_list_files`, `team_read_file`,
+`team_write_file`) for the workspace **Team Computer** as a shared surface: use it only when
+the work must be seen by, or coordinated with, the other members. The Team Computer is
+opened lazily on the first `team_*` call and released when the run ends; it is never spun up
+just to run a grouped bot. Each member holds its own fenced execution lease on it, so
+several members can drive it at once on distinct screens (`MULTI_SCREEN_UNAVAILABLE` if the
+provider cannot allocate another). Team files land under the calling bot's `bots/<bot-id>/`
+folder by default; `shared/…` is the common area. Leaving the group removes the `team_*`
+tools; no computer is reassigned.
+
+The group thread's **Computer panel** drives that same shared Team Computer for a human —
+live screen, take control, boot/stop, recover/reset/update, keyed by a representative member
+(the group's default bot, or its first member). It shows the Team Computer stopped/asleep
+until an agent or the human first uses it.
 
 `SandboxProvider.describe().capabilities.multiScreen` tells clients whether the backend can allocate distinct Team screens. Fake and Docker providers spawn extra Xvfb stacks inside one machine. E2B and Daytona keep the vendor's primary desktop stream on index 0 and spawn extra Xvfb + x11vnc + preview ports for additional Team bots on the same sandbox. Box exposes its primary desktop but does not ship the secondary-display stack, so its adapter reports `multiScreen: false`. If a provider cannot allocate another display, graphical tools for that bot return `MULTI_SCREEN_UNAVAILABLE` while shell and file tools keep working.
 
