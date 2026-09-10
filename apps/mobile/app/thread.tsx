@@ -140,13 +140,30 @@ export default function Thread() {
   activeGroupId.current = groupId;
   const readVisibleTarget = useRef<string | null>(null);
   const threadKey = groupId ?? botId;
+  // This screen instance is reused across bots/groups (params change in
+  // place rather than remounting), so the reset effect below has to clear
+  // per-conversation state on every switch. The draft text should survive
+  // that switch, so it's kept here, keyed by conversation, instead of being
+  // blanked along with the rest.
+  const threadDrafts = useRef<Map<string, string>>(new Map());
   const artifactTarget: MobileArtifactTarget | undefined = groupId
     ? { groupId }
     : botId
       ? { botId }
       : undefined;
   const [snap, setSnap] = useState<MobileSnapshot | null>(null);
-  const [draft, setDraft] = useState("");
+  const [draft, setDraftState] = useState("");
+  function setDraft(update: string | ((current: string) => string)) {
+    setDraftState((current) => {
+      const next =
+        typeof update === "function" ? (update as (current: string) => string)(current) : update;
+      if (threadKey) {
+        if (next) threadDrafts.current.set(threadKey, next);
+        else threadDrafts.current.delete(threadKey);
+      }
+      return next;
+    });
+  }
   const [mentionQuery, setMentionQuery] = useState<string | null>(null);
   const [slashQuery, setSlashQuery] = useState<string | null>(null);
   const [agentSkills, setAgentSkills] = useState<AgentSkillCatalogEntry[]>([]);
@@ -608,7 +625,7 @@ export default function Thread() {
 
   useEffect(() => {
     setPendingAttachments((current) => attachmentsForThread(current, threadKey));
-    setDraft("");
+    setDraftState(threadKey ? (threadDrafts.current.get(threadKey) ?? "") : "");
     setMentionQuery(null);
     setSlashQuery(null);
     setSelectedSkill(null);
