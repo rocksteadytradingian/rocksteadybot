@@ -134,7 +134,10 @@ test("create group from + and see two bots in one transcript", async ({ page }, 
   await sidebar.getByRole("button", { name: /^Review team/ }).click();
   await expect(page.getByRole("textbox", { name: "Message Review team" })).toHaveValue("");
   await sidebar.getByRole("button", { name: /^Draft team/ }).click();
-  await expect(page.getByRole("textbox", { name: "Message Draft team" })).toHaveValue("");
+  // Switching away and back must not discard what was typed.
+  await expect(page.getByRole("textbox", { name: "Message Draft team" })).toHaveValue(
+    "@Researcher unfinished draft",
+  );
 
   const composer = page.getByRole("textbox", { name: "Message Draft team" });
   await composer.fill("@Res");
