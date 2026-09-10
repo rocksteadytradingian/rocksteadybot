@@ -444,6 +444,7 @@ export function ShellPage() {
   const inGroup = Boolean(groupId);
   const active = inGroup ? undefined : (bots.find((b) => b.id === botId) ?? bots[0]);
   const activeGroup = groups.find((group) => group.id === groupId);
+  const composerKey = inGroup ? `group:${groupId}` : `bot:${active?.id}`;
   const activePendingAttachments = useMemo(
     () => attachmentsForThread(pendingAttachments, inGroup ? groupId : active?.id),
     [active?.id, groupId, inGroup, pendingAttachments],
@@ -459,6 +460,11 @@ export function ShellPage() {
   activeBotId.current = inGroup ? undefined : active?.id;
   const activeGroupId = useRef<string | undefined>(groupId);
   activeGroupId.current = groupId;
+  // Composer remounts (via `key`) whenever the active bot/group changes so its
+  // transient UI (mention/slash pickers, selected skill) resets cleanly. The
+  // draft text itself should survive that remount, so it's kept here, keyed
+  // by conversation, instead of living only in the Composer's local state.
+  const composerDrafts = useRef<Map<string, string>>(new Map());
   const screenRequest = useRef(0);
   const contextBot = botMenu ? bots.find((bot) => bot.id === botMenu.botId) : undefined;
   const closeBotMenu = useCallback(() => setBotMenu(null), []);
@@ -2832,7 +2838,12 @@ export function ShellPage() {
           <SkillPromotionCard botId={active.id} onCreated={refreshAgentSkills} />
         ) : null}
         <Composer
-          key={inGroup ? `group:${groupId}` : `bot:${active?.id}`}
+          key={composerKey}
+          initialDraft={composerDrafts.current.get(composerKey) ?? ""}
+          onDraftChange={(text) => {
+            if (text) composerDrafts.current.set(composerKey, text);
+            else composerDrafts.current.delete(composerKey);
+          }}
           activeName={inGroup ? (activeGroup?.name ?? activeSnapshot?.groupName) : active?.name}
           running={composerRunning}
           disabled={Boolean(recordingSkill)}
@@ -4082,6 +4093,8 @@ const Transcript = memo(function Transcript({
 
 const Composer = memo(function Composer({
   activeName,
+  initialDraft,
+  onDraftChange,
   running,
   disabled,
   pendingAttachments,
@@ -4107,6 +4120,8 @@ const Composer = memo(function Composer({
   onDictateStop,
 }: {
   activeName?: string;
+  initialDraft?: string;
+  onDraftChange?: (text: string) => void;
   running: boolean;
   disabled?: boolean;
   pendingAttachments: PendingAttachment[];
@@ -4132,7 +4147,15 @@ const Composer = memo(function Composer({
   onDictateStop: () => void;
 }) {
   const { t } = useLingui();
-  const [draft, setDraft] = useState("");
+  const [draft, setDraftState] = useState(initialDraft ?? "");
+  function setDraft(update: string | ((current: string) => string)) {
+    setDraftState((current) => {
+      const next =
+        typeof update === "function" ? (update as (current: string) => string)(current) : update;
+      onDraftChange?.(next);
+      return next;
+    });
+  }
   const [dropActive, setDropActive] = useState(false);
   const [mentionQuery, setMentionQuery] = useState<string | null>(null);
   const [slashQuery, setSlashQuery] = useState<string | null>(null);
